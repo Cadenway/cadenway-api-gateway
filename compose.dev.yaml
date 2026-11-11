@@ -1,0 +1,14 @@
+# Dependencies of waypoint-api-gateway for working on it alone: Redis, for the rate-limit counters.
+# The gateway itself runs on the host with `pnpm start:dev`; the internal services are faked in tests.
+name: waypoint-api-gateway-dev
+
+services:
+  redis:
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+    ports:
+      - '127.0.0.1:${DEV_REDIS_PORT:-6379}:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
