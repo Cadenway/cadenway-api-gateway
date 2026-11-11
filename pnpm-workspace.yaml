@@ -1,0 +1,6 @@
+# pnpm settings for this repository. Registry and auth lines stay in .npmrc.
+
+# Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
+# esbuild ships its binary as an optional dependency, so its postinstall is not needed.
+allowBuilds:
+  esbuild: false
