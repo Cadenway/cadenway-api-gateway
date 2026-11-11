@@ -1,0 +1,13 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "waypoint-api-gateway",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "start:dev"
+      ],
+      "port": 3000
+    }
+  ]
+}
