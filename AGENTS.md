@@ -21,11 +21,11 @@ The structure and workflows below describe the bootstrap target. Check the check
 
 waypoint-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
 
-| Aggregate | Composed from |
-| --- | --- |
-| Task detail | task-service (task) + integration-service (Git links) + storage-service (attachments) + notification-service (reminders) |
-| Home | task-service (my priorities, sprint) + notification-service (mentions, activity) |
-| Command palette | search-service |
+| Aggregate       | Composed from                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Task detail     | task-service (task) + integration-service (Git links) + storage-service (attachments) + notification-service (reminders) |
+| Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
+| Command palette | search-service                                                                                                           |
 
 Public routes without a session: a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
@@ -69,20 +69,19 @@ repository and nothing is inherited.
 - The parts shared with the other repositories are duplicated on purpose; a change to them is repeated
   in each repository through its own pull request.
 
-
 ## Commands and quality gates
 
 The scripts below are this repository's contract. While the repository is being bootstrapped,
 create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
 narrowest check that covers the change first, then widen:
 
-| Changed | Minimum check |
-| --- | --- |
-| Routes or aggregates | `pnpm test -- src/routes` or `pnpm test -- src/aggregates`, then the contract tests |
-| Auth or rate limit | `pnpm test:integration -- auth` or `pnpm test:integration -- rate-limit` |
-| Any source | `pnpm format:check`, `pnpm lint`, `pnpm typecheck` |
-| Build or runtime configuration | `pnpm build`, `docker compose -f compose.dev.yaml config -q` |
-| Docs or agent instructions only | Scoped formatting and link review |
+| Changed                         | Minimum check                                                                       |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| Routes or aggregates            | `pnpm test -- src/routes` or `pnpm test -- src/aggregates`, then the contract tests |
+| Auth or rate limit              | `pnpm test:integration -- auth` or `pnpm test:integration -- rate-limit`            |
+| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                                  |
+| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`                        |
+| Docs or agent instructions only | Scoped formatting and link review                                                   |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
@@ -109,7 +108,6 @@ run.
   not read or write secret environment files; new variables are documented in `.env.example`.
 - Never edit generated trees (`dist/`, `node_modules/`, `coverage/`) or lockfiles by hand.
 - Never modify a sibling checkout (`../waypoint-*`) from a task in this repository.
-
 
 The agent hooks enforce most of these mechanically; a refused command is a signal to stop and ask,
 not to find another way around it.

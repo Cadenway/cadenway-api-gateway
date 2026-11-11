@@ -2,11 +2,11 @@
 
 waypoint-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
 
-| Aggregate | Composed from |
-| --- | --- |
-| Task detail | task-service (task) + integration-service (Git links) + storage-service (attachments) + notification-service (reminders) |
-| Home | task-service (my priorities, sprint) + notification-service (mentions, activity) |
-| Command palette | search-service |
+| Aggregate       | Composed from                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Task detail     | task-service (task) + integration-service (Git links) + storage-service (attachments) + notification-service (reminders) |
+| Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
+| Command palette | search-service                                                                                                           |
 
 Public routes without a session: a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
