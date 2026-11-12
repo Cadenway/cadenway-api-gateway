@@ -38,7 +38,7 @@ Run the narrowest check first; CI runs them all on every pull request.
 pnpm format:check
 pnpm lint
 pnpm typecheck
-pnpm test -- src/<area>
+pnpm test src/<area>
 pnpm test:integration                    # Redis in Docker, internal services faked
 pnpm test:coverage
 pnpm build

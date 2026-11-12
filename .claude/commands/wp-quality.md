@@ -6,7 +6,7 @@ allowed-tools: Bash(pnpm format:check), Bash(pnpm lint), Bash(pnpm typecheck), B
 
 Run the gate yourself and report each step. No agent.
 
-**With a path in `$ARGUMENTS`**, run only `pnpm test -- $ARGUMENTS` and stop.
+**With a path in `$ARGUMENTS`**, run only `pnpm test $ARGUMENTS` and stop.
 
 **Without an argument**, run in this order and stop at the first failure: `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, `pnpm test:integration`, `pnpm build`, `docker compose -f compose.dev.yaml config -q`.
 

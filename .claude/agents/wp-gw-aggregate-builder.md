@@ -56,7 +56,7 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 
 ## Checks
 
-- `pnpm test -- src/aggregates`
+- `pnpm test src/aggregates`
 
 ## Report
 

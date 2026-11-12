@@ -47,7 +47,7 @@ Read the request, then re-read it against what you are about to do. Everything b
 ## Checks
 
 - `pnpm typecheck`
-- `pnpm test -- src/clients`
+- `pnpm test src/clients`
 
 ## Report
 
