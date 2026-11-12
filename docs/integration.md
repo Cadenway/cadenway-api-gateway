@@ -6,11 +6,11 @@
 
 ## Public and internal boundaries
 
-The public route contract is owned by `waypoint-api-contracts`; internal service calls use generated clients. Public unauthenticated routes and aggregate composition are listed in [AGENTS.md](../AGENTS.md). The gateway does not own domain decisions or another service's database.
+The public route contract is owned by `cadenway-api-contracts`; internal service calls use generated clients. Public unauthenticated routes and aggregate composition are listed in [AGENTS.md](../AGENTS.md). The gateway does not own domain decisions or another service's database.
 
 ## Gateway Patterns
 
-Source: `wp-gateway-patterns` ([Claude](../.claude/skills/wp-gateway-patterns/SKILL.md), [Codex](../.codex/skills/wp-gateway-patterns/SKILL.md)).
+Source: `cw-gateway-patterns` ([Claude](../.claude/skills/cw-gateway-patterns/SKILL.md), [Codex](../.codex/skills/cw-gateway-patterns/SKILL.md)).
 
 ### An authenticated route
 
@@ -34,7 +34,7 @@ another tenant's data is not revealed.
 
 ## Auth Tokens
 
-Source: `wp-auth-tokens` ([Claude](../.claude/skills/wp-auth-tokens/SKILL.md), [Codex](../.codex/skills/wp-auth-tokens/SKILL.md)).
+Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [Codex](../.codex/skills/cw-auth-tokens/SKILL.md)).
 
 | Token              | Issued by                                          | Carries                                           | Used for              |
 | ------------------ | -------------------------------------------------- | ------------------------------------------------- | --------------------- |

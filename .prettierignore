@@ -1,0 +1,9 @@
+# Generated trees and files owned by a tool.
+dist/
+coverage/
+pnpm-lock.yaml
+CHANGELOG.md
+
+# Agent tooling: .codex mirrors .claude byte for byte, so neither is reformatted.
+.claude/
+.codex/

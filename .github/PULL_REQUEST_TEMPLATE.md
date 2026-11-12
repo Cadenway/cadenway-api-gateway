@@ -5,9 +5,9 @@ commit on main. See .github/CONTRIBUTING.md.
 
 ## Task
 
-Fixes: WAY-
+Fixes: CAD-
 
-<!-- Use `Refs: WAY-…` instead when this pull request does not complete the task. -->
+<!-- Use `Refs: CAD-…` instead when this pull request does not complete the task. -->
 
 ## Summary
 
@@ -20,7 +20,7 @@ Fixes: WAY-
 - [ ] `pnpm format:check`
 - [ ] `pnpm lint`
 - [ ] `pnpm typecheck`
-- [ ] `pnpm test -- src/<area>`
+- [ ] `pnpm test src/<area>`
 - [ ] `pnpm test:integration`
 - [ ] `pnpm test:coverage`
 - [ ] `pnpm build`
@@ -29,11 +29,11 @@ Fixes: WAY-
 ## Contracts
 
 - [ ] No change to a route or an event
-- [ ] Uses routes or events already published by `waypoint-api-contracts`: <!-- version -->
+- [ ] Uses routes or events already published by `cadenway-api-contracts`: <!-- version -->
 - [ ] Additive only: every existing consumer keeps working
 
 ## Deployment
 
 - [ ] Nothing special
-- [ ] New environment variable, documented in `.env.example` and added in `waypoint-ops`
+- [ ] New environment variable, documented in `.env.example` and added in `cadenway-ops`
 - [ ] Must ship after: <!-- pull requests in other repositories, in order -->

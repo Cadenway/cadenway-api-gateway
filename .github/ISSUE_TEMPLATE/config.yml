@@ -1,9 +1,9 @@
-# Issue chooser of waypoint-api-gateway. Replace <org> with the GitHub organization name once it is chosen.
+# Issue chooser of cadenway-api-gateway. Replace <org> with the GitHub organization name once it is chosen.
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/<org>/waypoint-api-gateway/security/advisories/new
+    url: https://github.com/<org>/cadenway-api-gateway/security/advisories/new
     about: Report it privately, never in a public issue. See .github/SECURITY.md.
   - name: Get help
-    url: https://github.com/<org>/waypoint-api-gateway/blob/main/.github/SUPPORT.md
+    url: https://github.com/<org>/cadenway-api-gateway/blob/main/.github/SUPPORT.md
     about: Where to look before opening an issue.
