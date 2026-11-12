@@ -10,16 +10,16 @@
     "node": "^24.15.0"
   },
   "scripts": {
-    "prepare": "node scripts/install-git-hooks.mjs",
+    "prepare": "git config core.hooksPath .githooks",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node scripts/vitest.mjs --project unit",
-    "test:coverage": "node scripts/vitest.mjs --project unit --coverage",
-    "test:integration": "node scripts/vitest.mjs --project integration --passWithNoTests",
+    "test": "vitest run --project unit",
+    "test:coverage": "vitest run --project unit --coverage",
+    "test:integration": "vitest run --project integration --passWithNoTests",
     "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm build"
   },
   "dependencies": {
