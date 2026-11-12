@@ -1,0 +1,174 @@
+name: Deploy
+
+# Writes a released version into cadenway-ops, the desired state the GitOps agent of each host pulls:
+# staging first, then production once a reviewer approves the `production` environment. Each
+# environment gets its own copy of deploy/compose.yaml (environments/<env>/services/), so a staging
+# release never changes what production runs. Nothing reaches a server from here. Called by the
+# release workflow; run it by hand with an older version to roll back.
+#
+# The deploy app key is an environment secret of `staging` and `production`, which only `main` may
+# use: a workflow edited on a pull request branch cannot read it.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to deploy, without the v (1.4.0).
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to deploy, without the v (1.4.0); an older one rolls back.
+        required: true
+        type: string
+
+# Each job states the permissions it needs.
+permissions: {}
+
+jobs:
+  staging:
+    name: Staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: staging
+    # Staging deploys run one after the other, in order.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - &service-checkout
+        name: Check out the release
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ inputs.version }}
+          path: service
+          persist-credentials: false
+      # Production deploys the same tag: this check covers both jobs.
+      - name: Check the service definition
+        env:
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.event.repository.name }}
+        # The definition runs as root on the hosts: only the keys a Cadenway service needs pass.
+        run: |
+          set -euo pipefail
+          [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "::error::$VERSION is not a version (1.4.0)"
+            exit 1
+          }
+          service=${REPOSITORY#cadenway-}
+          variable=$(tr '[:lower:]-' '[:upper:]_' <<<"$service")_VERSION
+          env GHCR_OWNER=owner DOMAIN=domain.invalid ENVIRONMENT=env PUBLIC_SCHEME=https \
+            "$variable=$VERSION" docker compose -p check -f service/deploy/compose.yaml \
+            config --format json >definition.json
+          jq -e --arg service "$service" --arg image "ghcr.io/owner/$REPOSITORY:$VERSION" '
+            def only($allowed): (keys - $allowed) == [];
+            (.services | keys) == [$service]
+            and (.services[$service] as $s
+              | ($s | only(["command", "configs", "deploy", "entrypoint", "environment",
+                  "healthcheck", "image", "labels", "networks", "restart"]))
+              and $s.image == $image
+              and ($s.entrypoint == null) and ($s.command == null)
+              and ($s.deploy // {} | only(["placement", "resources"]))
+              and ($s.deploy.resources // {} | only(["limits"]))
+              and ($s.networks // {} | only(["edge", "internal"]))
+              and ($s.labels // {} | keys | all(startswith("traefik.")))
+              and ($s.labels // {} | to_entries | map(select(.key | endswith(".rule")))
+                | all(.value | test("^Host\\(`(app|www|api|realtime)\\.domain\\.invalid`\\)$")))
+              and ($s.labels["traefik.docker.network"] // "cadenway-edge-env") == "cadenway-edge-env")
+            and (.networks // {} | only(["edge", "internal"]))
+            and (.networks.edge == null or (.networks.edge.external == true
+              and .networks.edge.name == "cadenway-edge-env"))
+            and (.networks.internal == null or (.networks.internal.external | not))
+            and (.configs // {} | to_entries | all(.value | only(["content", "name"])))
+            and ((.volumes // {}) == {}) and ((.secrets // {}) == {})
+          ' definition.json >/dev/null || {
+            echo "::error::deploy/compose.yaml uses keys, images, networks or rules a Cadenway service may not"
+            exit 1
+          }
+      - &app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app-token
+        with:
+          client-id: ${{ vars.CADENWAY_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CADENWAY_DEPLOY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: cadenway-ops
+          permission-contents: write
+      - &ops-checkout
+        name: Check out cadenway-ops
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository_owner }}/cadenway-ops
+          ref: main
+          path: ops
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Write the staging definition and version
+        env:
+          ENVIRONMENT: staging
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.event.repository.name }}
+        run: &write-version |
+          set -euo pipefail
+          service=${REPOSITORY#cadenway-}
+          variable=$(tr '[:lower:]-' '[:upper:]_' <<<"$service")_VERSION
+          cd ops
+          git config user.name 'cadenway-deploy[bot]'
+          git config user.email 'cadenway-deploy[bot]@users.noreply.github.com'
+
+          # Writes the change on top of a given main: the version line is replaced in place, so two
+          # services deploying at once touch different lines.
+          write() {
+            local file=environments/$ENVIRONMENT/versions.env
+            cp ../service/deploy/compose.yaml "environments/$ENVIRONMENT/services/$service.yaml"
+            awk -v name="$variable" -v line="$variable=$VERSION" '
+              $0 ~ "^" name "=" { print line; done = 1; next } { print }
+              END { if (!done) print line }' "$file" >"$file.next"
+            mv "$file.next" "$file"
+          }
+
+          # Another service may push in between: start again from the new main, never rebase.
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            write
+            if git diff --quiet; then
+              echo "$ENVIRONMENT already runs $service $VERSION"
+              exit 0
+            fi
+            git add -A environments
+            git commit --quiet -m "chore(deploy): $service $VERSION to $ENVIRONMENT"
+            if git push --quiet origin HEAD:main; then
+              exit 0
+            fi
+            echo "push attempt $attempt rejected; starting again from main"
+            sleep $((attempt * 3))
+          done
+          echo "::error::cadenway-ops main kept moving; deploy $service $VERSION again"
+          exit 1
+
+  production:
+    name: Production
+    needs: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Required reviewers on this environment are the production approval.
+    environment: production
+    # A newer deploy (release or rollback) replaces one still waiting for its approval, so a pending
+    # approval never blocks the next one.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - *service-checkout
+      - *app-token
+      - *ops-checkout
+      - name: Write the production definition and version
+        env:
+          ENVIRONMENT: prod
+          VERSION: ${{ inputs.version }}
+          REPOSITORY: ${{ github.event.repository.name }}
+        run: *write-version
