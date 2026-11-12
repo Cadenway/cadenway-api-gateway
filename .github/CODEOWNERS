@@ -1,16 +1,15 @@
 # Code owners of cadenway-api-gateway. The last matching pattern wins.
 #
-# The rules stay commented until the GitHub organization and its teams exist: replace <org> and the
-# team names, then uncomment them. An owner that does not exist makes GitHub report the file as
-# invalid.
+# Owners are the Cadenway maintainers team, which needs write access to this repository; GitHub
+# requests their review on every pull request that touches these paths.
 
-# * @<org>/maintainers
+* @Cadenway/maintainers
 
 # Routing, authorization and aggregates.
-# /src/ @<org>/maintainers
+/src/ @Cadenway/maintainers
 
 # Deployment definition and Traefik labels.
-# /deploy/ @<org>/maintainers
+/deploy/ @Cadenway/maintainers
 
 # CI, release and deploy workflows, templates and these rules.
-# /.github/ @<org>/maintainers
+/.github/ @Cadenway/maintainers
