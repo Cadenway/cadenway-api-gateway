@@ -1,5 +1,6 @@
-# Definition of api-gateway for Docker Compose. CI copies this file into
-# cadenway-ops/services/api-gateway.yaml on each release: keep it self-contained.
+# Definition of api-gateway for Docker Compose; keep it self-contained.
+# On each release the deploy workflow checks it and copies it into cadenway-ops, as
+# environments/<env>/services/api-gateway.yaml for the environment it deploys to.
 #
 # Exposed through Traefik on api.<domain>: it joins `edge` (what Traefik serves) and `internal` (the
 # services it calls). No port is published; Traefik reaches the container on the `edge` network.
@@ -13,10 +14,13 @@ services:
     networks:
       - edge
       - internal
+    # The environment in the router, service and network names keeps two stacks apart on one shared
+    # Traefik.
     labels:
-      traefik.enable: 'true'
-      traefik.http.routers.api-gateway.rule: Host(`api.${DOMAIN}`)
-      traefik.http.services.api-gateway.loadbalancer.server.port: '3000'
+      - traefik.enable=true
+      - traefik.docker.network=cadenway-edge-${ENVIRONMENT:-local}
+      - traefik.http.routers.api-gateway-${ENVIRONMENT:-local}.rule=Host(`api.${DOMAIN}`)
+      - traefik.http.services.api-gateway-${ENVIRONMENT:-local}.loadbalancer.server.port=3000
     healthcheck:
       test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health/ready']
       interval: 10s
@@ -30,5 +34,9 @@ services:
 
 # Declared identically by cadenway-ops and by every definition it includes.
 networks:
-  edge: {}
+  # One edge network per environment, created on the host by the edge Traefik (cadenway-ops
+  # compose/edge.yaml): staging and production containers never share a network.
+  edge:
+    name: cadenway-edge-${ENVIRONMENT:-local}
+    external: true
   internal: {}
