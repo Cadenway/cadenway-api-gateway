@@ -1,6 +1,6 @@
 {
   "name": "cadenway-api-gateway",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Cadenway API gateway: the only API the applications see (auth, scopes, routing, aggregates, rate limit).",
   "private": true,
   "license": "UNLICENSED",
