@@ -45,6 +45,8 @@ jobs:
 
   image:
     name: Docker image
+    # Pull requests only: on main, the release workflow builds the image it publishes.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
