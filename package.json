@@ -1,7 +1,7 @@
 {
-  "name": "waypoint-api-gateway",
+  "name": "cadenway-api-gateway",
   "version": "0.0.0",
-  "description": "Waypoint API gateway: the only API the applications see (auth, scopes, routing, aggregates, rate limit).",
+  "description": "Cadenway API gateway: the only API the applications see (auth, scopes, routing, aggregates, rate limit).",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

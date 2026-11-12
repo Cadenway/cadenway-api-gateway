@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "waypoint-api-gateway",
+      "package-name": "cadenway-api-gateway",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false
     }

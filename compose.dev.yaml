@@ -1,6 +1,6 @@
-# Dependencies of waypoint-api-gateway for working on it alone: Redis, for the rate-limit counters.
+# Dependencies of cadenway-api-gateway for working on it alone: Redis, for the rate-limit counters.
 # The gateway itself runs on the host with `pnpm start:dev`; the internal services are faked in tests.
-name: waypoint-api-gateway-dev
+name: cadenway-api-gateway-dev
 
 services:
   redis:

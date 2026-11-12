@@ -4,7 +4,7 @@ export const DEFAULT_PORT = 3000;
 /**
  * Start-up settings read from the environment.
  *
- * Bootstrap placeholder: the typed, validated configuration of `@waypoint/nest-common` replaces it
+ * Bootstrap placeholder: the typed, validated configuration of `@cadenway/nest-common` replaces it
  * once that package is published.
  */
 export interface AppConfig {

@@ -10,7 +10,7 @@ The following architecture is the target recorded in [AGENTS.md](../AGENTS.md). 
 
 ## Purpose and target structure
 
-waypoint-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
+cadenway-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
 
 | Aggregate       | Composed from                                                                                                            |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -34,9 +34,9 @@ Public routes without a session: a list's intake form, newsletter, contact form,
 - No database: Redis only, for rate-limit counters.
 - No domain decision: a rule that decides something belongs to the owning service.
 - Internal services are reached only through clients generated from `openapi/internal/`; never a hand-written URL.
-- Webhooks from GitHub and GitLab are relayed unchanged to waypoint-integration-service, which verifies their signature.
+- Webhooks from GitHub and GitLab are relayed unchanged to cadenway-integration-service, which verifies their signature.
 - No sibling sources imported, no `file:` or `link:` dependency.
 
 ## Cross-repository changes
 
-Each checkout owns its implementation and release. Use published `@waypoint/*` packages instead of sibling source imports or local dependency links. For contract changes, make the contract and generated package available first, then update the producing service, gateways and listeners, and finally the webapp. Each step should remain deployable independently.
+Each checkout owns its implementation and release. Use published `@cadenway/*` packages instead of sibling source imports or local dependency links. For contract changes, make the contract and generated package available first, then update the producing service, gateways and listeners, and finally the webapp. Each step should remain deployable independently.

@@ -1,7 +1,7 @@
 {
-  "name": "waypoint-api-gateway",
+  "name": "cadenway-api-gateway",
   "version": "0.1.0",
-  "description": "waypoint-api-gateway tooling: 14 wp-gw-* agents (public route, aggregate, auth, public-endpoint, internal client and rate-limit builders plus read-only contract, security, performance and architecture reviewers, plus a .github maintainer), 15 /wp-* commands, 10 path-scoped rules, 13 skills, and the guard, git-guard and format hooks. The plugin root is this .claude/ folder; the hooks only act inside a waypoint-api-gateway checkout.",
+  "description": "cadenway-api-gateway tooling: 14 cw-gw-* agents (public route, aggregate, auth, public-endpoint, internal client and rate-limit builders plus read-only contract, security, performance and architecture reviewers, plus a .github maintainer), 15 /cw-* commands, 10 path-scoped rules, 13 skills, and the guard, git-guard and format hooks. The plugin root is this .claude/ folder; the hooks only act inside a cadenway-api-gateway checkout.",
   "author": {
     "name": "Valentin FORTIN"
   }

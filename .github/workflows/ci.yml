@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      # Reads the @waypoint/* packages from GitHub Packages.
+      # Reads the @cadenway/* packages from GitHub Packages.
       packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +31,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           registry-url: https://npm.pkg.github.com
-          scope: '@waypoint'
+          scope: '@cadenway'
       - run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,7 +54,7 @@ jobs:
         with:
           persist-credentials: false
       # Builds without pushing: publishing belongs to the release workflow.
-      - run: docker build --tag waypoint-api-gateway:ci .
+      - run: docker build --tag cadenway-api-gateway:ci .
 
   conventions:
     name: Commit conventions
@@ -75,7 +75,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           registry-url: https://npm.pkg.github.com
-          scope: '@waypoint'
+          scope: '@cadenway'
       - run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,4 @@
-# waypoint-api-gateway: agent instructions
+# cadenway-api-gateway: agent instructions
 
 These instructions are mandatory for every AI assistant working in this repository, whatever the
 vendor. [CLAUDE.md](CLAUDE.md) imports them for Claude Code. Explicit user instructions take
@@ -9,8 +9,8 @@ and [Codex](.codex/README.md) for agents, skills, commands and hooks.
 
 ## First read
 
-- `../waypoint-api-contracts/openapi/public/` for the route you touch, and the internal spec of each service it calls.
-- The [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N), section "waypoint-api-gateway".
+- `../cadenway-api-contracts/openapi/public/` for the route you touch, and the internal spec of each service it calls.
+- The [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N), section "cadenway-api-gateway".
 - The `src/aggregates/` folder when the route composes several services.
 - `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
   versions elsewhere: a copy goes stale.
@@ -19,7 +19,7 @@ and [Codex](.codex/README.md) for agents, skills, commands and hooks.
 
 The structure and workflows below describe the bootstrap target. Check the checkout for available files and commands.
 
-waypoint-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
+cadenway-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
 
 | Aggregate       | Composed from                                                                                                            |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -52,12 +52,12 @@ Public routes without a session: a list's intake form, newsletter, contact form,
 - No database: Redis only, for rate-limit counters.
 - No domain decision: a rule that decides something belongs to the owning service.
 - Internal services are reached only through clients generated from `openapi/internal/`; never a hand-written URL.
-- Webhooks from GitHub and GitLab are relayed unchanged to waypoint-integration-service, which verifies their signature.
+- Webhooks from GitHub and GitLab are relayed unchanged to cadenway-integration-service, which verifies their signature.
 - No sibling sources imported, no `file:` or `link:` dependency.
 
 ## GitHub files (`.github/`)
 
-This repository carries everything GitHub reads from it; Waypoint has no organization `.github`
+This repository carries everything GitHub reads from it; Cadenway has no organization `.github`
 repository and nothing is inherited.
 
 - [`.github/README.md`](.github/README.md) is the repository home page; `CONTRIBUTING.md`,
@@ -90,11 +90,11 @@ run.
 
 - Trunk-based: work branches come from `main`, named `<type>/<lowercase-kebab-description>` with a
   type among `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
-  `revert`; put the Waypoint task id first when there is one (`feat/way-482-sso-screen`). Never an
+  `revert`; put the Cadenway task id first when there is one (`feat/cad-482-sso-screen`). Never an
   agent name as a prefix. Validate with `git check-ref-format --branch <name>`.
 - Commits and PR titles follow Conventional Commits: `type(scope): subject`, English, imperative,
   lowercase subject, no trailing period, at most 100 characters; `!` only for a breaking change.
-- Pull requests target `main` and are squash-merged after review and green CI. release-please opens the release pull request; its merge tags, publishes the image and lets the deploy workflow write the version into waypoint-ops.
+- Pull requests target `main` and are squash-merged after review and green CI. release-please opens the release pull request; its merge tags, publishes the image and lets the deploy workflow write the version into cadenway-ops.
 - Stage only the files of your task; preserve other people's changes in the working tree.
 
 ## Hard limits (never without the user's explicit request in this conversation)
@@ -103,11 +103,11 @@ run.
 - Never run a registry publish (`npm publish`, `pnpm publish`): this repository ships as a Docker image built by CI.
 - Never force-push, and never amend or rebase commits that are already pushed.
 - Never bypass the Git hooks (`--no-verify`, `core.hooksPath` overrides, `ALLOW_MAIN_PUSH=1`,
-  `WP_SKIP_PUSH_CHECKS=1`).
+  `CW_SKIP_PUSH_CHECKS=1`).
 - Never write a token, password or private key anywhere; `.npmrc` keeps `${NODE_AUTH_TOKEN}`. Do
   not read or write secret environment files; new variables are documented in `.env.example`.
 - Never edit generated trees (`dist/`, `node_modules/`, `coverage/`) or lockfiles by hand.
-- Never modify a sibling checkout (`../waypoint-*`) from a task in this repository.
+- Never modify a sibling checkout (`../cadenway-*`) from a task in this repository.
 
 The agent hooks enforce most of these mechanically; a refused command is a signal to stop and ask,
 not to find another way around it.
@@ -115,11 +115,11 @@ not to find another way around it.
 ## Agent tooling
 
 - **Claude Code**: [CLAUDE.md](CLAUDE.md) and [.claude/README.md](.claude/README.md): the
-  `wp-gw-*` agents, the `/wp-*` commands (`/wp-quality` runs the whole local gate),
+  `cw-gw-*` agents, the `/cw-*` commands (`/cw-quality` runs the whole local gate),
   path-scoped rules and hooks.
-- **Codex**: [.codex/README.md](.codex/README.md) covers the specialists, `$wp-*` skills, rules and hooks.
-- **Builders** (assigned writes): `wp-gw-route-builder`, `wp-gw-aggregate-builder`, `wp-gw-auth-builder`, `wp-gw-public-endpoint-builder`, `wp-gw-client-builder`, `wp-gw-rate-limit-maintainer`, `wp-gw-test-writer`, `wp-gw-deploy-maintainer`, `wp-gw-github-maintainer`.
-- **Reviewers** (read-only): `wp-gw-route-explorer`, `wp-gw-contract-reviewer`, `wp-gw-security-auditor`, `wp-gw-performance-reviewer`, `wp-gw-architecture-reviewer`.
+- **Codex**: [.codex/README.md](.codex/README.md) covers the specialists, `$cw-*` skills, rules and hooks.
+- **Builders** (assigned writes): `cw-gw-route-builder`, `cw-gw-aggregate-builder`, `cw-gw-auth-builder`, `cw-gw-public-endpoint-builder`, `cw-gw-client-builder`, `cw-gw-rate-limit-maintainer`, `cw-gw-test-writer`, `cw-gw-deploy-maintainer`, `cw-gw-github-maintainer`.
+- **Reviewers** (read-only): `cw-gw-route-explorer`, `cw-gw-contract-reviewer`, `cw-gw-security-auditor`, `cw-gw-performance-reviewer`, `cw-gw-architecture-reviewer`.
 - Specialists are available, not mandatory. Delegate a bounded responsibility with explicit files and
   checks, assign disjoint files to parallel agents and integrate their results yourself.
 

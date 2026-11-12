@@ -1,6 +1,6 @@
-# waypoint-api-gateway: Claude Code tooling
+# cadenway-api-gateway: Claude Code tooling
 
-This `.claude/` folder ships the Claude Code tooling of waypoint-api-gateway: **14 agents**,
+This `.claude/` folder ships the Claude Code tooling of cadenway-api-gateway: **14 agents**,
 15 slash commands, 10 rules, 13 skills, 3 hooks, the project
 settings and launch configuration. The application launch requires the planned package scripts.
 
@@ -27,11 +27,11 @@ Start from [AGENTS.md](../AGENTS.md) (the rules every assistant follows) and [CL
 Start from this checkout and attach the peers you need, for example:
 
 ```powershell
-claude --add-dir ../waypoint-api-contracts ../waypoint-service-kit ../waypoint-task-service
+claude --add-dir ../cadenway-api-contracts ../cadenway-service-kit ../cadenway-task-service
 ```
 
-Their `.claude/agents/` are discovered too, so their `wp-*` roles become available. Peer checkouts
-are **read-only** from a waypoint-api-gateway session (the guard refuses edits there): change them in their
+Their `.claude/agents/` are discovered too, so their `cw-*` roles become available. Peer checkouts
+are **read-only** from a cadenway-api-gateway session (the guard refuses edits there): change them in their
 own session and pull request.
 
 ## Agents
@@ -42,40 +42,40 @@ check that writes files. No agent delegates further.
 
 | Agent | Responsibility | Model | Effort | Mode |
 | --- | --- | --- | --- | --- |
-| `wp-gw-route-explorer` | Map a public route end to end. | sonnet | medium | Read-only |
-| `wp-gw-route-builder` | Implement a public route from openapi/public. | sonnet | high | Assigned writes |
-| `wp-gw-aggregate-builder` | Compose several services into one response. | opus | high | Assigned writes |
-| `wp-gw-auth-builder` | Token verification, scopes, organization context. | opus | xhigh | Assigned writes |
-| `wp-gw-public-endpoint-builder` | Routes without a session: forms, contact, webhooks. | sonnet | high | Assigned writes |
-| `wp-gw-client-builder` | Generated internal clients. | sonnet | medium | Assigned writes |
-| `wp-gw-rate-limit-maintainer` | Per-token limits in Redis. | sonnet | medium | Assigned writes |
-| `wp-gw-test-writer` | Route, aggregate and contract tests. | sonnet | high | Assigned writes |
-| `wp-gw-deploy-maintainer` | Dockerfile, deploy/compose.yaml, Traefik labels. | sonnet | medium | Assigned writes |
-| `wp-gw-contract-reviewer` | Public and internal contract fidelity. | opus | high | Read-only |
-| `wp-gw-security-auditor` | Auth, scopes, tenant isolation, public routes. | opus | xhigh | Read-only |
-| `wp-gw-performance-reviewer` | Fan-out, timeouts, payload size. | sonnet | high | Read-only |
-| `wp-gw-architecture-reviewer` | No logic, no data, contract-first. | opus | xhigh | Read-only |
-| `wp-gw-github-maintainer` | Workflows, templates and community files in .github/. | sonnet | medium | Assigned writes |
+| `cw-gw-route-explorer` | Map a public route end to end. | sonnet | medium | Read-only |
+| `cw-gw-route-builder` | Implement a public route from openapi/public. | sonnet | high | Assigned writes |
+| `cw-gw-aggregate-builder` | Compose several services into one response. | opus | high | Assigned writes |
+| `cw-gw-auth-builder` | Token verification, scopes, organization context. | opus | xhigh | Assigned writes |
+| `cw-gw-public-endpoint-builder` | Routes without a session: forms, contact, webhooks. | sonnet | high | Assigned writes |
+| `cw-gw-client-builder` | Generated internal clients. | sonnet | medium | Assigned writes |
+| `cw-gw-rate-limit-maintainer` | Per-token limits in Redis. | sonnet | medium | Assigned writes |
+| `cw-gw-test-writer` | Route, aggregate and contract tests. | sonnet | high | Assigned writes |
+| `cw-gw-deploy-maintainer` | Dockerfile, deploy/compose.yaml, Traefik labels. | sonnet | medium | Assigned writes |
+| `cw-gw-contract-reviewer` | Public and internal contract fidelity. | opus | high | Read-only |
+| `cw-gw-security-auditor` | Auth, scopes, tenant isolation, public routes. | opus | xhigh | Read-only |
+| `cw-gw-performance-reviewer` | Fan-out, timeouts, payload size. | sonnet | high | Read-only |
+| `cw-gw-architecture-reviewer` | No logic, no data, contract-first. | opus | xhigh | Read-only |
+| `cw-gw-github-maintainer` | Workflows, templates and community files in .github/. | sonnet | medium | Assigned writes |
 
 ## Commands
 
 | Command | What it does | Runs |
 | --- | --- | --- |
-| `/wp-explore` | Trace a public route end to end. | `wp-gw-route-explorer` |
-| `/wp-route` | Implement a public route from openapi/public. | `wp-gw-route-builder` |
-| `/wp-aggregate` | Build or change an aggregate across services. | `wp-gw-aggregate-builder` |
-| `/wp-auth` | Change token verification, scopes or organization context. | `wp-gw-auth-builder` |
-| `/wp-public` | Build a route without a session (forms, contact, webhooks). | `wp-gw-public-endpoint-builder` |
-| `/wp-client` | Add or regenerate an internal service client. | `wp-gw-client-builder` |
-| `/wp-rate-limit` | Change rate limits. | `wp-gw-rate-limit-maintainer` |
-| `/wp-tests` | Write route, aggregate or contract tests. | `wp-gw-test-writer` |
-| `/wp-deploy` | Change deployment files or Traefik labels. | `wp-gw-deploy-maintainer` |
-| `/wp-contract-review` | Check routes against the contracts. | `wp-gw-contract-reviewer` |
-| `/wp-security-review` | Audit auth, scopes and public routes. | `wp-gw-security-auditor` |
-| `/wp-perf-review` | Review fan-out and timeouts. | `wp-gw-performance-reviewer` |
-| `/wp-arch-review` | Review boundaries of the current change. | `wp-gw-architecture-reviewer` |
-| `/wp-github` | Change workflows, templates or community files in .github/. | `wp-gw-github-maintainer` |
-| `/wp-quality` | Run the local quality gate, stopping at the first failure. | runs the commands itself |
+| `/cw-explore` | Trace a public route end to end. | `cw-gw-route-explorer` |
+| `/cw-route` | Implement a public route from openapi/public. | `cw-gw-route-builder` |
+| `/cw-aggregate` | Build or change an aggregate across services. | `cw-gw-aggregate-builder` |
+| `/cw-auth` | Change token verification, scopes or organization context. | `cw-gw-auth-builder` |
+| `/cw-public` | Build a route without a session (forms, contact, webhooks). | `cw-gw-public-endpoint-builder` |
+| `/cw-client` | Add or regenerate an internal service client. | `cw-gw-client-builder` |
+| `/cw-rate-limit` | Change rate limits. | `cw-gw-rate-limit-maintainer` |
+| `/cw-tests` | Write route, aggregate or contract tests. | `cw-gw-test-writer` |
+| `/cw-deploy` | Change deployment files or Traefik labels. | `cw-gw-deploy-maintainer` |
+| `/cw-contract-review` | Check routes against the contracts. | `cw-gw-contract-reviewer` |
+| `/cw-security-review` | Audit auth, scopes and public routes. | `cw-gw-security-auditor` |
+| `/cw-perf-review` | Review fan-out and timeouts. | `cw-gw-performance-reviewer` |
+| `/cw-arch-review` | Review boundaries of the current change. | `cw-gw-architecture-reviewer` |
+| `/cw-github` | Change workflows, templates or community files in .github/. | `cw-gw-github-maintainer` |
+| `/cw-quality` | Run the local quality gate, stopping at the first failure. | runs the commands itself |
 
 ## Rules
 
@@ -98,9 +98,9 @@ See [skills/](skills/) for the complete inventory, including the technology guid
 
 | Skill | Use |
 | --- | --- |
-| `wp-context` | What Waypoint is, where the mockup, the integration guide and the repository map live, the product vocabulary (spaces, lists, sprints, tasks, statuses, milestones) and the multi-repository ownership rules. |
-| `wp-gateway-patterns` | How waypoint-api-gateway routes, aggregates and degrades: contract-first public routes, generated internal clients, parallel calls with timeouts, partial responses, error translation. |
-| `wp-auth-tokens` | The token types the gateway accepts (session, personal API token), how the organization context and scopes are derived, and the internal token forwarded to services. |
+| `cw-context` | What Cadenway is, where the mockup, the integration guide and the repository map live, the product vocabulary (spaces, lists, sprints, tasks, statuses, milestones) and the multi-repository ownership rules. |
+| `cw-gateway-patterns` | How cadenway-api-gateway routes, aggregates and degrades: contract-first public routes, generated internal clients, parallel calls with timeouts, partial responses, error translation. |
+| `cw-auth-tokens` | The token types the gateway accepts (session, personal API token), how the organization context and scopes are derived, and the internal token forwarded to services. |
 
 ## Hooks
 

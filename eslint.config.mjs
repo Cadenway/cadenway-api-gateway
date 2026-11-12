@@ -36,8 +36,8 @@ export default defineConfig(
         {
           patterns: [
             {
-              regex: '\\.\\./waypoint-',
-              message: 'Never import sibling sources: use the published @waypoint/* packages.',
+              regex: '\\.\\./cadenway-',
+              message: 'Never import sibling sources: use the published @cadenway/* packages.',
             },
           ],
         },
