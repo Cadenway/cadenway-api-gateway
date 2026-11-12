@@ -74,8 +74,22 @@ jobs:
               and ($s.deploy.resources // {} | only(["limits"]))
               and ($s.networks // {} | only(["edge", "internal"]))
               and ($s.labels // {} | keys | all(startswith("traefik.")))
+              # A subdomain of the environment, or the domain itself with its www.
               and ($s.labels // {} | to_entries | map(select(.key | endswith(".rule")))
-                | all(.value | test("^Host\\(`(app|www|api|realtime)\\.domain\\.invalid`\\)$")))
+                | all(.value | test("^Host\\(`(app|www|api|realtime)\\.domain\\.invalid`\\)$")
+                  or . == "Host(`domain.invalid`) || Host(`www.domain.invalid`)"))
+              # Middlewares: only the redirect from www. to the same domain.
+              and ($s.labels // {} | to_entries
+                | map(select(.key | startswith("traefik.http.middlewares.")))
+                | all((.key | test("^traefik\\.http\\.middlewares\\.[a-z0-9-]+\\.redirectregex\\.(regex|replacement|permanent)$"))
+                  and (if (.key | endswith(".regex")) then .value == "^https?://www\\.(.+)"
+                    # Compose keeps the escaped $$ of the definition in its JSON output.
+                    elif (.key | endswith(".replacement")) then .value == "https://$${1}"
+                    else .value == "true" end)))
+              and (($s.labels // {} | keys
+                  | map(capture("^traefik\\.http\\.middlewares\\.(?<name>[a-z0-9-]+)\\.").name)) as $defined
+                | $s.labels // {} | to_entries | map(select(.key | endswith(".middlewares")))
+                | all(.value | split(",") | all(. as $m | $defined | index($m))))
               and ($s.labels["traefik.docker.network"] // "cadenway-edge-env") == "cadenway-edge-env")
             and (.networks // {} | only(["edge", "internal"]))
             and (.networks.edge == null or (.networks.edge.external == true
