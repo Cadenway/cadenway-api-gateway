@@ -9,6 +9,29 @@ const explicitExports = {
   message: 'Use explicit named exports: a barrel hides what a module exposes.',
 };
 
+// Packages the dependency review rejected, with what replaces each one. A sub-path import is
+// refused too.
+const rejectedPackages = [
+  [
+    '@nestjs/schedule',
+    'No durability: durable jobs belong to a service, through @cadenway/nest-jobs.',
+  ],
+  ['@nestjs/throttler', 'Rate limiting uses rate-limiter-flexible with the Redis counters.'],
+  [
+    '@opentelemetry/instrumentation-nestjs-core',
+    'No NestJS 12 support: spans come from the interceptor of @cadenway/nest-common.',
+  ],
+  [
+    '@opentelemetry/instrumentation-router',
+    'Duplicate spans under Express 5: tracing comes from @cadenway/nest-common.',
+  ],
+  ['axios', 'Use the native fetch, through the clients generated from the contracts.'],
+  ['bullmq', 'Durable jobs use pg-boss through @cadenway/nest-jobs, in the owning service.'],
+  ['cloudevents', 'The contracts already define the event envelope.'],
+  ['date-fns', 'It does not separate a plain date from an instant: dates use Temporal.'],
+  ['prom-client', 'Metrics are exported over OTLP by @cadenway/nest-common.'],
+].map(([name, message]) => ({ regex: `^${name}(/|$)`, message }));
+
 export default defineConfig(
   globalIgnores(['dist/', 'coverage/', 'docs/', '.claude/', '.codex/']),
   eslint.configs.recommended,
@@ -26,6 +49,7 @@ export default defineConfig(
       // NestJS modules are classes that only carry a decorator.
       '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }],
       'no-restricted-syntax': ['error', explicitExports],
+      'no-restricted-imports': ['error', { patterns: rejectedPackages }],
     },
   },
   {
@@ -39,6 +63,7 @@ export default defineConfig(
               regex: '\\.\\./cadenway-',
               message: 'Never import sibling sources: use the published @cadenway/* packages.',
             },
+            ...rejectedPackages,
           ],
         },
       ],
