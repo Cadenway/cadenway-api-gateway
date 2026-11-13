@@ -4,9 +4,19 @@
 # Renovate applies too), and a package whose trust evidence (provenance, trusted publisher) is weaker
 # than in an earlier version is refused.
 minimumReleaseAge: 2880
+# Cadenway packages are exempt: they are taken as soon as they are published, as Renovate does.
+minimumReleaseAgeExclude:
+  - '@cadenway/*'
 trustPolicy: no-downgrade
 
 # Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
 # esbuild ships its binary as an optional dependency, so its postinstall is not needed.
 allowBuilds:
   esbuild: false
+  # Optional native accelerators of `ssh2`, pulled by `testcontainers` through
+  # `@cadenway/nest-testing`. The JavaScript fallback is enough to reach the Docker socket.
+  cpu-features: false
+  # Pulled by the gRPC exporters of the OpenTelemetry SDK, through `@cadenway/nest-common`. Its
+  # script only prints a warning when several copies are installed.
+  protobufjs: false
+  ssh2: false
