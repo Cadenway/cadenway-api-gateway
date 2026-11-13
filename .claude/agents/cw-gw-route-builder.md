@@ -47,6 +47,7 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 | --- | --- |
 | `cw-gateway-patterns` | always |
 | `cw-auth-tokens` | when the route needs scopes |
+| `cw-logging-and-tracing` | when the change logs, traces or measures something |
 
 ## Procedure
 
