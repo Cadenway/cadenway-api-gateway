@@ -16,6 +16,11 @@
       "minimumReleaseAge": null
     },
     {
+      "description": "@angular/aria peers on an exact @angular/cdk version: the two move together.",
+      "matchPackageNames": ["@angular/cdk", "@angular/aria"],
+      "groupName": "angular cdk and aria"
+    },
+    {
       "description": "TypeScript stays on 6.0 until the Nest CLI and typescript-eslint accept a newer line.",
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<6.1.0"
