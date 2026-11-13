@@ -9,7 +9,11 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
 FROM base AS build
+# The @cadenway/* packages are private, and pnpm ignores a token written in the project .npmrc.
+# The install steps therefore mount a user-level npmrc as a build secret: it exists for that step
+# only and reaches no layer. Build with `docker build --secret id=npmrc,env=NPMRC .`.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
     pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
@@ -17,6 +21,7 @@ RUN pnpm build
 
 FROM base AS prod-deps
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
     pnpm install --prod --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 
 FROM node:24.22.3-alpine3.24@sha256:98e4e60b35fd50143e1838da2957488c25aa3a3efbd48bb679923f77d6d3d873 AS runtime

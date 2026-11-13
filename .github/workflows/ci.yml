@@ -51,12 +51,17 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # Lets the build read the @cadenway/* packages from GitHub Packages.
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # Builds without pushing: publishing belongs to the release workflow.
-      - run: docker build --tag cadenway-api-gateway:ci .
+      - run: docker build --secret id=npmrc,env=NPMRC --tag cadenway-api-gateway:ci .
+        env:
+          # A user-level npmrc, mounted by the install steps only: the token reaches no layer.
+          NPMRC: '//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}'
 
   tooling:
     name: Agent tooling copies
