@@ -15,3 +15,4 @@ paths:
 - Every variable is in `.env.example` with a working local value; secret values live in cadenway-ops (SOPS).
 - Healthcheck on `/health/ready`; explicit memory limit; non-root user; pinned base image.
 - Local port: 3000.
+- The private `@cadenway/*` packages reach the image build through the `npmrc` build secret, mounted by the install steps only: never an `ARG`, an `ENV` or a copied file.
