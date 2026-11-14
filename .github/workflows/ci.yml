@@ -38,6 +38,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm test:architecture
       - run: pnpm test:coverage
       - run: pnpm test:integration
       - run: pnpm build
