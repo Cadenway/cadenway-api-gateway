@@ -40,6 +40,8 @@ Public routes without a session: a list's intake form, newsletter, contact form,
 
 ## Architectural ownership
 
+See the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for dependency and test rules.
+
 - `src/auth/`: token verification, scopes, organization context.
 - `src/rate-limit/`: per-token counters in Redis.
 - `src/routes/<resource>/`: one folder per public resource.

@@ -4,9 +4,7 @@
 
 ## Status
 
-At the time this documentation was written, this checkout has no `package.json`, application source tree, or GitHub workflow files. The target architecture, scripts, and workflows in this guide must be created and verified during bootstrap.
-
-The following architecture is the target recorded in [AGENTS.md](../AGENTS.md). Paths and integrations are design boundaries, not evidence that files or services already exist.
+The checkout contains a NestJS bootstrap and health endpoints. The following ownership map governs gateway capabilities as they are implemented.
 
 ## Purpose and target structure
 
@@ -21,6 +19,8 @@ cadenway-api-gateway is the only API the applications and third-party integratio
 Public routes without a session: a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
 ## Architectural ownership
+
+Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for ports, adapters, dependency direction, naming and test placement.
 
 - `src/auth/`: token verification, scopes, organization context.
 - `src/rate-limit/`: per-token counters in Redis.
@@ -40,3 +40,7 @@ Public routes without a session: a list's intake form, newsletter, contact form,
 ## Cross-repository changes
 
 Each checkout owns its implementation and release. Use published `@cadenway/*` packages instead of sibling source imports or local dependency links. For contract changes, make the contract and generated package available first, then update the producing service, gateways and listeners, and finally the webapp. Each step should remain deployable independently.
+
+## Architecture checks
+
+`pnpm test:architecture` runs the gateway profile against this repository's TypeScript configuration. It requires a published release of [`@cadenway/nest-testing`](https://github.com/Cadenway/cadenway-tooling) that exports `/architecture`. Once that release is available and this repository's GitHub Actions has package read access, update the development dependency and frozen lockfile and run the script as part of `pnpm quality` and pull request CI.
