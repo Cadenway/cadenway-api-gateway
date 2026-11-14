@@ -45,3 +45,14 @@ Every error leaves as `application/problem+json` (RFC 9457): `type`, `title`, `s
 - The response carries `X-Request-Id`, the reference the webapp displays.
 - The error filter comes from `@cadenway/nest-common`; an internal problem document is translated to
   the public contract, never forwarded.
+
+## Decided, not built yet
+
+- API usage for the billing meter is published periodically as `api-usage.recorded`, through the
+  main entry point of `@cadenway/nest-messaging` and without an outbox: this gateway has no
+  database. The event starts in cadenway-api-contracts.
+- `POST /v1/realtime/tickets` issues the single-use ticket of the realtime handshake;
+  cadenway-identity-service stores it hashed and the realtime gateway redeems it there. The route
+  starts in cadenway-api-contracts.
+- `Idempotency-Key` is forwarded unchanged: the owning service stores the key and replays the
+  response.

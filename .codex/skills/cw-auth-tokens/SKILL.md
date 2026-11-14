@@ -9,7 +9,7 @@ description: "The token types the gateway accepts (session, personal API token),
 | --- | --- | --- | --- |
 | Session | identity-service (or the chosen identity provider) | user, organization, member role | webapp |
 | Personal API token | identity-service | user, organization, scopes | integrations, scripts |
-| Internal token | this gateway, short-lived | user, organization, member role, scopes, trace id | calls to services |
+| Internal token | the caller, short-lived: this gateway for the calls it makes | user, organization, member role, scopes, trace id | calls to services |
 
 - A session token switches organization only through the explicit organization-selection flow.
 - Scopes are checked per route; a session token has every scope its member role allows.
@@ -39,3 +39,9 @@ description: "The token types the gateway accepts (session, personal API token),
   `kid` header.
 - It carries the user, organization, member role, scopes and trace id of the table.
 - Signing and verification come from `@cadenway/nest-common`.
+- This gateway signs the token of the calls it makes. The realtime gateway,
+  cadenway-automation-service and cadenway-integration-service sign the token of their own
+  calls, each with its own key: a service verifies against the issuers and keys of its
+  configuration.
+- A route without a user or an organization (sign-up, sign-in, introspection, intake form,
+  webhooks) carries a token with an anonymous subject.

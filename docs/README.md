@@ -4,7 +4,7 @@ Planned role: cadenway-api-gateway is the only API the applications and third-pa
 
 ## Current status
 
-At the time this documentation was written, this checkout has no `package.json`, application source tree, or GitHub workflow files. The target architecture, scripts, and workflows in this guide must be created and verified during bootstrap.
+This checkout is a bootstrapped scaffold: `package.json`, a NestJS application under `src/` that only answers the health routes, and the GitHub workflows exist. No business code, route, event or migration exists yet; the target architecture in this guide is what they must follow.
 
 ## Read the guides
 

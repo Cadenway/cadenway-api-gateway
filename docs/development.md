@@ -4,7 +4,7 @@
 
 ## Bootstrap status
 
-At the time this documentation was written, this checkout has no `package.json`, application source tree, or GitHub workflow files. The target architecture, scripts, and workflows in this guide must be created and verified during bootstrap.
+This checkout is a bootstrapped scaffold: `package.json`, a NestJS application under `src/` that only answers the health routes, and the GitHub workflows exist. No business code, route, event or migration exists yet; the target architecture in this guide is what they must follow.
 
 The commands below are the documented **target workflow**, copied from the repository overview and instructions. They are not proof that scripts, infrastructure, CI, or dependencies currently exist. Inspect the repository's actual manifests and files before running them, and report unavailable checks rather than inventing replacements. Run Git, pnpm, build, and test commands with this repository as the working directory, never from the parent workspace.
 
