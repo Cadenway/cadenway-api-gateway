@@ -7,6 +7,9 @@ paths:
 
 - Generated from `openapi/internal/<service>.yaml` of the installed contracts; generated files are
   never edited by hand.
+- Generation runs in this repository (`pnpm generate:clients`, orval with the `fetch` client) from
+  the spec files shipped in `@cadenway/contracts`. Neither the script nor the shipped specs exist
+  yet: both arrive with the first internal contract.
 - Default timeout, retries only for idempotent calls, the internal token on every call.
 - Base URLs from environment variables named `<SERVICE>_URL`, documented in `.env.example`.
 - The route budget travels as a deadline: a call gets the time left, 2 seconds at most.
