@@ -1,12 +1,8 @@
 # pnpm settings for this repository. Registry and auth lines stay in .npmrc.
 
-# Supply chain: a version becomes installable two days after its release (2880 minutes, the delay
-# Renovate applies too), and a package whose trust evidence (provenance, trusted publisher) is weaker
-# than in an earlier version is refused.
-minimumReleaseAge: 2880
-# Cadenway packages are exempt: they are taken as soon as they are published, as Renovate does.
-minimumReleaseAgeExclude:
-  - '@cadenway/*'
+# Disable pnpm's default release-age delay.
+minimumReleaseAge: 0
+# Refuse a package version with weaker trust evidence than an earlier release.
 trustPolicy: no-downgrade
 
 # Install scripts are reviewed one by one: pnpm refuses an install that would skip an unlisted one.
