@@ -170,8 +170,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
       '@cadenway/nest-common':
-        specifier: ^0.1.1
-        version: 0.1.1(@grpc/grpc-js@1.14.7)(@grpc/proto-loader@0.8.1)(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)(zod@4.6.7)
+        specifier: ^0.1.2
+        version: 0.1.2(@grpc/grpc-js@1.14.7)(@grpc/proto-loader@0.8.1)(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)(zod@4.6.7)
       '@nestjs/common':
         specifier: ^12.4.2
         version: 12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -336,8 +336,8 @@ packages:
   '@cadenway/contracts@0.1.0':
     resolution: {integrity: sha512-w/ntFG663MlZVr5TI8rxQTeyzt9d9DrXx1rKbPPrwaWG+U5+5cGGs7IG/7W5yjICaIM6H7H1JLKbTGWEPwvjeQ==, tarball: https://npm.pkg.github.com/download/@cadenway/contracts/0.1.0/c8181036cf6e184b51e4b01c9c5f71ab2f35c922}
 
-  '@cadenway/nest-common@0.1.1':
-    resolution: {integrity: sha512-72Oo4sxqNHS7/uxogyGc1T/XGEZccAGfk26u+Byk5mYH+0I7MFx3ToEDCRTrv3QAnhmQuHKJLm7fL0aYVJ32UQ==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-common/0.1.1/056037686607110a6f91041fbacf877fe7847b72}
+  '@cadenway/nest-common@0.1.2':
+    resolution: {integrity: sha512-BvILJEDxQcyGXQbt09ze/7b+WaJRVHWN8XQ42Lei8H1a6f/hM86GqVFXQKe9jiKjUOPHiM0b3w+ahfAx3MIybA==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-common/0.1.2/f01e30b304dbfb727aac0ca31ffdcfd013b2e4b2}
     peerDependencies:
       '@nestjs/common': ^12.4.2
       '@nestjs/core': ^12.4.2
@@ -3601,7 +3601,7 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
-  '@cadenway/nest-common@0.1.1(@grpc/grpc-js@1.14.7)(@grpc/proto-loader@0.8.1)(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)(zod@4.6.7)':
+  '@cadenway/nest-common@0.1.2(@grpc/grpc-js@1.14.7)(@grpc/proto-loader@0.8.1)(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(reflect-metadata@0.2.2)(rxjs@7.8.2)(zod@4.6.7)':
     dependencies:
       '@nestjs/common': 12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
       '@nestjs/core': 12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.4.2)(reflect-metadata@0.2.2)(rxjs@7.8.2)
