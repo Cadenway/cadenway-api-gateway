@@ -62,6 +62,7 @@ The following commands match the planned local gate. Run `/cw-quality` in Claude
 pnpm format:check
 pnpm lint
 pnpm typecheck
+pnpm test:architecture
 pnpm test:coverage
 pnpm test:integration                    # Redis in Docker, internal services faked
 pnpm build

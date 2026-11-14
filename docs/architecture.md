@@ -43,4 +43,4 @@ Each checkout owns its implementation and release. Use published `@cadenway/*` p
 
 ## Architecture checks
 
-`pnpm test:architecture` runs the gateway profile against this repository's TypeScript configuration. It requires a published release of [`@cadenway/nest-testing`](https://github.com/Cadenway/cadenway-tooling) that exports `/architecture`. Once that release is available and this repository's GitHub Actions has package read access, update the development dependency and frozen lockfile and run the script as part of `pnpm quality` and pull request CI.
+`pnpm test:architecture` runs the gateway profile from [`@cadenway/nest-testing`](https://github.com/Cadenway/cadenway-tooling) against this repository's TypeScript configuration. It runs locally as part of `pnpm quality` and in the GitHub Actions quality gate.

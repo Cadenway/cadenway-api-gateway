@@ -207,8 +207,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@cadenway/nest-testing':
-        specifier: ^0.0.1
-        version: 0.0.1(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(typescript@6.0.3)(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)
+        specifier: 0.1.0
+        version: 0.1.0(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)
       '@commitlint/cli':
         specifier: ^21.2.4
         version: 21.2.4(conventional-commits-parser@7.1.4)(typescript@6.0.3)
@@ -353,8 +353,8 @@ packages:
       pg: ^8.23.1
       zod: ^4.6.0
 
-  '@cadenway/nest-testing@0.0.1':
-    resolution: {integrity: sha512-bauxoKSbkt4RyVwv3uZEJPneOZiJAwST1p4Or4YEpxNEsMUWC0mX9t3Wh3wwO2RuSCZeeELHj9VjWiT3kRLMkA==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-testing/0.0.1/0059722d22b51141216ca8d69bd211a8486b800c}
+  '@cadenway/nest-testing@0.1.0':
+    resolution: {integrity: sha512-92ZDqBp96jdo/xaYshZxSMBkV2IoGZM8W5wgbyJ2weDfrDVnUuKVOkspWyptBzK74QKZPeq6xdsEnTw1FFAuag==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-testing/0.1.0/bd10047f232f2f22d93e9344b7894345359887bb}
     peerDependencies:
       '@cadenway/nest-messaging': ^0.0.1
       '@nestjs/testing': ^12.4.2
@@ -3571,7 +3571,7 @@ snapshots:
       pg: 8.23.1
       zod: 4.6.7
 
-  '@cadenway/nest-testing@0.0.1(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(typescript@6.0.3)(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)':
+  '@cadenway/nest-testing@0.1.0(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)':
     dependencies:
       '@cadenway/nest-messaging': 0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7)
       '@nestjs/testing': 12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2)
@@ -3583,6 +3583,7 @@ snapshots:
       pg: 8.23.1
       supertest: 7.3.2
       testcontainers: 12.2.1(bare-buffer@3.7.1)
+      typescript: 6.0.3
       vitest: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@vitest/coverage-v8@5.1.0)(msw@3.0.5(@types/node@24.19.2)(typescript@6.0.3)(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1)))(vite@8.3.7(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
     transitivePeerDependencies:
       - '@types/node'
@@ -3591,7 +3592,6 @@ snapshots:
       - graphql
       - react-native-b4a
       - supports-color
-      - typescript
       - vite
 
   '@colors/colors@1.5.0':
