@@ -16,12 +16,13 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "test:lint": "node --test rules/documentation.test.mjs",
     "test:architecture": "node --test tests/architecture/project.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --project unit",
     "test:coverage": "vitest run --project unit --coverage",
     "test:integration": "vitest run --project integration --passWithNoTests",
-    "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:architecture && pnpm test:coverage && pnpm build"
+    "quality": "pnpm format:check && pnpm test:lint && pnpm lint && pnpm typecheck && pnpm test:architecture && pnpm test:coverage && pnpm build"
   },
   "dependencies": {
     "@cadenway/contracts": "^0.1.0",
@@ -53,6 +54,7 @@
     "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^65.4.5",
     "globals": "^17.14.0",
     "pino-pretty": "^13.2.0",
     "prettier": "^3.9.10",

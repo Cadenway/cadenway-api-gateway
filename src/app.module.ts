@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 import { HealthController } from './health/health.controller.js';
 
 /**
+ * Class AppModule
+ *
+ * @description
  * Root module of the gateway.
  *
  * The modules of `src/auth/`, `src/rate-limit/`, `src/routes/`, `src/aggregates/`, `src/public/` and
