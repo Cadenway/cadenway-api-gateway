@@ -4,19 +4,21 @@
 
 ## Status
 
-The checkout contains the runtime wiring below and no capability yet. The ownership map that
-follows governs gateway capabilities as they are implemented.
+The checkout contains the runtime wiring below and the first capability, the routes of
+`openapi/public/auth.yaml` with the session guard and the client of identity-service (phase P2a of
+the integration plan). The ownership map that follows governs gateway capabilities as they are
+implemented.
 
 ## Runtime wiring
 
-| File                         | Holds                                                                                                                                                                                                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/telemetry.ts`           | `startTelemetry` of `@cadenway/nest-common/telemetry`, preloaded by the start command before `main.js`                                                                                                                                                       |
-| `src/main.ts`                | Inside `runApplication`: validates the environment, creates the application, listens on `PORT`; a failed start-up is one JSON line on the standard error and exit code 1                                                                                     |
-| `src/gateway-application.ts` | `createApplication` with the options of a public gateway (signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
-| `src/app.module.ts`          | `ConfigModule` (validated when the application is created), the rate-limit module and `HealthModule` with the Redis indicator and the shutdown delay                                                                                                         |
-| `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                            |
-| `src/rate-limit/`            | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes with the first authenticated routes                                                                                   |
+| File                         | Holds                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/telemetry.ts`           | `startTelemetry` of `@cadenway/nest-common/telemetry`, preloaded by the start command before `main.js`                                                                                                                                                                                                         |
+| `src/main.ts`                | Inside `runApplication`: validates the environment once, creates the application, listens on `PORT`; a failed start-up is one JSON line on the standard error and exit code 1                                                                                                                                  |
+| `src/gateway-application.ts` | `createApplication` with the options of a public gateway (the validated configuration provided as `CONFIG`, signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
+| `src/app.module.ts`          | The clients module, the rate-limit module, `HealthModule` with the Redis indicator and the shutdown delay, and the route modules                                                                                                                                                                               |
+| `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                                                                              |
+| `src/rate-limit/`            | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes in phase P2b                                                                                                                                                            |
 
 Start command, in the `Dockerfile` and `pnpm start:dev`:
 
@@ -34,6 +36,22 @@ it gets `NATS_URL`, `NATS_USER: api-gateway` and `NATS_PASSWORD` once it publish
 event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 `@cadenway/nest-messaging` without an outbox.
 
+## Authentication
+
+| File                                     | Holds                                                                                                                                                                    |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/clients/generated/`                 | The client orval generates from `specs/openapi/internal/identity-service.yaml` of the installed `@cadenway/contracts` (`pnpm generate:clients`); committed, never edited |
+| `src/clients/identity-service.client.ts` | The outgoing adapter of identity-service: the generated functions on an `InternalHttpClient`, the actor of each call, every answer checked against the contract          |
+| `src/clients/clients.module.ts`          | Global: one `InternalHttpClient` per called service, bound to the ports of the guards and routes                                                                         |
+| `src/auth/`                              | `SessionGuard` (introspection on every request, organization context), `CsrfGuard` and the cross-site check, the session cookie, the `SessionIntrospector` port          |
+| `src/problems/`                          | The French titles of the public problems, the translation of internal errors, `Retry-After`                                                                              |
+| `src/routes/auth/`                       | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                |
+| `src/routes/me/`                         | `GET /v1/me` and its `IdentityUsers` port                                                                                                                                |
+
+A guard or a controller never imports `src/clients/`: it injects the port it defines, which
+`ClientsModule` binds to the client (the architecture check refuses the import). The route tests
+provide the same tokens with a fake.
+
 ## Purpose and target structure
 
 cadenway-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
@@ -44,7 +62,7 @@ cadenway-api-gateway is the only API the applications and third-party integratio
 | Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
 | Command palette | search-service                                                                                                           |
 
-Public routes without a session: a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
+Public routes without a session: the sign-up and sign-in flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
 ## Architectural ownership
 
@@ -52,9 +70,10 @@ Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/
 
 - `src/auth/`: token verification, scopes, organization context.
 - `src/rate-limit/`: per-token counters in Redis.
-- `src/routes/<resource>/`: one folder per public resource.
+- `src/routes/<resource>/`: one folder per public resource, the authentication included (`auth/`, `me/`).
 - `src/aggregates/`: compositions across services.
-- `src/public/`: routes without a session.
+- `src/public/`: the other routes without a session (intake form, newsletter, contact form, webhooks).
+- `src/problems/`: translation of internal errors to the public problems, and the French titles the gateway owns.
 - `src/clients/`: clients generated from the internal specs, one per service.
 
 ## Boundaries

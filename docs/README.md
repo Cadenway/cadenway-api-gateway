@@ -7,10 +7,12 @@ Planned role: cadenway-api-gateway is the only API the applications and third-pa
 The gateway runs on the shared runtime of `@cadenway/nest-common`: validated configuration, JSON
 logs, OpenTelemetry, `application/problem+json` errors, the request deadline, the internal token
 signer, the public-edge HTTP settings (security headers, cookies, one trusted proxy hop, CORS for
-the allowed origins) and the health routes, whose readiness checks Redis. No public route, internal
-client, authentication or rate limiter exists yet: they arrive with the first public contracts
-(`openapi/public/auth.yaml` of cadenway-api-contracts). Nor does the broker connection, which comes
-with the usage event in phase P5. The target architecture in this guide is what they must follow.
+the allowed origins) and the health routes, whose readiness checks Redis. It serves the nine routes
+of `openapi/public/auth.yaml` (sign-up, sign-in by password or by email code, sign-out,
+`GET /v1/me`) through the client of identity-service generated from its internal contract, and
+authenticates the session cookie by introspecting it on every request (phase P2a of the
+integration plan). The rate limiter comes in phase P2b, the broker connection with the usage event
+in phase P5. The target architecture in this guide is what the rest must follow.
 
 ## Read the guides
 

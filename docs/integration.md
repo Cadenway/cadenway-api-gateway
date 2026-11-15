@@ -4,11 +4,59 @@
 
 **Status:** This page records the design from repository instructions and skills. The public edge,
 the logs and the telemetry start-up are implemented and covered by `test/gateway.int-spec.ts`; the
-routes, the authentication, the internal clients and the rate limit are not built yet.
+routes of `openapi/public/auth.yaml`, the session guard and the client of identity-service are
+implemented (see [Authentication routes](#authentication-routes)) and covered by the route tests and
+`test/auth.int-spec.ts`; API tokens, scopes and the rate limit are not built yet.
 
 ## Public and internal boundaries
 
 The public route contract is owned by `cadenway-api-contracts`; internal service calls use generated clients. Public unauthenticated routes and aggregate composition are listed in [AGENTS.md](../AGENTS.md). The gateway does not own domain decisions or another service's database.
+
+## Authentication routes
+
+The nine routes of `openapi/public/auth.yaml` (version 1.0.0, `@cadenway/contracts` 0.3.0), each
+mapped to its internal route of `openapi/internal/identity-service.yaml`:
+
+| Public route                              | Guards                         | Internal call, actor                                            |
+| ----------------------------------------- | ------------------------------ | --------------------------------------------------------------- |
+| `POST /v1/auth/sign-in-methods`           | Cross-site                     | `POST /internal/v1/auth/sign-in-methods`, `anonymous`           |
+| `POST /v1/auth/sign-up`                   | Cross-site                     | `POST /internal/v1/auth/sign-up`, `anonymous`                   |
+| `POST /v1/auth/sign-up/code`              | Cross-site                     | `POST /internal/v1/auth/sign-up/code`, `anonymous`              |
+| `POST /v1/auth/sign-up/verification`      | Cross-site                     | `POST /internal/v1/auth/sign-up/verification`, `anonymous`      |
+| `POST /v1/auth/sign-in`                   | Cross-site                     | `POST /internal/v1/auth/sign-in`, `anonymous`                   |
+| `POST /v1/auth/sign-in/code`              | Cross-site                     | `POST /internal/v1/auth/sign-in/code`, `anonymous`              |
+| `POST /v1/auth/sign-in/code/verification` | Cross-site                     | `POST /internal/v1/auth/sign-in/code/verification`, `anonymous` |
+| `POST /v1/auth/sign-out`                  | Cross-site, session (optional) | `DELETE /internal/v1/sessions/{sessionId}`, `user`              |
+| `GET /v1/me`                              | Session                        | `GET /internal/v1/users/{userId}`, `user`                       |
+
+- **Session guard** (`src/auth/session.guard.ts`): reads `__Host-cw_session` and introspects it with
+  `POST /internal/v1/tokens/introspect` as the actor `system` on every request, without a cache, so
+  a revoked session stops at the next request. No cookie answers `401 auth.session-required`; a
+  cookie that is not active, or that cannot be a token, `401 auth.session-expired`. An active
+  session opens the organization context of the request with `setRequestOrganizationContext`: a
+  user actor, no organization in P2a. A route without a session (`security: []`) has no guard and
+  never reads the cookie, so a stale one is ignored.
+- **Cross-site check** (`src/auth/cross-site.ts`): every unsafe route needs an `Origin` exactly
+  equal to one of `ALLOWED_ORIGINS` and `Content-Type: application/json`, signed in or not
+  (decision 6 of the walking skeleton), else `403 auth.csrf-rejected` before the route runs. The
+  session guard applies it to every unsafe request it authenticates.
+- **Cookie** (`src/auth/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
+SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a persistent session
+  only; the sign-out clears it with `Max-Age=0`. The token leaves the gateway in this header only.
+- **Browser**: `client.ipAddress` is `request.ip` behind one trusted proxy hop, `client.userAgent`
+  the `User-Agent` header (`null` without one, cut to 1024 code points).
+- **Answers**: every answer of these routes carries `Cache-Control: no-store`; `GET /v1/me` carries
+  `ETag`. A route that sends a code answers `202`, one that signs in `200`, the sign-out `204`.
+- **Errors** (`src/problems/`): an internal client error is answered with its `code` and its
+  `details` (without `service`) when the public operation declares that status and code, under the
+  French title the gateway owns for the codes the web application shows as is (decision 7); a
+  `429` gets `Retry-After` from `details.lockedUntil` or `details.resendAvailableAt`. A refused
+  internal token (`401`, or `403` refusing the issuer, the actor or the organization) is
+  `503 upstream.unauthorized`; any other client error is `503 upstream.failed`, so an internal
+  `404` never surfaces as a `403` or reveals another tenant. The sign-out treats
+  `404 session.not-found` as an ended session, and `GET /v1/me` answers `404 user.not-found` as
+  `401 auth.session-expired`. When identity-service cannot answer, the sign-out answers `503` and
+  keeps the cookie, so it can be retried.
 
 ## Gateway Patterns
 

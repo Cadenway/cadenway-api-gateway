@@ -4,9 +4,9 @@
 
 ## Status
 
-The gateway runs on the shared runtime of `@cadenway/nest-common` and answers the health routes; no
-public route, internal client, authentication or rate limiter exists yet (see the
-[documentation index](README.md)). The scripts and checks below exist in `package.json` and CI.
+The gateway runs on the shared runtime of `@cadenway/nest-common`, answers the health routes and
+serves the routes of `openapi/public/auth.yaml` through the generated client of identity-service;
+the rate limiter does not exist yet (see the [documentation index](README.md)). The scripts and checks below exist in `package.json` and CI.
 Run Git, pnpm, build, and test commands with this repository as the working directory, never from
 the parent workspace.
 
@@ -69,10 +69,22 @@ narrowest check that covers the change first, then widen:
 | Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit`            |
 | Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                            |
 | Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`                  |
+| Installed `@cadenway/contracts` | `pnpm generate:clients`, then commit `src/clients/generated/` if it changed   |
 | Docs or agent instructions only | Scoped formatting and link review                                             |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
+
+## Internal clients
+
+`pnpm generate:clients` runs orval (`orval.config.ts`, the `fetch` client) on the internal specs
+the installed `@cadenway/contracts` ships (`specs/openapi/internal/<service>.yaml`) and writes
+`src/clients/generated/`. The generated files are committed and never edited by hand; lint, format
+and coverage skip them. After an update of `@cadenway/contracts`, run it and commit the result: CI
+generates them again and fails when they differ. The authored code of `src/clients/` binds each
+generated client to an `InternalHttpClient` of `@cadenway/nest-common` (deadline, one retry on a
+connection error or a `503` for an idempotent call, circuit breaker, internal token signed for the
+called service) and checks every answer against the zod validators of the contract.
 
 ## Full check list
 
@@ -86,7 +98,7 @@ pnpm lint
 pnpm typecheck
 pnpm test:architecture
 pnpm test:coverage
-pnpm test:integration                    # disposable Redis in Docker, internal services faked
+pnpm test:integration                    # disposable Redis in Docker, internal services faked over HTTP
 pnpm build
 docker compose -f compose.dev.yaml config -q
 ```
