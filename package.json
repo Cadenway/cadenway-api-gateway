@@ -11,7 +11,7 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
-    "start:dev": "nest start --watch --env-file .env --exec \"node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js\"",
+    "start:dev": "nest start --watch --env-file .env --exec \"node --max-old-space-size=160 --import @cadenway/nest-common/register --import ./dist/telemetry.js\"",
     "build": "nest build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@cadenway/contracts": "^0.2.0",
-    "@cadenway/nest-common": "^0.2.0",
+    "@cadenway/nest-common": "^0.3.0",
     "@nestjs/common": "^12.4.2",
     "@nestjs/core": "^12.4.2",
     "@nestjs/platform-express": "^12.4.2",

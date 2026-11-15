@@ -97,6 +97,25 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
   cadenway-ops (`API_GATEWAY_INTERNAL_TOKEN_PRIVATE_JWK`), and verifies no internal token
   (`internalTokenVerification: 'off'`): it authenticates the applications itself.
 
+### Organization context
+
+The organization and the actor of a request come from the verified session or API token only.
+The guard of `src/auth/` (phase P2a of the integration plan) gives a verified request its context
+with `setRequestOrganizationContext(request, context)` of `@cadenway/nest-common`: see
+[Organization context](https://github.com/Cadenway/cadenway-service-kit/blob/main/packages/nest-common/README.md#organization-context)
+in the kit README. It is the sanctioned way for an application that verifies its callers itself
+(`internalTokenVerification: 'off'`) to give an HTTP request an identity.
+
+- Only the code that verified the caller calls it, and only with what the verification
+  returned: the answer of `POST /internal/v1/tokens/introspect` for a session or an API token,
+  never a value read from the request.
+- The handler then reads the context with `getOrganizationContext()`, `InternalHttpClient`
+  signs the internal token of its calls from it, and the log lines of the request, its
+  completion line included, carry `organizationId` and `userId`.
+- It throws when the request already carries a context, and for a context an internal token
+  could not carry (an organization id that is not a UUID, an identified actor without an id).
+  `runWithOrganizationContext` is never used for an HTTP request.
+
 ### Public edge
 
 `src/gateway-application.ts` applies these settings to every request. The rules require the
@@ -150,15 +169,19 @@ on a name.
 The telemetry must be loaded before the application imports Express:
 
 ```text
-node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
+node --max-old-space-size=160 --import @cadenway/nest-common/register --import ./dist/telemetry.js dist/main.js
 ```
 
+- `@cadenway/nest-common/register` registers the module hooks of the instrumentations with
+  `module.register()`, before `telemetry.js` loads them: hence the order of the two `--import`.
+  The hooks are named through the kit: pnpm's strict `node_modules` does not expose
+  `@opentelemetry/instrumentation` to the application. Nothing is written on the standard error,
+  unlike the former `--experimental-loader` form.
 - `src/telemetry.ts` only calls `startTelemetry` of `@cadenway/nest-common/telemetry`, which
-  imports no NestJS code. The hook is named through the kit: pnpm's strict `node_modules` does not
-  expose `@opentelemetry/instrumentation` to the application.
-- This is the only documented way while NestJS 12 imports Express as ESM. Node 24 marks
-  `--experimental-loader` as discouraged and prints an `ExperimentalWarning` on standard error at
-  start-up: revisit the command with each Node or SDK upgrade.
+  imports no NestJS code.
+- `--max-old-space-size=160` caps the old generation of the heap at about 60 % of the 256M limit
+  of `deploy/compose.yaml`, so the garbage collector reclaims it before the container reaches
+  its limit.
 - The flags go on the `node` start command (the `CMD` of the `Dockerfile` and `pnpm start:dev`),
   not in application code.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; `startTelemetry` refuses anything but an

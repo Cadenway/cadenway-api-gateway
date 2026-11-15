@@ -3,11 +3,15 @@ import { readFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { loadConfig } from '@cadenway/nest-common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { appConfigSchema } from '../src/config/app-config.js';
+import { createGatewayApplication } from '../src/gateway-application.js';
 
 /**
  * Constant ALLOWED_ORIGIN
@@ -106,19 +110,17 @@ describe('gateway start-up', () => {
   let redisStopped = false;
   let redisAddress: string;
   let app: NestExpressApplication;
+  let appClosed = false;
   let server: App;
 
   beforeAll(async () => {
     redis = await new RedisContainer(redisImage()).start();
     redisAddress = `${redis.getHost()}:${String(redis.getMappedPort(6379))}`;
+    // `ConfigModule` validates the environment of the process again when the application is
+    // created, so the variables are stubbed as well as passed.
     for (const [name, value] of Object.entries(testEnvironment(redis.getConnectionUrl()))) {
       vi.stubEnv(name, value);
     }
-    // The application module validates the environment when it is declared: import it only once
-    // the environment is in place.
-    const { loadConfig } = await import('@cadenway/nest-common');
-    const { appConfigSchema } = await import('../src/config/app-config.js');
-    const { createGatewayApplication } = await import('../src/gateway-application.js');
     const sink: Writable = new Writable({
       write(chunk: Buffer, _encoding: BufferEncoding, done: () => void): void {
         logLines.push(...chunk.toString('utf8').split('\n').filter(Boolean));
@@ -126,12 +128,16 @@ describe('gateway start-up', () => {
       },
     });
     app = await createGatewayApplication(loadConfig(appConfigSchema), sink);
-    await app.init();
+    // A real listener on a free loopback port: the shutdown test probes it while the application
+    // stops.
+    await app.listen(0, '127.0.0.1');
     server = app.getHttpServer();
   });
 
   afterAll(async () => {
-    await app.close();
+    if (!appClosed) {
+      await app.close();
+    }
     if (!redisStopped) {
       await redis.stop();
     }
@@ -234,12 +240,54 @@ describe('gateway start-up', () => {
     // Several reconnection attempts fail within this wait.
     await delay(1_500);
 
-    const outages: string[] = logLines.filter((line: string) =>
-      line.includes('Redis is unreachable'),
-    );
+    const outages: string[] = logLines.filter((line: string) => line.includes('redis unreachable'));
 
     expect(outages).toHaveLength(1);
-    expect(JSON.parse(outages[0] ?? '{}')).toMatchObject({ level: 'warn', context: 'Redis' });
+    expect(JSON.parse(outages[0] ?? '{}')).toMatchObject({
+      level: 'warn',
+      context: 'Redis',
+      connection: 'api-gateway',
+      msg: 'redis unreachable',
+    });
     expect(outages[0]).not.toContain(redisAddress);
+  });
+
+  it('answers 503 on readiness from the start of the stop, and stops without an unhandled rejection while Redis is down', async () => {
+    const rejections: unknown[] = [];
+    const collect = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on('unhandledRejection', collect);
+    try {
+      // The listener stays open for the shutdown delay, which is when the probes below run.
+      const closing: Promise<void> = app.close();
+      let ready: request.Response = await request(server).get('/health/ready');
+      const deadline: number = Date.now() + 2_000;
+      while (
+        (ready.body as { error?: { shutdown?: unknown } }).error?.shutdown === undefined &&
+        Date.now() < deadline
+      ) {
+        await delay(100);
+        ready = await request(server).get('/health/ready');
+      }
+      const live: request.Response = await request(server).get('/health/live');
+      await closing;
+      appClosed = true;
+      await delay(500);
+
+      expect(ready.status).toBe(503);
+      expect(ready.body).toEqual({
+        status: 'error',
+        info: {},
+        error: { shutdown: { status: 'down', message: 'shutting down' } },
+        details: { shutdown: { status: 'down', message: 'shutting down' } },
+      });
+      expect(live.status).toBe(200);
+    } finally {
+      process.off('unhandledRejection', collect);
+    }
+
+    expect(rejections).toEqual([]);
+    expect(logLines.filter((line: string) => line.includes('redis command failed'))).toEqual([]);
   });
 });

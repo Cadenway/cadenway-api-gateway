@@ -1,30 +1,17 @@
-import { loadConfig } from '@cadenway/nest-common';
+import { loadConfig, runApplication } from '@cadenway/nest-common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 
-import { appConfigSchema } from './config/app-config.js';
-import type { AppConfig } from './config/app-config.js';
-import { createGatewayApplication } from './gateway-application.js';
+import { appConfigSchema, type AppConfig } from './config/app-config.js';
+import { createGatewayApplication, SERVICE_NAME } from './gateway-application.js';
 
-/**
- * Constant config
- *
- * @description
- * Validated configuration of the process. A missing or invalid variable throws a `ConfigError`
- * naming it, and the process exits before it listens.
- *
- * @type {Readonly<AppConfig>}
- */
-const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
-
-/**
- * Constant app
- *
- * @description
- * The gateway, serving the public HTTP API behind Traefik. Telemetry is already running: the start
- * command preloads `telemetry.js` before this module (see `telemetry.ts`).
- *
- * @type {NestExpressApplication}
- */
-const app: NestExpressApplication = await createGatewayApplication(config);
-
-await app.listen(config.PORT);
+// Started after `telemetry.js` (see `telemetry.ts`). Whatever fails before the gateway listens (an
+// invalid environment, a port in use) is written by `runApplication` as one JSON line on the
+// standard error, and the process exits with code 1.
+await runApplication({ service: SERVICE_NAME }, async (): Promise<void> => {
+  // Read here, before the application exists: the logger and the internal token signer that
+  // `createApplication` installs need it. `ConfigModule` validates the same environment again
+  // when the application is created and provides it to the modules under `CONFIG`.
+  const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
+  const app: NestExpressApplication = await createGatewayApplication(config);
+  await app.listen(config.PORT);
+});
