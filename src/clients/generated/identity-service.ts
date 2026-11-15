@@ -50,6 +50,8 @@ export interface SignInMethods {
 
 export interface SignUpRequest {
   /**
+     * Full name, as typed; surrounding spaces are removed, and a name made only of spaces is
+     * refused with `400 request.invalid`.
      * @minLength 1
      * @maxLength 120
      */
@@ -71,6 +73,30 @@ export interface CodeSent {
   email: Email;
   expiresAt: string;
   resendAvailableAt: string;
+}
+
+/**
+ * The code of a sign-up and the password that binds the verification to that sign-up. See
+ * `POST /internal/v1/auth/sign-up/verification` for the order of the checks.
+ */
+export interface SignUpVerification {
+  email: Email;
+  /**
+     * Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+  rememberMe?: boolean;
+  /**
+     * The password typed in the sign-up form, as the public request carried it. Once the code
+     * is right, it is compared with the password of the latest sign-up of the address: a
+     * different one answers `422 auth.sign-up-replaced`. Required once the address was signed
+     * up more than once before the verification: without it the answer is the same. Never
+     * logged.
+     * @maxLength 256
+     */
+  password?: string;
+  client: Client;
 }
 
 export interface CodeVerification {
@@ -242,6 +268,14 @@ export type SignUpRefusedResponse = Problem;
 export type CodeRefusedResponse = Problem;
 
 /**
+ * The code is checked first: `auth.code-invalid` or `auth.code-expired`, as in
+ * `CodeRefused`. Then, only with the right code, `auth.sign-up-replaced`: `password` differs
+ * from the password of the latest sign-up of the address, or is missing while the address
+ * was signed up more than once; the code stops working.
+ */
+export type SignUpVerificationRefusedResponse = Problem;
+
+/**
  * `auth.invalid-credentials`, with `details.remainingAttempts` (at least 1); the same when no
  * account uses the address.
  */
@@ -254,8 +288,12 @@ export type CredentialsRefusedResponse = Problem;
 export type AccountLockedResponse = Problem;
 
 /**
- * `auth.code-throttled`: a code was issued for the address less than 30 seconds ago, with
- * `details.resendAvailableAt`.
+ * `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
+ * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
+ * the sign-in code routes count together. A request is refused less than 30 seconds after
+ * the last accepted one, and once 5 were accepted in the current hour, which starts with the
+ * first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
+ * seconds after the last accepted request, or the end of the hour.
  */
 export type CodeThrottledResponse = Problem;
 
@@ -342,8 +380,14 @@ const getSignUpInternalUrl = () => {
  * Creates an unverified account, or replaces the name and password of an account whose
  * address is not verified yet, and issues an `email-verification` code
  * (`one-time-code.issued.v1`). The first sign-up of an address emits `user.signed-up.v1`; a
- * repeated one emits it again with the next version, and follows the 30-second throttle of the
- * codes. Internal token: actor `anonymous`, no organization.
+ * repeated one emits it again with the next version.
+ *
+ * The verification is bound to the password of the latest sign-up of the address:
+ * `POST /internal/v1/auth/sign-up/verification` answers `422 auth.sign-up-replaced` to a
+ * `password` that differs from it, and requires `password` once the address was signed up
+ * more than once, so that a replacement never lets the code verify a password the owner of
+ * the address did not choose. Every sign-up is a code request of the address and follows the
+ * throttle of `CodeThrottled`. Internal token: actor `anonymous`, no organization.
  * @summary Create an account
  */
 const signUpInternal = async (signUpRequest: SignUpRequest, options?: RequestInit): Promise<signUpInternalResponse> => {
@@ -376,9 +420,10 @@ const getResendSignUpCodeInternalUrl = () => {
 
 /**
  * Issues a new `email-verification` code when an unverified account uses the address, and
- * invalidates the previous one; answers `202` without issuing anything otherwise. At most one
- * request every 30 seconds per address, account or not. Internal token: actor `anonymous`, no
- * organization.
+ * invalidates the previous one; answers `202` without issuing anything otherwise. Throttled
+ * per address, account or not, together with the sign-up and the sign-in codes: 30 seconds
+ * between two requests and at most 5 in an hour (`CodeThrottled`). Internal token: actor
+ * `anonymous`, no organization.
  * @summary Issue a new sign-up code
  */
 const resendSignUpCodeInternal = async (codeRequest: CodeRequest, options?: RequestInit): Promise<resendSignUpCodeInternalResponse> => {
@@ -410,18 +455,34 @@ const getVerifySignUpInternalUrl = () => {
 }
 
 /**
- * Checks the `email-verification` code, verifies the address (`user.email-verified.v1`) and
- * opens a session for the `client`. Internal token: actor `anonymous`, no organization.
+ * Checks the `email-verification` code, then the password of the sign-up, verifies the
+ * address (`user.email-verified.v1`) and opens a session for the `client`. The checks run in
+ * this order:
+ *
+ * 1. The code. A wrong code answers `422 auth.code-invalid` and a code no longer usable
+ *    `422 auth.code-expired`, with or without `password`.
+ * 2. With the right code, a `password` is compared with the password of the pending
+ *    sign-up, the latest one of the address. When it differs, the answer is
+ *    `422 auth.sign-up-replaced` and the code stops working.
+ * 3. When a later sign-up replaced the name and password of the pending account (the
+ *    address was signed up more than once before this verification), `password` is
+ *    required: without it the answer is `422 auth.sign-up-replaced` too, and the code stops
+ *    working. Only an accepted sign-up (`202`) counts: a refused one replaces nothing.
+ *
+ * Without `password`, an address signed up once is verified by its code alone.
+ * `auth.sign-up-replaced` needs the right code, so it tells a caller without the code
+ * nothing. The gateway forwards the `password` of the public request unchanged. Internal
+ * token: actor `anonymous`, no organization.
  * @summary Verify the address and open a session
  */
-const verifySignUpInternal = async (codeVerification: CodeVerification, options?: RequestInit): Promise<verifySignUpInternalResponse> => {
+const verifySignUpInternal = async (signUpVerification: SignUpVerification, options?: RequestInit): Promise<verifySignUpInternalResponse> => {
 
   const res = await fetchFn(getVerifySignUpInternalUrl(),
   {
     ...options,
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
-    body: JSON.stringify(codeVerification)
+    body: JSON.stringify(signUpVerification)
   }
 )
 
@@ -478,9 +539,10 @@ const getRequestSignInCodeInternalUrl = () => {
 
 /**
  * Issues a `sign-in` code (`one-time-code.issued.v1`) when a verified account uses the
- * address, invalidating the previous one; answers `202` the same way otherwise. At most one
- * request every 30 seconds per address, account or not. Internal token: actor `anonymous`,
- * no organization.
+ * address, invalidating the previous one; answers `202` the same way otherwise. Throttled per
+ * address, account or not, together with the sign-up codes: 30 seconds between two requests
+ * and at most 5 in an hour (`CodeThrottled`). Internal token: actor `anonymous`, no
+ * organization.
  * @summary Issue a sign-in code
  */
 const requestSignInCodeInternal = async (codeRequest: CodeRequest, options?: RequestInit): Promise<requestSignInCodeInternalResponse> => {
@@ -779,7 +841,7 @@ export type verifySignUpInternalResponse403 = {
 }
 
 export type verifySignUpInternalResponse422 = {
-  data: CodeRefusedResponse
+  data: SignUpVerificationRefusedResponse
   status: 422
 }
 

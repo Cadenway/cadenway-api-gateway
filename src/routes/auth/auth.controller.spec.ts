@@ -466,6 +466,146 @@ describe('routes of /v1/auth', () => {
     });
   });
 
+  describe('POST /v1/auth/sign-up/verification and the password of the sign-up', () => {
+    // Spaces around it and a non-ASCII character: forwarded as typed, never trimmed or normalized.
+    const password: string = '  Atelier Nord, sprint 14 – ébauche  ';
+    const body: { email: string; code: string; password: string } = {
+      email: CAMILLE.email,
+      code: '482913',
+      password,
+    };
+
+    it('forwards the password of the sign-up form to identity-service unchanged', async () => {
+      identity.verifySignUp.mockResolvedValue(issuedSession(false));
+
+      const response: request.Response = await post(
+        application,
+        '/v1/auth/sign-up/verification',
+        body,
+      ).set('X-Forwarded-For', '86.247.12.30');
+
+      expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+      expect(response.status).toBe(200);
+      expect(identity.verifySignUp).toHaveBeenCalledWith({
+        email: CAMILLE.email,
+        code: '482913',
+        rememberMe: false,
+        password,
+        client: { ipAddress: '86.247.12.30', userAgent: BROWSER },
+      });
+      expect(JSON.stringify(response.body)).not.toContain(password);
+    });
+
+    it('sends no password member when the browser sent none', async () => {
+      identity.verifySignUp.mockResolvedValue(issuedSession(false));
+
+      const response: request.Response = await post(application, '/v1/auth/sign-up/verification', {
+        email: CAMILLE.email,
+        code: '482913',
+      });
+
+      expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+      expect(response.status).toBe(200);
+      expect(identity.verifySignUp).toHaveBeenCalledTimes(1);
+      expect(identity.verifySignUp.mock.calls[0]?.[0]).not.toHaveProperty('password');
+    });
+
+    it('answers 422 auth.sign-up-replaced with its French title and no session', async () => {
+      identity.verifySignUp.mockRejectedValue(identityProblem(422, 'auth.sign-up-replaced'));
+
+      const response: request.Response = await post(
+        application,
+        '/v1/auth/sign-up/verification',
+        body,
+      );
+
+      expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+      expect(response.status).toBe(422);
+      expect(response.headers['content-type']).toContain('application/problem+json');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title:
+          'Une autre inscription a été faite avec cette adresse : recommencez votre inscription.',
+        status: 422,
+        code: 'auth.sign-up-replaced',
+      });
+    });
+
+    it.each([
+      ['longer than 256 characters', 'a'.repeat(257)],
+      ['not a string', 482913],
+      ['null', null],
+    ])('refuses a password that is %s with 400 before identity-service', async (_label, value) => {
+      const response: request.Response = await post(application, '/v1/auth/sign-up/verification', {
+        ...body,
+        password: value,
+      });
+
+      expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        code: 'request.invalid',
+        details: { issues: [{ in: 'body', path: 'password' }] },
+      });
+      expect(identity.verifySignUp).not.toHaveBeenCalled();
+    });
+
+    it('never writes the password into a log line or an error, whatever the outcome', async () => {
+      const tooLong: string = password.repeat(8).slice(0, 257);
+      identity.verifySignUp
+        .mockResolvedValueOnce(issuedSession(false))
+        .mockRejectedValueOnce(identityProblem(422, 'auth.sign-up-replaced'))
+        .mockRejectedValueOnce(identityProblem(400, 'request.invalid', { issues: [] }))
+        .mockRejectedValueOnce(identityUnavailable('timeout'))
+        .mockRejectedValueOnce(new Error('Unexpected failure of the call.'));
+
+      const sent: readonly object[] = [
+        body,
+        body,
+        body,
+        body,
+        body,
+        { ...body, password: tooLong },
+      ];
+      const responses: request.Response[] = [];
+      for (const each of sent) {
+        responses.push(await post(application, '/v1/auth/sign-up/verification', each));
+      }
+
+      expect(responses.map((response) => response.status)).toEqual([200, 422, 400, 503, 500, 400]);
+      for (const response of responses) {
+        // The unexpected error answers 500, which no operation declares: its body is not checked.
+        if (response.status !== 500) {
+          expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+        }
+        expect(response.text).not.toContain(password.trim());
+      }
+      expect(application.logLines.join('\n')).not.toContain(password.trim());
+    });
+
+    // The message of `JSON.parse` quotes the ten characters around an unexpected token, here the
+    // start of the password. Only the log lines are checked: the `detail` of the 400 still carries
+    // that message, a defect of the body parsing of `@cadenway/nest-common`, reported there.
+    it.each([
+      ['an unquoted value', `{"code":"482913","password":${password.trim()}}`],
+      ['a single-quoted value', `{"code":"482913","password":'${password.trim()}'}`],
+    ])('refuses a body that is not JSON (%s) without logging it', async (_label, text) => {
+      const response: request.Response = await request(application.server)
+        .post('/v1/auth/sign-up/verification')
+        .set('Origin', ALLOWED_ORIGIN)
+        .set('Content-Type', 'application/json')
+        .send(text);
+
+      expect(response.status).toBe(400);
+      expect(identity.verifySignUp).not.toHaveBeenCalled();
+      const logs: string = application.logLines.join('\n');
+      expect(logs).not.toContain(password.trim());
+      expect(logs).not.toContain(password.trim().slice(0, 8));
+    });
+  });
+
   describe('POST /v1/auth/sign-in', () => {
     const body: { email: string; password: string; rememberMe: boolean } = {
       email: CAMILLE.email,
@@ -684,6 +824,28 @@ describe('routes of /v1/auth', () => {
     });
   });
 
+  describe('POST /v1/auth/sign-in/code/verification and the refusals of the sign-up', () => {
+    it('answers auth.sign-up-replaced, which its contract does not declare, as 503 upstream.failed', async () => {
+      identity.signInWithCode.mockRejectedValue(identityProblem(422, 'auth.sign-up-replaced'));
+
+      const response: request.Response = await post(
+        application,
+        '/v1/auth/sign-in/code/verification',
+        { email: CAMILLE.email, code: '482913' },
+      );
+
+      expectPublicResponse('post', '/v1/auth/sign-in/code/verification', response);
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({
+        title: 'Service Unavailable',
+        code: 'upstream.failed',
+        details: { service: 'identity-service' },
+      });
+      expect(JSON.stringify(response.body)).not.toContain('sign-up-replaced');
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+  });
+
   describe('POST /v1/auth/sign-out', () => {
     const cleared: string[] = [
       '__Host-cw_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0',
@@ -836,10 +998,7 @@ describe('routes of /v1/auth', () => {
 
       const response: request.Response = await pending.send(body);
 
-      // Not checked with expectPublicResponse: auth.yaml declares this 403 on the sign-out (and a
-      // 403 on the sign-in) only, while the login cross-site decision of docs/integration.md
-      // applies the check to every unsafe route of the authentication. The contract must close
-      // the gap.
+      expectPublicResponse('post', path, response);
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'auth.csrf-rejected', title: 'Forbidden' });
       expect(response.headers['content-type']).toContain('application/problem+json');
