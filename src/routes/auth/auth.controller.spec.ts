@@ -586,12 +586,13 @@ describe('routes of /v1/auth', () => {
     });
 
     // The message of `JSON.parse` quotes the ten characters around an unexpected token, here the
-    // start of the password. Only the log lines are checked: the `detail` of the 400 still carries
-    // that message, a defect of the body parsing of `@cadenway/nest-common`, reported there.
+    // start of the password. Since `@cadenway/nest-common` 0.4.2 the kit answers a malformed body
+    // with a fixed `400 request.invalid` that quotes nothing of it: neither the response nor the
+    // log lines may hold a fragment of the password.
     it.each([
       ['an unquoted value', `{"code":"482913","password":${password.trim()}}`],
       ['a single-quoted value', `{"code":"482913","password":'${password.trim()}'}`],
-    ])('refuses a body that is not JSON (%s) without logging it', async (_label, text) => {
+    ])('refuses a body that is not JSON (%s) without echoing it', async (_label, text) => {
       const response: request.Response = await request(application.server)
         .post('/v1/auth/sign-up/verification')
         .set('Origin', ALLOWED_ORIGIN)
@@ -599,6 +600,10 @@ describe('routes of /v1/auth', () => {
         .send(text);
 
       expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ code: 'request.invalid' });
+      expectPublicResponse('post', '/v1/auth/sign-up/verification', response);
+      expect(response.text).not.toContain(password.trim());
+      expect(response.text).not.toContain(password.trim().slice(0, 8));
       expect(identity.verifySignUp).not.toHaveBeenCalled();
       const logs: string = application.logLines.join('\n');
       expect(logs).not.toContain(password.trim());
