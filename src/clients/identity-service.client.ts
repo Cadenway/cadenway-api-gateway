@@ -7,6 +7,7 @@ import type {
   SignInMethods,
   SignInMethodsRequest,
   SignUpRequest,
+  SignUpVerification,
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import {
@@ -384,12 +385,14 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
    * Method verifySignUp
    *
    * @description
-   * `POST /internal/v1/auth/sign-up/verification` as the actor `anonymous`.
+   * `POST /internal/v1/auth/sign-up/verification` as the actor `anonymous`. The password, when
+   * present, travels in the body only.
    *
-   * @param {CodeVerification} request - Address, code, persistence and browser of the session.
+   * @param {SignUpVerification} request - Address, code, the password of the sign-up when the
+   * browser sent one, persistence and browser of the session.
    * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
    */
-  public async verifySignUp(request: CodeVerification): Promise<SessionIssued> {
+  public async verifySignUp(request: SignUpVerification): Promise<SessionIssued> {
     return expectBody(
       'verifySignUpInternal',
       await answered(

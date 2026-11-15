@@ -7,6 +7,7 @@ import type {
   SignInMethods,
   SignInMethodsRequest,
   SignUpRequest,
+  SignUpVerification,
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import { ProblemException, type ProblemStatus } from '@cadenway/nest-common';
@@ -57,7 +58,7 @@ export interface FakeIdentity extends SessionIntrospector, IdentityAuth, Identit
   readonly discoverSignInMethods: Mock<(request: SignInMethodsRequest) => Promise<SignInMethods>>;
   readonly signUp: Mock<(request: SignUpRequest) => Promise<CodeSent>>;
   readonly resendSignUpCode: Mock<(request: CodeRequest) => Promise<CodeSent>>;
-  readonly verifySignUp: Mock<(request: CodeVerification) => Promise<SessionIssued>>;
+  readonly verifySignUp: Mock<(request: SignUpVerification) => Promise<SessionIssued>>;
   readonly signInWithPassword: Mock<(request: PasswordSignIn) => Promise<SessionIssued>>;
   readonly requestSignInCode: Mock<(request: CodeRequest) => Promise<CodeSent>>;
   readonly signInWithCode: Mock<(request: CodeVerification) => Promise<SessionIssued>>;

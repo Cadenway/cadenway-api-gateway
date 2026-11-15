@@ -348,19 +348,39 @@ describe('IdentityServiceClient', () => {
       },
     );
 
-    it('verifies the sign-up code', async () => {
+    it('verifies the sign-up code with the password of the sign-up in the body', async () => {
+      answer.mockReturnValue(json(200, ISSUED));
+      const request: {
+        email: string;
+        code: string;
+        password: string;
+        client: { ipAddress: string; userAgent: null };
+      } = {
+        email: CAMILLE.email,
+        code: '482913',
+        password: 'atelier-nord-sprint-14',
+        client: { ipAddress: '86.247.12.30', userAgent: null },
+      };
+
+      await expect(client.verifySignUp(request)).resolves.toEqual(ISSUED);
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: 'http://identity-service.test:3010/internal/v1/auth/sign-up/verification',
+        principal: { actor: { type: 'anonymous', id: null } },
+      });
+      expect(calls[0]?.body).toEqual(request);
+    });
+
+    it('verifies the sign-up code without a password member when none is given', async () => {
       answer.mockReturnValue(json(200, ISSUED));
 
-      await expect(
-        client.verifySignUp({
-          email: CAMILLE.email,
-          code: '482913',
-          client: { ipAddress: '86.247.12.30', userAgent: null },
-        }),
-      ).resolves.toEqual(ISSUED);
-      expect(calls[0]?.url).toBe(
-        'http://identity-service.test:3010/internal/v1/auth/sign-up/verification',
-      );
+      await client.verifySignUp({
+        email: CAMILLE.email,
+        code: '482913',
+        client: { ipAddress: '86.247.12.30', userAgent: null },
+      });
+
+      expect(calls[0]?.body).not.toHaveProperty('password');
     });
 
     it('relays a client error with its code and details, naming identity-service', async () => {

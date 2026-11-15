@@ -24,6 +24,10 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ],
   ['auth.code-invalid', 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'],
   ['auth.code-expired', 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.'],
+  [
+    'auth.sign-up-replaced',
+    'Une autre inscription a été faite avec cette adresse : recommencez votre inscription.',
+  ],
   ['auth.invalid-credentials', 'E-mail ou mot de passe incorrect.'],
   ['auth.email-not-verified', 'Confirmez votre adresse e-mail pour vous connecter.'],
   ['auth.account-locked', 'Trop de tentatives échouées.'],

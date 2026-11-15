@@ -81,17 +81,45 @@ const CODE_REQUEST_PROBLEMS: AcceptedProblems = {
 };
 
 /**
+ * Constant CODE_REFUSALS
+ *
+ * @description
+ * The `422` codes of a refused one-time code (`CodeRefused` of the public contract), declared by
+ * both code verifications.
+ *
+ * @type {readonly string[]}
+ */
+const CODE_REFUSALS: readonly string[] = ['auth.code-invalid', 'auth.code-expired'];
+
+/**
+ * Constant SIGN_UP_VERIFICATION_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/auth/sign-up/verification` answers as they
+ * are: the refused codes, and `auth.sign-up-replaced` when the right code comes with a password
+ * that is not the one of the latest sign-up of the address, or without one after a repeated
+ * sign-up (`SignUpVerificationRefused`).
+ *
+ * @type {AcceptedProblems}
+ */
+const SIGN_UP_VERIFICATION_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  422: [...CODE_REFUSALS, 'auth.sign-up-replaced'],
+};
+
+/**
  * Constant CODE_VERIFICATION_PROBLEMS
  *
  * @description
- * Client errors of identity-service that `POST /v1/auth/sign-up/verification` and
- * `POST /v1/auth/sign-in/code/verification` answer as they are.
+ * Client errors of identity-service that `POST /v1/auth/sign-in/code/verification` answers as
+ * they are: the refused codes only. Its contract declares no `auth.sign-up-replaced`, so that code
+ * answers `503 upstream.failed` there.
  *
  * @type {AcceptedProblems}
  */
 const CODE_VERIFICATION_PROBLEMS: AcceptedProblems = {
   400: INVALID_REQUEST,
-  422: ['auth.code-invalid', 'auth.code-expired'],
+  422: CODE_REFUSALS,
 };
 
 /**
@@ -285,10 +313,17 @@ export class AuthController {
    * Method verifySignUp
    *
    * @description
-   * `POST /v1/auth/sign-up/verification`: checks the sign-up code, then signs in. `200` with the
-   * session cookie.
+   * `POST /v1/auth/sign-up/verification`: checks the sign-up code and the password of the sign-up,
+   * then signs in. `200` with the session cookie.
    *
-   * @param {z.output<typeof VerifySignUpBody>} body - Address, code and `rememberMe`.
+   * The `password` of the body, the one typed in the sign-up form, binds the verification to that
+   * sign-up: it travels to identity-service unchanged when the browser sent one, and is left out
+   * when it did not, so that identity-service alone decides whether the code suffices. It is never
+   * logged. identity-service answers `422 auth.sign-up-replaced` when, with the right code, it is
+   * not the password of the latest sign-up of the address, or is missing after a repeated sign-up.
+   *
+   * @param {z.output<typeof VerifySignUpBody>} body - Address, code, `rememberMe` and the optional
+   * password of the sign-up.
    * @param {Request} request - Request, for the browser's address and User-Agent.
    * @param {Response} response - Response, for the cookie.
    * @returns {Promise<SignedIn>} The user and the session.
@@ -300,11 +335,12 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<SignedIn> {
-    const issued: SessionIssued = await relayUpstream(response, CODE_VERIFICATION_PROBLEMS, () =>
+    const issued: SessionIssued = await relayUpstream(response, SIGN_UP_VERIFICATION_PROBLEMS, () =>
       this.identity.verifySignUp({
         email: body.email,
         code: body.code,
         rememberMe: body.rememberMe,
+        ...(body.password === undefined ? {} : { password: body.password }),
         client: browserClient(request),
       }),
     );

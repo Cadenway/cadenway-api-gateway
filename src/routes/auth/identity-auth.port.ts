@@ -7,6 +7,7 @@ import type {
   SignInMethods,
   SignInMethodsRequest,
   SignUpRequest,
+  SignUpVerification,
 } from '@cadenway/contracts/types/internal/identity-service';
 
 /**
@@ -61,12 +62,15 @@ export interface IdentityAuth {
    * Method verifySignUp
    *
    * @description
-   * `POST /internal/v1/auth/sign-up/verification`.
+   * `POST /internal/v1/auth/sign-up/verification`. Rejects with `422 auth.sign-up-replaced` when,
+   * with the right code, `password` is not the one of the latest sign-up of the address, or is
+   * missing after a repeated sign-up.
    *
-   * @param {CodeVerification} request - Address, code, persistence and browser of the session.
+   * @param {SignUpVerification} request - Address, code, the password of the sign-up when the
+   * browser sent one, persistence and browser of the session.
    * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
    */
-  verifySignUp(request: CodeVerification): Promise<SessionIssued>;
+  verifySignUp(request: SignUpVerification): Promise<SessionIssued>;
 
   /**
    * Method signInWithPassword

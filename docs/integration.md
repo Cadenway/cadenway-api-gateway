@@ -14,7 +14,7 @@ The public route contract is owned by `cadenway-api-contracts`; internal service
 
 ## Authentication routes
 
-The nine routes of `openapi/public/auth.yaml` (version 1.0.0, `@cadenway/contracts` 0.3.0), each
+The nine routes of `openapi/public/auth.yaml` (version 1.0.0, `@cadenway/contracts` 0.4.0), each
 mapped to its internal route of `openapi/internal/identity-service.yaml`:
 
 | Public route                              | Guards                         | Internal call, actor                                            |
@@ -46,6 +46,11 @@ SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a pers
   only; the sign-out clears it with `Max-Age=0`. The token leaves the gateway in this header only.
 - **Browser**: `client.ipAddress` is `request.ip` behind one trusted proxy hop, `client.userAgent`
   the `User-Agent` header (`null` without one, cut to 1024 code points).
+- **Sign-up verification**: the `password` of the body, the one typed in the sign-up form, is
+  forwarded to identity-service unchanged when the browser sends it and left out when it does not;
+  it is never logged. With the right code, identity-service answers `422 auth.sign-up-replaced`
+  when it is not the password of the latest sign-up of the address, or is missing after a repeated
+  sign-up; the sign-in by code does not declare that code and answers it `503 upstream.failed`.
 - **Answers**: every answer of these routes carries `Cache-Control: no-store`; `GET /v1/me` carries
   `ETag`. A route that sends a code answers `202`, one that signs in `200`, the sign-out `204`.
 - **Errors** (`src/problems/`): an internal client error is answered with its `code` and its
@@ -65,9 +70,8 @@ Fixed for phase P2a of the integration plan, and open to revision by the maintai
 
 - **Login cross-site check.** The gateway requires an exact allowed `Origin` and
   `Content-Type: application/json` on every unsafe route of `openapi/public/auth.yaml`, signed in
-  or not, so that another site cannot sign a browser in to an account it chose. Version 1.0.0 of
-  the contract declares `403 auth.csrf-rejected` on the sign-out only: the gap is the contract's
-  to close.
+  or not, so that another site cannot sign a browser in to an account it chose. The contract
+  declares `403 auth.csrf-rejected` on every one of them since `@cadenway/contracts` 0.3.1.
 - **French titles.** The gateway owns the mapping from an error `code` to the French `title` of
   the public problem, for the codes the web application shows as is (`src/problems/public-problem.ts`,
   checked against the examples of the contract); the other codes keep the English reason phrase.
