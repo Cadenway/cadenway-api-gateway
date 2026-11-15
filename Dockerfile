@@ -35,4 +35,7 @@ USER node
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${PORT}/health/ready" || exit 1
-CMD ["node", "dist/main.js"]
+# The loader hook and the preloaded telemetry.js start OpenTelemetry before main.js imports
+# Express, which NestJS 12 loads as ESM. The hook is named through @cadenway/nest-common: pnpm's
+# strict node_modules does not expose @opentelemetry/instrumentation to the application.
+CMD ["node", "--experimental-loader=@cadenway/nest-common/hook.mjs", "--import", "./dist/telemetry.js", "dist/main.js"]

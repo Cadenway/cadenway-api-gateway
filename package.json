@@ -11,7 +11,7 @@
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
-    "start:dev": "nest start --watch",
+    "start:dev": "nest start --watch --env-file .env --exec \"node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js\"",
     "build": "nest build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -25,8 +25,8 @@
     "quality": "pnpm format:check && pnpm test:lint && pnpm lint && pnpm typecheck && pnpm test:architecture && pnpm test:coverage && pnpm build"
   },
   "dependencies": {
-    "@cadenway/contracts": "^0.1.0",
-    "@cadenway/nest-common": "^0.1.2",
+    "@cadenway/contracts": "^0.2.0",
+    "@cadenway/nest-common": "^0.2.0",
     "@nestjs/common": "^12.4.2",
     "@nestjs/core": "^12.4.2",
     "@nestjs/platform-express": "^12.4.2",
@@ -47,6 +47,7 @@
     "@nestjs/cli": "^12.0.12",
     "@nestjs/schematics": "^12.0.13",
     "@nestjs/testing": "^12.4.2",
+    "@testcontainers/redis": "^12.2.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.2",
