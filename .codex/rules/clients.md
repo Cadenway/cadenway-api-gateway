@@ -8,8 +8,13 @@ paths:
 - Generated from `openapi/internal/<service>.yaml` of the installed contracts; generated files are
   never edited by hand.
 - Generation runs in this repository (`pnpm generate:clients`, orval with the `fetch` client) from
-  the spec files shipped in `@cadenway/contracts`. Neither the script nor the shipped specs exist
-  yet: both arrive with the first internal contract.
+  the spec files shipped in `@cadenway/contracts` (`specs/openapi/internal/<service>.yaml`) into
+  `src/clients/generated/`, committed; CI fails when it differs from what the installed contracts
+  generate.
+- Every generated call goes through an `InternalHttpClient` of `@cadenway/nest-common`, one per
+  service; its answers are checked against the zod validators of `@cadenway/contracts`.
+- Guards and routes reach a client through a port they define, bound in `ClientsModule`: only
+  `src/clients/`, an `infrastructure/` adapter or a module imports `src/clients/`.
 - Default timeout, retries only for idempotent calls, the internal token on every call.
 - Base URLs from environment variables named `<NAME>_SERVICE_URL` (`TASK_SERVICE_URL`), validated
   by `src/config/app-config.ts` and documented in `.env.example`.

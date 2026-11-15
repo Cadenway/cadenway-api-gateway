@@ -1,14 +1,23 @@
-import {
-  ConfigModule,
-  HealthModule,
-  redisIndicator,
-  type HealthModuleOptions,
-} from '@cadenway/nest-common';
+import { HealthModule, redisIndicator, type HealthModuleOptions } from '@cadenway/nest-common';
 import { ResilientRedisClient } from '@cadenway/nest-common/redis';
-import { Module } from '@nestjs/common';
+import { Module, type Type } from '@nestjs/common';
 
-import { appConfigSchema } from './config/app-config.js';
+import { ClientsModule } from './clients/clients.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
+import { AuthRoutesModule } from './routes/auth/auth-routes.module.js';
+import { MeRoutesModule } from './routes/me/me-routes.module.js';
+
+/**
+ * Constant ROUTE_MODULES
+ *
+ * @description
+ * The modules of the public routes, in the order they are registered: `AppModule` imports them,
+ * and the route tests serve the same list with the internal services faked, so a route module
+ * added here is tested as it is served.
+ *
+ * @type {readonly Type[]}
+ */
+export const ROUTE_MODULES: readonly Type[] = [AuthRoutesModule, MeRoutesModule];
 
 /**
  * Constant SHUTDOWN_DELAY_MS
@@ -38,10 +47,13 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  * adds the logs, the error format, the validation pipe, the interceptors, the body limit and the
  * request deadline.
  *
- * - `ConfigModule` validates the environment against `appConfigSchema` when the application is
- *   created (`eager: false`), so importing this module reads nothing and an invalid environment
- *   rejects `createApplication` with the `ConfigError` that `runApplication` writes as one line.
- *   It provides the configuration under `CONFIG`.
+ * - `CONFIG` is not provided here: `createGatewayApplication` hands the configuration that
+ *   `main.ts` validated once to `createApplication` (`provideConfig: true`), which provides it
+ *   globally. Importing this module reads nothing.
+ * - `ClientsModule` builds the clients of the internal services (identity-service today) and
+ *   provides, globally, the ports the guards and routes use.
+ * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule` and `MeRoutesModule`, the routes
+ *   of `openapi/public/auth.yaml`.
  * - `RateLimitModule` opens the Redis connection of the rate-limit counters.
  * - `HealthModule` serves `GET /health/live`, which checks nothing, and `GET /health/ready`, which
  *   answers 503 while Redis does not answer `PING` within one second, and from the start of the
@@ -49,12 +61,13 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  *   probe.
  *
  * The gateway has no broker connection yet: it gets NATS when it publishes its usage event, as
- * cadenway-ops `docs/service-environment.md` lists. The modules of `src/auth/`, `src/routes/`,
- * `src/aggregates/`, `src/public/` and `src/clients/` are registered here as they are created.
+ * cadenway-ops `docs/service-environment.md` lists. The modules of `src/routes/`,
+ * `src/aggregates/` and `src/public/` are registered here as they are created; `src/auth/` holds
+ * guards, which the controllers use directly, and no module.
  */
 @Module({
   imports: [
-    ConfigModule.forRoot({ schema: appConfigSchema, eager: false }),
+    ClientsModule,
     RateLimitModule,
     HealthModule.forRootAsync({
       imports: [RateLimitModule],
@@ -64,6 +77,7 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
         shutdownDelayMs: SHUTDOWN_DELAY_MS,
       }),
     }),
+    ...ROUTE_MODULES,
   ],
 })
 export class AppModule {}

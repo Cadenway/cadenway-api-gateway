@@ -13,6 +13,7 @@
     "prepare": "git config core.hooksPath .githooks",
     "start:dev": "nest start --watch --env-file .env --exec \"node --max-old-space-size=160 --import @cadenway/nest-common/register --import ./dist/telemetry.js\"",
     "build": "nest build",
+    "generate:clients": "orval --config orval.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -25,8 +26,8 @@
     "quality": "pnpm format:check && pnpm test:lint && pnpm lint && pnpm typecheck && pnpm test:architecture && pnpm test:coverage && pnpm build"
   },
   "dependencies": {
-    "@cadenway/contracts": "^0.2.0",
-    "@cadenway/nest-common": "^0.3.0",
+    "@cadenway/contracts": "^0.3.0",
+    "@cadenway/nest-common": "^0.4.0",
     "@nestjs/common": "^12.4.2",
     "@nestjs/core": "^12.4.2",
     "@nestjs/platform-express": "^12.4.2",
@@ -53,16 +54,20 @@
     "@types/node": "^24.19.2",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^5.1.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-jsdoc": "^65.4.5",
     "globals": "^17.14.0",
+    "orval": "^8.48.0",
     "pino-pretty": "^13.2.0",
     "prettier": "^3.9.10",
     "supertest": "^7.3.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",
     "vite": "^8.3.7",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "yaml": "^2.9.1"
   }
 }

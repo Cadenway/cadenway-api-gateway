@@ -1,4 +1,5 @@
 import { createApplication, type CreateApplicationOptions } from '@cadenway/nest-common';
+import type { DynamicModule, Type } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -99,14 +100,17 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
  * @description
  * Creates the gateway with the shared formats of `@cadenway/nest-common` and the settings of a
  * public edge, ready to listen. `main.ts` calls it with the configuration of the process; the
- * integration tests call it with theirs, so both run the same start-up.
+ * tests call it with theirs, so all run the same start-up.
  *
+ * - The configuration `main.ts` validated is provided globally under `CONFIG`
+ *   (`provideConfig: true`): the environment is validated once, not again when the application is
+ *   created.
  * - The internal token is signed for the calls the gateway makes (`INTERNAL_TOKEN_ISSUER`,
  *   `INTERNAL_TOKEN_PRIVATE_JWK`) and verified on none: the gateway authenticates the
  *   applications itself.
  * - An incoming `X-Request-Id` or `X-Request-Timeout-Ms` is ignored: a client chooses neither the
  *   reference of its request nor the budget of the internal calls.
- * - Express trusts one proxy hop, Traefik.
+ * - Express trusts one proxy hop, Traefik, and computes no entity tag of its own.
  * - `helmet` sets its default security headers; `cookie-parser` reads cookies, unsigned, since the
  *   session token is opaque and checked by identity-service.
  * - CORS answers the origins of `ALLOWED_ORIGINS` only, by exact comparison and with credentials.
@@ -116,15 +120,19 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
  * @param {Readonly<AppConfig>} config - Validated configuration of the gateway.
  * @param {CreateApplicationOptions['logDestination']} logDestination - Stream of the log lines;
  * the standard output when omitted. For tests.
+ * @param {Type | DynamicModule} applicationModule - Root module; `AppModule` when omitted. For the
+ * route tests, which serve the same routes with the internal services faked.
  * @returns {Promise<NestExpressApplication>} The application, not yet listening.
  */
 export async function createGatewayApplication(
   config: Readonly<AppConfig>,
   logDestination?: CreateApplicationOptions['logDestination'],
+  applicationModule: Type | DynamicModule = AppModule,
 ): Promise<NestExpressApplication> {
-  const app: NestExpressApplication = await createApplication(AppModule, {
+  const app: NestExpressApplication = await createApplication(applicationModule, {
     service: SERVICE_NAME,
     config,
+    provideConfig: true,
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
@@ -137,6 +145,9 @@ export async function createGatewayApplication(
     logDestination,
   });
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
+  // The only entity tag is the `version` of a resource, set by the `EtagInterceptor` of the kit:
+  // Express would add a weak one, derived from the body, to every other answer.
+  app.set('etag', false);
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({
