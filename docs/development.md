@@ -45,6 +45,7 @@ Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
 
    ```bash
    cd ../cadenway-ops/compose
+   cp .env.example .env        # once, if it is not there yet: it names compose.local.yaml
    docker compose run --rm internal-token-keys --print
    ```
 
