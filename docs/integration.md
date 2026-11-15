@@ -38,7 +38,8 @@ mapped to its internal route of `openapi/internal/identity-service.yaml`:
   never reads the cookie, so a stale one is ignored.
 - **Cross-site check** (`src/auth/cross-site.ts`): every unsafe route needs an `Origin` exactly
   equal to one of `ALLOWED_ORIGINS` and `Content-Type: application/json`, signed in or not
-  (decision 6 of the walking skeleton), else `403 auth.csrf-rejected` before the route runs. The
+  (see [Decisions](#decisions-of-the-walking-skeleton)), else `403 auth.csrf-rejected` before the
+  route runs. The
   session guard applies it to every unsafe request it authenticates.
 - **Cookie** (`src/auth/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
 SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a persistent session
@@ -49,7 +50,7 @@ SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a pers
   `ETag`. A route that sends a code answers `202`, one that signs in `200`, the sign-out `204`.
 - **Errors** (`src/problems/`): an internal client error is answered with its `code` and its
   `details` (without `service`) when the public operation declares that status and code, under the
-  French title the gateway owns for the codes the web application shows as is (decision 7); a
+  French title the gateway owns for the codes the web application shows as is; a
   `429` gets `Retry-After` from `details.lockedUntil` or `details.resendAvailableAt`. A refused
   internal token (`401`, or `403` refusing the issuer, the actor or the organization) is
   `503 upstream.unauthorized`; any other client error is `503 upstream.failed`, so an internal
@@ -57,6 +58,24 @@ SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a pers
   `404 session.not-found` as an ended session, and `GET /v1/me` answers `404 user.not-found` as
   `401 auth.session-expired`. When identity-service cannot answer, the sign-out answers `503` and
   keeps the cookie, so it can be retried.
+
+### Decisions of the walking skeleton
+
+Fixed for phase P2a of the integration plan, and open to revision by the maintainers:
+
+- **Login cross-site check.** The gateway requires an exact allowed `Origin` and
+  `Content-Type: application/json` on every unsafe route of `openapi/public/auth.yaml`, signed in
+  or not, so that another site cannot sign a browser in to an account it chose. Version 1.0.0 of
+  the contract declares `403 auth.csrf-rejected` on the sign-out only: the gap is the contract's
+  to close.
+- **French titles.** The gateway owns the mapping from an error `code` to the French `title` of
+  the public problem, for the codes the web application shows as is (`src/problems/public-problem.ts`,
+  checked against the examples of the contract); the other codes keep the English reason phrase.
+- **Sign-out on a failure.** When identity-service cannot revoke the session, the sign-out answers
+  `503` and keeps the cookie, so that it can be retried rather than leave an active session the
+  browser no longer knows.
+- **Account gone.** `GET /v1/me` answers `404 user.not-found` from identity-service as
+  `401 auth.session-expired`: the route declares no `404`, and the session can no longer be used.
 
 ## Gateway Patterns
 

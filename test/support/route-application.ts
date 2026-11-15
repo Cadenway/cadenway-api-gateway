@@ -5,15 +5,14 @@ import { Module } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { App } from 'supertest/types.js';
 
+import { ROUTE_MODULES } from '../../src/app.module.js';
 import { createGatewayApplication } from '../../src/gateway-application.js';
-import { AuthRoutesModule } from '../../src/routes/auth/auth-routes.module.js';
-import { MeRoutesModule } from '../../src/routes/me/me-routes.module.js';
 import { fakeIdentityModule, type FakeIdentity } from './fake-identity.js';
 import { testConfig } from './test-environment.js';
 
 /**
- * Root module of the route tests: the route modules of the gateway, without Redis and with
- * identity-service faked.
+ * Root module of the route tests: the route modules of the gateway (`ROUTE_MODULES`), without
+ * Redis and with identity-service faked.
  */
 @Module({})
 class RouteTestModule {}
@@ -48,7 +47,7 @@ export async function createRouteApplication(fake: FakeIdentity): Promise<RouteA
   });
   const root: DynamicModule = {
     module: RouteTestModule,
-    imports: [fakeIdentityModule(fake), AuthRoutesModule, MeRoutesModule],
+    imports: [fakeIdentityModule(fake), ...ROUTE_MODULES],
   };
   const app: NestExpressApplication = await createGatewayApplication(testConfig(), sink, root);
   await app.init();

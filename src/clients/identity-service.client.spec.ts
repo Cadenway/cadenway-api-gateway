@@ -223,6 +223,26 @@ describe('IdentityServiceClient', () => {
       expect(String((failure as ProblemException).cause)).not.toContain('cookie-token');
     });
 
+    it('answers a body that is not JSON as 503 upstream.failed, without quoting it', async () => {
+      answer.mockReturnValue(
+        new Response('{"token":"secret-session-token"', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const failure: unknown = await client
+        .introspect('cookie-token')
+        .catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(ProblemException);
+      expect((failure as ProblemException).problem).toMatchObject({
+        status: 503,
+        code: 'upstream.failed',
+      });
+      expect(String((failure as ProblemException).cause)).not.toContain('secret-session-token');
+    });
+
     it('answers a refused internal token (401) as 503 upstream.unauthorized', async () => {
       answer.mockReturnValue(
         json(401, { code: 'auth.token-invalid', status: 401 }, 'application/problem+json'),

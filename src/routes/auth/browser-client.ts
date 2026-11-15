@@ -1,4 +1,5 @@
 import type { Client } from '@cadenway/contracts/types/internal/identity-service';
+import { signInWithPasswordInternalBodyClientUserAgentMax } from '@cadenway/contracts/validators/internal/identity-service';
 import type { Request } from 'express';
 
 /**
@@ -10,7 +11,7 @@ import type { Request } from 'express';
  *
  * @type {number}
  */
-const MAX_USER_AGENT_LENGTH: number = 1024;
+const MAX_USER_AGENT_LENGTH: number = signInWithPasswordInternalBodyClientUserAgentMax;
 
 /**
  * Constant IPV4_MAPPED_PREFIX
@@ -51,7 +52,7 @@ export function browserClient(request: Request): Client {
       address.startsWith(IPV4_MAPPED_PREFIX) && address.includes('.')
         ? address.slice(IPV4_MAPPED_PREFIX.length)
         : address,
-    // JSON Schema counts code points, as `Array.from` splits a string; most headers are far shorter.
+    // JSON Schema counts code points, as `Array.from` splits a string.
     userAgent:
       userAgent === undefined
         ? null

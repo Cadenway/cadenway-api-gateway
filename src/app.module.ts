@@ -1,11 +1,23 @@
 import { HealthModule, redisIndicator, type HealthModuleOptions } from '@cadenway/nest-common';
 import { ResilientRedisClient } from '@cadenway/nest-common/redis';
-import { Module } from '@nestjs/common';
+import { Module, type Type } from '@nestjs/common';
 
 import { ClientsModule } from './clients/clients.module.js';
 import { RateLimitModule } from './rate-limit/rate-limit.module.js';
 import { AuthRoutesModule } from './routes/auth/auth-routes.module.js';
 import { MeRoutesModule } from './routes/me/me-routes.module.js';
+
+/**
+ * Constant ROUTE_MODULES
+ *
+ * @description
+ * The modules of the public routes, in the order they are registered: `AppModule` imports them,
+ * and the route tests serve the same list with the internal services faked, so a route module
+ * added here is tested as it is served.
+ *
+ * @type {readonly Type[]}
+ */
+export const ROUTE_MODULES: readonly Type[] = [AuthRoutesModule, MeRoutesModule];
 
 /**
  * Constant SHUTDOWN_DELAY_MS
@@ -40,7 +52,8 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  *   globally. Importing this module reads nothing.
  * - `ClientsModule` builds the clients of the internal services (identity-service today) and
  *   provides, globally, the ports the guards and routes use.
- * - `AuthRoutesModule` and `MeRoutesModule` serve the routes of `openapi/public/auth.yaml`.
+ * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule` and `MeRoutesModule`, the routes
+ *   of `openapi/public/auth.yaml`.
  * - `RateLimitModule` opens the Redis connection of the rate-limit counters.
  * - `HealthModule` serves `GET /health/live`, which checks nothing, and `GET /health/ready`, which
  *   answers 503 while Redis does not answer `PING` within one second, and from the start of the
@@ -64,8 +77,7 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
         shutdownDelayMs: SHUTDOWN_DELAY_MS,
       }),
     }),
-    AuthRoutesModule,
-    MeRoutesModule,
+    ...ROUTE_MODULES,
   ],
 })
 export class AppModule {}

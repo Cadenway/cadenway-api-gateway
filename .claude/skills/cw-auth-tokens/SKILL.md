@@ -46,8 +46,9 @@ description: "The token types the gateway accepts (session, personal API token),
   cadenway-automation-service and cadenway-integration-service sign the token of their own
   calls, each with its own key: a service verifies against the issuers and keys of its
   configuration.
-- A route without a user or an organization (sign-up, sign-in, introspection, intake form,
-  webhooks) carries a token with an anonymous subject.
+- A call made for nobody yet (sign-up, sign-in, intake form) carries a token with an anonymous
+  subject; a call the gateway makes as itself (the introspection, the webhook relay) carries the
+  actor `system`. Neither carries an organization.
 
 ## Organization context
 

@@ -11,6 +11,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
 import type { AppConfig } from '../config/app-config.js';
+import { toPublicProblem } from '../problems/upstream-problem.js';
 import { assertSameSiteRequest, isUnsafeMethod } from './cross-site.js';
 import { readSessionCookie, type SessionCookie } from './session-cookie.js';
 import { SESSION_INTROSPECTOR, type SessionIntrospector } from './session-introspector.port.js';
@@ -54,7 +55,8 @@ export function OptionalSession(): CustomDecorator {
  *    call: the cookie authenticates it.
  * 2. No cookie answers `401 auth.session-required`. A cookie that cannot be a token, or that the
  *    introspection does not find active, answers `401 auth.session-expired`. On a route marked
- *    `OptionalSession`, both let the route run without an identity.
+ *    `OptionalSession`, both let the route run without an identity. A failed introspection is
+ *    `503 upstream.*`, whatever identity-service answered.
  * 3. An active session gives the request its organization context with
  *    `setRequestOrganizationContext` of `@cadenway/nest-common`, from the introspection only: a
  *    user actor, and the organization, role and scopes identity-service returned (no organization
@@ -156,7 +158,7 @@ export class SessionGuard implements CanActivate {
       throw sessionRequiredProblem();
     }
     const session: VerifiedSession | null =
-      cookie.kind === 'token' ? await this.introspector.introspect(cookie.token) : null;
+      cookie.kind === 'token' ? await this.introspect(cookie.token) : null;
     if (session === null) {
       if (optional) {
         return true;
@@ -171,6 +173,27 @@ export class SessionGuard implements CanActivate {
     });
     attachVerifiedSession(request, session);
     return true;
+  }
+
+  /**
+   * Method introspect
+   *
+   * @description
+   * Introspects the token and translates a failure for the browser: the introspection declares no
+   * client error the applications may see, so a refused internal token (`401`, or `403` refusing
+   * the issuer or the actor) answers `503 upstream.unauthorized` and any other client error
+   * `503 upstream.failed`, never the internal problem itself.
+   *
+   * @param {string} token - Value of the session cookie.
+   * @returns {Promise<VerifiedSession | null>} The session, or `null` when it is not active.
+   * @throws {ProblemException} 503 `upstream.*` when identity-service cannot answer.
+   */
+  private async introspect(token: string): Promise<VerifiedSession | null> {
+    try {
+      return await this.introspector.introspect(token);
+    } catch (error) {
+      throw toPublicProblem(error, {});
+    }
   }
   // #endregion
 }

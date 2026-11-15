@@ -199,6 +199,35 @@ function expectBody<TSchema extends z.ZodType>(
 }
 
 /**
+ * Function answered
+ *
+ * @description
+ * Awaits a generated call. The generated code parses a success body with `JSON.parse`, whose
+ * `SyntaxError` quotes part of the body, which may hold a session token: a body that is not JSON
+ * becomes `503 upstream.failed` without that message, so it reaches neither the browser nor the
+ * log line of the request. Every other error, the problems of the internal HTTP client included,
+ * is thrown unchanged.
+ *
+ * @param {string} operation - `operationId` of the call.
+ * @param {Promise<TResponse>} call - The generated call.
+ * @returns {Promise<TResponse>} What the call resolved with.
+ * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON.
+ */
+async function answered<TResponse>(
+  operation: string,
+  call: Promise<TResponse>,
+): Promise<TResponse> {
+  try {
+    return await call;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw outsideContract(operation, 'a body that is not JSON');
+    }
+    throw error;
+  }
+}
+
+/**
  * Class IdentityServiceClient
  *
  * @description
@@ -271,7 +300,7 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
     const options: InternalRequestInit = { ...callerClaims('system'), idempotent: true };
     const answer: z.output<typeof IntrospectTokenResponse> = expectBody(
       'introspectToken',
-      await this.routes.introspectToken({ token }, options),
+      await answered('introspectToken', this.routes.introspectToken({ token }, options)),
       200,
       IntrospectTokenResponse,
     );
@@ -300,7 +329,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async discoverSignInMethods(request: SignInMethodsRequest): Promise<SignInMethods> {
     return expectBody(
       'discoverSignInMethodsInternal',
-      await this.routes.discoverSignInMethodsInternal(request, callerClaims('anonymous')),
+      await answered(
+        'discoverSignInMethodsInternal',
+        this.routes.discoverSignInMethodsInternal(request, callerClaims('anonymous')),
+      ),
       200,
       DiscoverSignInMethodsInternalResponse,
     );
@@ -318,7 +350,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async signUp(request: SignUpRequest): Promise<CodeSent> {
     return expectBody(
       'signUpInternal',
-      await this.routes.signUpInternal(request, callerClaims('anonymous')),
+      await answered(
+        'signUpInternal',
+        this.routes.signUpInternal(request, callerClaims('anonymous')),
+      ),
       202,
       SignUpInternalResponse,
     );
@@ -336,7 +371,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async resendSignUpCode(request: CodeRequest): Promise<CodeSent> {
     return expectBody(
       'resendSignUpCodeInternal',
-      await this.routes.resendSignUpCodeInternal(request, callerClaims('anonymous')),
+      await answered(
+        'resendSignUpCodeInternal',
+        this.routes.resendSignUpCodeInternal(request, callerClaims('anonymous')),
+      ),
       202,
       ResendSignUpCodeInternalResponse,
     );
@@ -354,7 +392,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async verifySignUp(request: CodeVerification): Promise<SessionIssued> {
     return expectBody(
       'verifySignUpInternal',
-      await this.routes.verifySignUpInternal(request, callerClaims('anonymous')),
+      await answered(
+        'verifySignUpInternal',
+        this.routes.verifySignUpInternal(request, callerClaims('anonymous')),
+      ),
       200,
       VerifySignUpInternalResponse,
     );
@@ -372,7 +413,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async signInWithPassword(request: PasswordSignIn): Promise<SessionIssued> {
     return expectBody(
       'signInWithPasswordInternal',
-      await this.routes.signInWithPasswordInternal(request, callerClaims('anonymous')),
+      await answered(
+        'signInWithPasswordInternal',
+        this.routes.signInWithPasswordInternal(request, callerClaims('anonymous')),
+      ),
       200,
       SignInWithPasswordInternalResponse,
     );
@@ -390,7 +434,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async requestSignInCode(request: CodeRequest): Promise<CodeSent> {
     return expectBody(
       'requestSignInCodeInternal',
-      await this.routes.requestSignInCodeInternal(request, callerClaims('anonymous')),
+      await answered(
+        'requestSignInCodeInternal',
+        this.routes.requestSignInCodeInternal(request, callerClaims('anonymous')),
+      ),
       202,
       RequestSignInCodeInternalResponse,
     );
@@ -408,7 +455,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
   public async signInWithCode(request: CodeVerification): Promise<SessionIssued> {
     return expectBody(
       'signInWithCodeInternal',
-      await this.routes.signInWithCodeInternal(request, callerClaims('anonymous')),
+      await answered(
+        'signInWithCodeInternal',
+        this.routes.signInWithCodeInternal(request, callerClaims('anonymous')),
+      ),
       200,
       SignInWithCodeInternalResponse,
     );
@@ -425,7 +475,11 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
    * @returns {Promise<void>} Resolves once the session is revoked, or had already ended.
    */
   public async revokeSession(sessionId: string): Promise<void> {
-    expectStatus('revokeSession', await this.routes.revokeSession(sessionId), 204);
+    expectStatus(
+      'revokeSession',
+      await answered('revokeSession', this.routes.revokeSession(sessionId)),
+      204,
+    );
   }
 
   /**
@@ -439,7 +493,12 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
    * @returns {Promise<User>} The account.
    */
   public async getUser(userId: string): Promise<User> {
-    return expectBody('getUser', await this.routes.getUser(userId), 200, GetUserResponse);
+    return expectBody(
+      'getUser',
+      await answered('getUser', this.routes.getUser(userId)),
+      200,
+      GetUserResponse,
+    );
   }
   // #endregion
 }

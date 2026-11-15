@@ -113,13 +113,15 @@ const PASSWORD_SIGN_IN_PROBLEMS: AcceptedProblems = {
  * Constant SIGN_OUT_PROBLEMS
  *
  * @description
- * Client errors of identity-service that `POST /v1/auth/sign-out` answers as they are. A
- * `404 session.not-found` is not one: the session already ended, which the sign-out treats as
- * done.
+ * Client errors of identity-service that `POST /v1/auth/sign-out` answers as they are: none. The
+ * revocation has no body and its path comes from the introspection, so an internal `400` is a
+ * defect of the gateway or of identity-service, answered `503 upstream.failed`, never blamed on
+ * the browser. A `404 session.not-found` means the session already ended, which the sign-out
+ * treats as done.
  *
  * @type {AcceptedProblems}
  */
-const SIGN_OUT_PROBLEMS: AcceptedProblems = { 400: INVALID_REQUEST };
+const SIGN_OUT_PROBLEMS: AcceptedProblems = {};
 
 /**
  * Constant STRICT_SIGN_OUT_BODY
@@ -159,7 +161,8 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  * answer back to the public contract, member by member.
  *
  * - Every route is `POST` and passes `CsrfGuard` first: an exact allowed `Origin` and
- *   `Content-Type: application/json`, signed in or not (decision 6 of the walking skeleton). Every
+ *   `Content-Type: application/json`, signed in or not (the login cross-site decision of
+ *   docs/integration.md). Every
  *   answer carries `Cache-Control: no-store` (see `AuthRoutesModule`).
  * - The flows carry no session (`security: []`): they never read the cookie, so a stale one never
  *   makes them fail, and identity-service sees them as the actor `anonymous`.
@@ -232,7 +235,8 @@ export class AuthController {
    * @description
    * `POST /v1/auth/sign-up`: creates an unverified account and sends a code. `202`, no session.
    *
-   * @param {z.output<typeof SignUpBody>} body - Name, address, password and acceptance of the terms.
+   * @param {z.output<typeof SignUpBody>} body - Name, address, password and acceptance of the
+   * terms.
    * @param {Response} response - Response, for `Retry-After`.
    * @returns {Promise<CodeSent>} When the code expires and when another can be asked for.
    */

@@ -1,3 +1,4 @@
+import { introspectTokenBodyTokenMax } from '@cadenway/contracts/validators/internal/identity-service';
 import type { Request } from 'express';
 
 /**
@@ -21,7 +22,7 @@ export const SESSION_COOKIE_NAME: string = '__Host-cw_session';
  *
  * @type {number}
  */
-export const MAX_SESSION_TOKEN_LENGTH: number = 256;
+export const MAX_SESSION_TOKEN_LENGTH: number = introspectTokenBodyTokenMax;
 
 /**
  * Constant SESSION_COOKIE_ATTRIBUTES

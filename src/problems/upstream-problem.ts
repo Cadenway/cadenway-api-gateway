@@ -101,13 +101,13 @@ export function isUpstreamProblem(error: unknown, status: ProblemStatus, code: s
  * title the gateway owns (`publicProblem`), and only for a status and code the public operation
  * declares (`accepted`).
  *
- * | Failure of the internal call                         | Public answer                                        |
- * | ---------------------------------------------------- | ---------------------------------------------------- |
- * | `503 upstream.*` of the internal HTTP client         | The same problem                                     |
- * | `403` refusing the issuer, actor or organization     | `503 upstream.unauthorized`                          |
- * | A status and code listed in `accepted`               | Same status and code, `details` without `service`    |
- * | Any other client error (an internal `404` included)  | `503 upstream.failed`                                |
- * | Anything that is not a problem                       | Unchanged, so the error filter answers `500`         |
+ * | Failure of the internal call                    | Public answer                             |
+ * | ----------------------------------------------- | ----------------------------------------- |
+ * | `503 upstream.*` of the internal HTTP client    | The same problem                          |
+ * | `403` refusing the issuer, actor or organization | `503 upstream.unauthorized`               |
+ * | A status and code listed in `accepted`          | Same, `details` without `service`         |
+ * | Any other client error (internal `404` too)     | `503 upstream.failed`                     |
+ * | Anything that is not a problem                  | Unchanged: the error filter answers `500` |
  *
  * An internal `404` is never answered as a `403` or with internal wording: a route that may answer
  * `404` lists the code in `accepted`, and gets a public `404` that says nothing about another

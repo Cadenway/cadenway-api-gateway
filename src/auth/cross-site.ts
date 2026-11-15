@@ -3,15 +3,16 @@ import type { Request } from 'express';
 import { publicProblem } from '../problems/public-problem.js';
 
 /**
- * Constant UNSAFE_METHODS
+ * Constant SAFE_METHODS
  *
  * @description
- * Methods that change something (RFC 9110 calls the others safe): the ones the cross-site check
- * applies to.
+ * Methods RFC 9110 defines as safe, which change nothing: every other method, `POST`, `PUT`,
+ * `PATCH` and `DELETE` included, gets the cross-site check, so a method nobody listed cannot skip
+ * it.
  *
  * @type {ReadonlySet<string>}
  */
-const UNSAFE_METHODS: ReadonlySet<string> = new Set<string>(['POST', 'PUT', 'PATCH', 'DELETE']);
+const SAFE_METHODS: ReadonlySet<string> = new Set<string>(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * Constant JSON_MEDIA_TYPE
@@ -31,10 +32,10 @@ const JSON_MEDIA_TYPE: string = 'application/json';
  * Tells whether a request method changes something.
  *
  * @param {string} method - Method of the request, as Express reads it (uppercase).
- * @returns {boolean} `true` for `POST`, `PUT`, `PATCH` and `DELETE`.
+ * @returns {boolean} `false` for `GET`, `HEAD` and `OPTIONS`, `true` for every other method.
  */
 export function isUnsafeMethod(method: string): boolean {
-  return UNSAFE_METHODS.has(method.toUpperCase());
+  return !SAFE_METHODS.has(method.toUpperCase());
 }
 
 /**
@@ -64,7 +65,7 @@ function isJsonContentType(contentType: string | undefined): boolean {
  * request reaches neither identity-service nor the controller.
  *
  * The rules of the gateway require it on every unsafe request the session cookie authenticates;
- * decision 6 of the walking skeleton also requires it on every unsafe route of
+ * the login cross-site decision (docs/integration.md) also requires it on every unsafe route of
  * `openapi/public/auth.yaml`, signed in or not, against login cross-site request forgery.
  *
  * @param {Request} request - Incoming request.

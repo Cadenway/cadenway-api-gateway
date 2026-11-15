@@ -6,8 +6,9 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  * @description
  * French `title` of the public problems the web application shows to the person as they are,
  * by `code`, taken from the examples of `openapi/public/auth.yaml` of `@cadenway/contracts`
- * (decision 7 of the walking skeleton: the gateway owns this mapping). Every other code keeps the
- * English reason phrase of its status, which `ProblemException` fills in. The text is the same
+ * (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
+ * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
+ * The text is the same
  * for every occurrence of a code; the punctuation (the space before a colon, the typographic
  * apostrophe) is the contract's, character for character.
  *

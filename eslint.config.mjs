@@ -35,6 +35,12 @@ const rejectedPackages = [
   ['prom-client', 'Metrics are exported over OTLP by @cadenway/nest-common.'],
 ].map(([name, message]) => ({ regex: `^${name}(/|$)`, message }));
 
+// Sources of a sibling checkout are never imported from src/.
+const siblingSources = {
+  regex: '\\.\\./cadenway-',
+  message: 'Never import sibling sources: use the published @cadenway/* packages.',
+};
+
 export default defineConfig(
   globalIgnores(['dist/', 'coverage/', 'docs/', '.claude/', '.codex/', 'src/clients/generated/']),
   eslint.configs.recommended,
@@ -62,14 +68,22 @@ export default defineConfig(
         'error',
         {
           patterns: [
-            {
-              regex: '\\.\\./cadenway-',
-              message: 'Never import sibling sources: use the published @cadenway/* packages.',
-            },
+            siblingSources,
             ...rejectedPackages,
+            {
+              regex: '(^|/)generated/',
+              message:
+                'Only the client adapters of src/clients/ (*.client.ts) call the generated clients: anything else would skip the InternalHttpClient (deadline, retry, breaker, internal token).',
+            },
           ],
         },
       ],
+    },
+  },
+  {
+    files: ['src/clients/*.client.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [siblingSources, ...rejectedPackages] }],
     },
   },
   {

@@ -14,8 +14,9 @@ import { assertSameSiteRequest, isUnsafeMethod } from './cross-site.js';
  * (see `assertSameSiteRequest`). Safe methods pass.
  *
  * It guards the routes that carry no session yet, the sign-up and sign-in flows of
- * `openapi/public/auth.yaml` (decision 6 of the walking skeleton, against login cross-site request
- * forgery). A route authenticated by the session cookie gets the same check from `SessionGuard`.
+ * `openapi/public/auth.yaml`, against login cross-site request forgery (the login cross-site
+ * decision of docs/integration.md). A route authenticated by the session cookie gets the same
+ * check from `SessionGuard`.
  */
 @Injectable()
 export class CsrfGuard implements CanActivate {

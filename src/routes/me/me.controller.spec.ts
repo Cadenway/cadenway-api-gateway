@@ -181,6 +181,32 @@ describe('GET /v1/me', () => {
     expect(response.headers['cache-control']).toBe('no-store');
   });
 
+  it.each([
+    [403, 'auth.actor-not-allowed', 'upstream.unauthorized'],
+    [403, 'auth.issuer-not-allowed', 'upstream.unauthorized'],
+    [400, 'request.invalid', 'upstream.failed'],
+    [429, 'auth.code-throttled', 'upstream.failed'],
+  ] as const)(
+    'answers a client error of the introspection (%i %s) as 503 %s, never as is',
+    async (status, code, publicCode) => {
+      identity.introspect.mockRejectedValue(identityProblem(status, code));
+
+      const response: request.Response = await getMe(application, CAMILLE_TOKEN);
+
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({
+        title: 'Service Unavailable',
+        code: publicCode,
+        details: { service: 'identity-service' },
+      });
+      expect(JSON.stringify(response.body)).not.toContain(code);
+      expect(response.body).not.toHaveProperty(
+        'detail',
+        'Internal wording that never reaches the browser.',
+      );
+    },
+  );
+
   it('answers 503 when the account cannot be read', async () => {
     identity.getUser.mockRejectedValue(identityUnavailable('unreachable'));
 

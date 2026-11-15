@@ -31,9 +31,12 @@ function requestWith(headers: Record<string, string>): Request {
 }
 
 describe('isUnsafeMethod', () => {
-  it.each(['POST', 'PUT', 'PATCH', 'DELETE', 'post'])('treats %s as unsafe', (method) => {
-    expect(isUnsafeMethod(method)).toBe(true);
-  });
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE', 'post', 'PROPFIND'])(
+    'treats %s as unsafe',
+    (method) => {
+      expect(isUnsafeMethod(method)).toBe(true);
+    },
+  );
 
   it.each(['GET', 'HEAD', 'OPTIONS'])('treats %s as safe', (method) => {
     expect(isUnsafeMethod(method)).toBe(false);

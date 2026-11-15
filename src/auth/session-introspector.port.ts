@@ -18,7 +18,8 @@ export interface SessionIntrospector {
    * stops at the next request. An active answer counts as activity of the session at
    * identity-service.
    *
-   * @param {string} token - Value of the session cookie, 1 to 256 characters. A secret, never logged.
+   * @param {string} token - Value of the session cookie, 1 to 256 characters. A secret, never
+   * logged.
    * @returns {Promise<VerifiedSession | null>} The session when the token is an active session
    * token, `null` when it is unknown, expired, revoked, malformed or not a session token.
    * @throws {ProblemException} 503 `upstream.*` when identity-service cannot answer.

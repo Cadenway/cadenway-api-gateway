@@ -110,7 +110,7 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
  *   applications itself.
  * - An incoming `X-Request-Id` or `X-Request-Timeout-Ms` is ignored: a client chooses neither the
  *   reference of its request nor the budget of the internal calls.
- * - Express trusts one proxy hop, Traefik.
+ * - Express trusts one proxy hop, Traefik, and computes no entity tag of its own.
  * - `helmet` sets its default security headers; `cookie-parser` reads cookies, unsigned, since the
  *   session token is opaque and checked by identity-service.
  * - CORS answers the origins of `ALLOWED_ORIGINS` only, by exact comparison and with credentials.
@@ -145,6 +145,9 @@ export async function createGatewayApplication(
     logDestination,
   });
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
+  // The only entity tag is the `version` of a resource, set by the `EtagInterceptor` of the kit:
+  // Express would add a weak one, derived from the body, to every other answer.
+  app.set('etag', false);
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors({

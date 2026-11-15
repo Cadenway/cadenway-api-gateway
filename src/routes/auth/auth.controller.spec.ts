@@ -195,6 +195,8 @@ describe('routes of /v1/auth', () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ methods: [{ type: 'password' }, { type: 'email-code' }] });
       expect(response.headers['cache-control']).toBe('no-store');
+      // No entity tag of Express's own: the contract declares none on this answer.
+      expect(response.headers.etag).toBeUndefined();
       expect(identity.discoverSignInMethods).toHaveBeenCalledWith({ email: CAMILLE.email });
       expect(identity.introspect).not.toHaveBeenCalled();
     });
@@ -738,6 +740,40 @@ describe('routes of /v1/auth', () => {
       expect(response.headers['set-cookie']).toEqual(cleared);
     });
 
+    it('answers an internal 400 of the revocation as 503 upstream.failed: the browser sent no path', async () => {
+      identity.revokeSession.mockRejectedValue(
+        identityProblem(400, 'request.invalid', {
+          issues: [
+            { in: 'param', path: 'sessionId', code: 'invalid_format', message: 'Invalid UUID' },
+          ],
+        }),
+      );
+
+      const response: request.Response = await post(application, '/v1/auth/sign-out', {}).set(
+        'Cookie',
+        `__Host-cw_session=${CAMILLE_TOKEN}`,
+      );
+
+      expectPublicResponse('post', '/v1/auth/sign-out', response);
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({ code: 'upstream.failed' });
+      expect(JSON.stringify(response.body)).not.toContain('sessionId');
+    });
+
+    it('answers 503 when the introspection of the sign-out is refused, keeping the cookie', async () => {
+      identity.introspect.mockRejectedValue(identityProblem(403, 'auth.actor-not-allowed'));
+
+      const response: request.Response = await post(application, '/v1/auth/sign-out', {}).set(
+        'Cookie',
+        `__Host-cw_session=${CAMILLE_TOKEN}`,
+      );
+
+      expectPublicResponse('post', '/v1/auth/sign-out', response);
+      expect(response.status).toBe(503);
+      expect(response.body).toMatchObject({ code: 'upstream.unauthorized' });
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+
     it('answers 503 and keeps the cookie when identity-service cannot revoke', async () => {
       identity.revokeSession.mockRejectedValue(identityUnavailable());
 
@@ -800,6 +836,10 @@ describe('routes of /v1/auth', () => {
 
       const response: request.Response = await pending.send(body);
 
+      // Not checked with expectPublicResponse: auth.yaml declares this 403 on the sign-out (and a
+      // 403 on the sign-in) only, while the login cross-site decision of docs/integration.md
+      // applies the check to every unsafe route of the authentication. The contract must close
+      // the gap.
       expect(response.status).toBe(403);
       expect(response.body).toMatchObject({ code: 'auth.csrf-rejected', title: 'Forbidden' });
       expect(response.headers['content-type']).toContain('application/problem+json');

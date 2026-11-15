@@ -47,6 +47,7 @@ event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 | `src/problems/`                          | The French titles of the public problems, the translation of internal errors, `Retry-After`                                                                              |
 | `src/routes/auth/`                       | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                |
 | `src/routes/me/`                         | `GET /v1/me` and its `IdentityUsers` port                                                                                                                                |
+| `src/routes/*.ts`                        | What the route folders share: the mapping to `CurrentUser` and the `Cache-Control: no-store` middleware                                                                  |
 
 A guard or a controller never imports `src/clients/`: it injects the port it defines, which
 `ClientsModule` binds to the client (the architecture check refuses the import). The route tests
