@@ -4,7 +4,13 @@ Planned role: cadenway-api-gateway is the only API the applications and third-pa
 
 ## Current status
 
-This checkout is a bootstrapped scaffold: `package.json`, a NestJS application under `src/` that only answers the health routes, and the GitHub workflows exist. No business code, route, event or migration exists yet; the target architecture in this guide is what they must follow.
+The gateway runs on the shared runtime of `@cadenway/nest-common`: validated configuration, JSON
+logs, OpenTelemetry, `application/problem+json` errors, the request deadline, the internal token
+signer, the public-edge HTTP settings (security headers, cookies, one trusted proxy hop, CORS for
+the allowed origins) and the health routes, whose readiness checks Redis. No public route, internal
+client, authentication or rate limiter exists yet: they arrive with the first public contracts
+(`openapi/public/auth.yaml` of cadenway-api-contracts). The target architecture in this guide is
+what they must follow.
 
 ## Read the guides
 

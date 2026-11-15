@@ -2,7 +2,9 @@
 
 [Documentation index](README.md) · [Repository instructions](../AGENTS.md)
 
-**Status:** This page records the target design from repository instructions and skills. Its behavior has not been verified as implemented in this snapshot.
+**Status:** This page records the design from repository instructions and skills. The public edge,
+the logs and the telemetry start-up are implemented and covered by `test/gateway.int-spec.ts`; the
+routes, the authentication, the internal clients and the rate limit are not built yet.
 
 ## Public and internal boundaries
 
@@ -90,7 +92,28 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
 - A JWT signed with `alg: Ed25519`, valid 60 seconds, with `aud` set to the called service and a
   `kid` header.
 - It carries the user, organization, member role, scopes and trace id of the table.
-- Signing and verification come from `@cadenway/nest-common`.
+- Signing and verification come from `@cadenway/nest-common`. This gateway signs with
+  `INTERNAL_TOKEN_ISSUER` (`api-gateway`) and `INTERNAL_TOKEN_PRIVATE_JWK`, a secret of
+  cadenway-ops (`API_GATEWAY_INTERNAL_TOKEN_PRIVATE_JWK`), and verifies no internal token
+  (`internalTokenVerification: 'off'`): it authenticates the applications itself.
+
+### Public edge
+
+`src/gateway-application.ts` applies these settings to every request. The rules require the
+cookie and the CSRF check; the settings below are inferred from a public API served behind Traefik
+on another origin than the applications, not prescribed by a rule:
+
+- `trust proxy` is `1`: Express believes the `X-Forwarded-*` headers of one hop, Traefik, and never
+  a header the client wrote itself.
+- `helmet` with its defaults.
+- `cookie-parser` without a secret: the session token is opaque and verified by introspection, so
+  no cookie is signed.
+- CORS answers the origins of `ALLOWED_ORIGINS` only (the webapp `app.<domain>` and the website
+  `<domain>`), compared exactly, with credentials; never `*`. A preflight from another origin gets
+  no `Access-Control-Allow-Origin`, so the browser refuses the request. The CSRF check compares
+  `Origin` to the same list.
+- An incoming `X-Request-Id` or `X-Request-Timeout-Ms` is ignored: a client chooses neither the
+  reference of its request nor the budget of the internal calls.
 
 ## Logging And Tracing
 
@@ -127,14 +150,20 @@ on a name.
 The telemetry must be loaded before the application imports Express:
 
 ```text
-node --experimental-loader=@opentelemetry/instrumentation/hook.mjs --import ./telemetry.js dist/main.js
+node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
 ```
 
+- `src/telemetry.ts` only calls `startTelemetry` of `@cadenway/nest-common/telemetry`, which
+  imports no NestJS code. The hook is named through the kit: pnpm's strict `node_modules` does not
+  expose `@opentelemetry/instrumentation` to the application.
 - This is the only documented way while NestJS 12 imports Express as ESM. Node 24 marks
-  `--experimental-loader` as discouraged: revisit the command with each Node or SDK upgrade.
-- The flags go on the `node` start command (the `CMD` of the `Dockerfile`), not in application code.
-- `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; like `LOG_LEVEL`, it is validated at start-up
-  and described in `.env.example`.
+  `--experimental-loader` as discouraged and prints an `ExperimentalWarning` on standard error at
+  start-up: revisit the command with each Node or SDK upgrade.
+- The flags go on the `node` start command (the `CMD` of the `Dockerfile` and `pnpm start:dev`),
+  not in application code.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; `startTelemetry` refuses anything but an
+  HTTP or HTTPS URL, and unset, nothing is exported. It is described in `.env.example` and stays out
+  of `deploy/compose.yaml` until an environment has a collector.
 
 ### Metrics
 

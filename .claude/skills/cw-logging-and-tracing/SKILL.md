@@ -5,9 +5,10 @@ description: "Log fields, redaction, trace propagation, the ESM start-up of Open
 
 # Logging and tracing
 
-This is the target convention. The logger, the redaction list, the OpenTelemetry SDK, its
-instrumentations and its exporters belong to `@cadenway/nest-common`: the gateway configures them and
-installs no logging or telemetry library of its own. `pino-pretty` is the one exception, a
+The logger, the redaction list, the OpenTelemetry SDK, its instrumentations and its exporters
+belong to `@cadenway/nest-common`: the gateway configures them and installs no logging or telemetry
+library of its own. `createApplication` (called by `src/gateway-application.ts`) installs the logs,
+and `src/telemetry.ts` starts the telemetry. `pino-pretty` is the one exception, a
 development dependency for readable local output. Check what the installed kit exports before relying
 on a name.
 
@@ -36,14 +37,20 @@ on a name.
 The telemetry must be loaded before the application imports Express:
 
 ```text
-node --experimental-loader=@opentelemetry/instrumentation/hook.mjs --import ./telemetry.js dist/main.js
+node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
 ```
 
+- `src/telemetry.ts` only calls `startTelemetry` of `@cadenway/nest-common/telemetry`, which
+  imports no NestJS code. The hook is named through the kit: pnpm's strict `node_modules` does not
+  expose `@opentelemetry/instrumentation` to the application.
 - This is the only documented way while NestJS 12 imports Express as ESM. Node 24 marks
-  `--experimental-loader` as discouraged: revisit the command with each Node or SDK upgrade.
-- The flags go on the `node` start command (the `CMD` of the `Dockerfile`), not in application code.
-- `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; like `LOG_LEVEL`, it is validated at start-up
-  and described in `.env.example`.
+  `--experimental-loader` as discouraged and prints an `ExperimentalWarning` on standard error at
+  start-up: revisit the command with each Node or SDK upgrade.
+- The flags go on the `node` start command (the `CMD` of the `Dockerfile` and `pnpm start:dev`),
+  not in application code.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; `startTelemetry` refuses anything but an
+  HTTP or HTTPS URL, and unset, nothing is exported. It is described in `.env.example` and stays out
+  of `deploy/compose.yaml` until an environment has a collector.
 
 ## Metrics
 
