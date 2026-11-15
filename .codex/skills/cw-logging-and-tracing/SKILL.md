@@ -37,15 +37,17 @@ on a name.
 The telemetry must be loaded before the application imports Express:
 
 ```text
-node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
+node --max-old-space-size=160 --import @cadenway/nest-common/register --import ./dist/telemetry.js dist/main.js
 ```
 
+- `@cadenway/nest-common/register` registers the module hooks of the instrumentations before
+  `telemetry.js` loads them: hence the order of the two `--import`. The hooks are named through
+  the kit: pnpm's strict `node_modules` does not expose `@opentelemetry/instrumentation` to the
+  application. No `ExperimentalWarning` is printed, unlike `--experimental-loader`.
 - `src/telemetry.ts` only calls `startTelemetry` of `@cadenway/nest-common/telemetry`, which
-  imports no NestJS code. The hook is named through the kit: pnpm's strict `node_modules` does not
-  expose `@opentelemetry/instrumentation` to the application.
-- This is the only documented way while NestJS 12 imports Express as ESM. Node 24 marks
-  `--experimental-loader` as discouraged and prints an `ExperimentalWarning` on standard error at
-  start-up: revisit the command with each Node or SDK upgrade.
+  imports no NestJS code.
+- `--max-old-space-size=160` caps the old generation of the heap at about 60 % of the 256M
+  container limit.
 - The flags go on the `node` start command (the `CMD` of the `Dockerfile` and `pnpm start:dev`),
   not in application code.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` points to the collector; `startTelemetry` refuses anything but an

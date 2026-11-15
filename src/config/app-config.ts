@@ -4,6 +4,7 @@ import {
   type BaseConfig,
   type InternalTokenSignerConfig,
 } from '@cadenway/nest-common';
+import { redisConfigShape, type RedisConfig } from '@cadenway/nest-common/redis';
 import { z } from 'zod';
 
 /**
@@ -17,21 +18,12 @@ import { z } from 'zod';
  * Besides the variables of every Cadenway backend (`NODE_ENV`, `PORT`, `LOG_LEVEL`, `LOG_PRETTY`),
  * the gateway signs the internal token of the calls it makes (`INTERNAL_TOKEN_ISSUER`,
  * `INTERNAL_TOKEN_PRIVATE_JWK`) and verifies none: it authenticates the applications itself.
+ * `REDIS_URL` (`redisConfigShape` of `@cadenway/nest-common/redis`) is the Redis that holds the
+ * per-token rate-limit counters, and nothing else for the gateway. There is no NATS variable yet:
+ * the gateway gets the broker when it publishes its usage event.
  */
-export interface AppConfig extends BaseConfig, InternalTokenSignerConfig {
+export interface AppConfig extends BaseConfig, InternalTokenSignerConfig, RedisConfig {
   // #region Properties
-  /**
-   * Property REDIS_URL
-   *
-   * @description
-   * Address of the Redis server that holds the per-token rate-limit counters, `redis://` or
-   * `rediss://`. Redis holds nothing else for the gateway.
-   *
-   * @type {string}
-   * @readonly
-   */
-  readonly REDIS_URL: string;
-
   /**
    * Property ALLOWED_ORIGINS
    *
@@ -225,7 +217,8 @@ const allowedOriginsSchema: z.ZodType<readonly string[]> = z
  * Zod schema of the environment of the gateway, for `loadConfig` and `ConfigModule.forRoot`.
  * `INTERNAL_TOKEN_ISSUER` and `INTERNAL_TOKEN_PRIVATE_JWK` keep the rules of
  * `@cadenway/nest-common`: a lowercase kebab-case name and one line of JSON holding an Ed25519
- * private JSON Web Key with its `kid`. No variable of this schema has a default except those of
+ * private JSON Web Key with its `kid`. `REDIS_URL` keeps the rule of `redisConfigShape`: a
+ * `redis://` or `rediss://` URL. No variable of this schema has a default except those of
  * `baseConfigShape`.
  *
  * @type {z.ZodType<AppConfig>}
@@ -233,7 +226,7 @@ const allowedOriginsSchema: z.ZodType<readonly string[]> = z
 export const appConfigSchema: z.ZodType<AppConfig> = z.object({
   ...baseConfigShape,
   ...internalTokenSignerConfigShape,
-  REDIS_URL: z.url({ protocol: /^rediss?$/u, error: 'Expected a redis:// or rediss:// URL.' }),
+  ...redisConfigShape,
   ALLOWED_ORIGINS: allowedOriginsSchema,
   IDENTITY_SERVICE_URL: serviceUrlSchema,
   ORGANIZATION_SERVICE_URL: serviceUrlSchema,

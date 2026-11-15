@@ -9,8 +9,8 @@ logs, OpenTelemetry, `application/problem+json` errors, the request deadline, th
 signer, the public-edge HTTP settings (security headers, cookies, one trusted proxy hop, CORS for
 the allowed origins) and the health routes, whose readiness checks Redis. No public route, internal
 client, authentication or rate limiter exists yet: they arrive with the first public contracts
-(`openapi/public/auth.yaml` of cadenway-api-contracts). The target architecture in this guide is
-what they must follow.
+(`openapi/public/auth.yaml` of cadenway-api-contracts). Nor does the broker connection, which comes
+with the usage event in phase P5. The target architecture in this guide is what they must follow.
 
 ## Read the guides
 

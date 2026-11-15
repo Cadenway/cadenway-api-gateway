@@ -49,6 +49,25 @@ description: "The token types the gateway accepts (session, personal API token),
 - A route without a user or an organization (sign-up, sign-in, introspection, intake form,
   webhooks) carries a token with an anonymous subject.
 
+## Organization context
+
+The organization and the actor of a request come from the verified session or API token only.
+The guard of `src/auth/` (phase P2a of the integration plan) gives a verified request its context
+with `setRequestOrganizationContext(request, context)` of `@cadenway/nest-common`: see
+[Organization context](https://github.com/Cadenway/cadenway-service-kit/blob/main/packages/nest-common/README.md#organization-context)
+in the kit README. It is the sanctioned way for an application that verifies its callers itself
+(`internalTokenVerification: 'off'`) to give an HTTP request an identity.
+
+- Only the code that verified the caller calls it, and only with what the verification
+  returned: the answer of `POST /internal/v1/tokens/introspect` for a session or an API token,
+  never a value read from the request.
+- The handler then reads the context with `getOrganizationContext()`, `InternalHttpClient`
+  signs the internal token of its calls from it, and the log lines of the request, its
+  completion line included, carry `organizationId` and `userId`.
+- It throws when the request already carries a context, and for a context an internal token
+  could not carry (an organization id that is not a UUID, an identified actor without an id).
+  `runWithOrganizationContext` is never used for an HTTP request.
+
 ## Public edge
 
 `src/gateway-application.ts` applies these settings to every request. The rules above require the

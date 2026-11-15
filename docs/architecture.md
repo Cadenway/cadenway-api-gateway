@@ -12,17 +12,27 @@ follows governs gateway capabilities as they are implemented.
 | File                         | Holds                                                                                                                                                                                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/telemetry.ts`           | `startTelemetry` of `@cadenway/nest-common/telemetry`, preloaded by the start command before `main.js`                                                                                                                                                       |
-| `src/main.ts`                | Validates the environment, creates the application, listens on `PORT`                                                                                                                                                                                        |
+| `src/main.ts`                | Inside `runApplication`: validates the environment, creates the application, listens on `PORT`; a failed start-up is one JSON line on the standard error and exit code 1                                                                                     |
 | `src/gateway-application.ts` | `createApplication` with the options of a public gateway (signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
-| `src/app.module.ts`          | `ConfigModule`, the rate-limit module and `HealthModule` with the Redis indicator                                                                                                                                                                            |
+| `src/app.module.ts`          | `ConfigModule` (validated when the application is created), the rate-limit module and `HealthModule` with the Redis indicator and the shutdown delay                                                                                                         |
 | `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                            |
-| `src/rate-limit/`            | The Redis connection of the counters, closed on shutdown; the limiter comes with the first authenticated routes                                                                                                                                              |
+| `src/rate-limit/`            | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes with the first authenticated routes                                                                                   |
 
 Start command, in the `Dockerfile` and `pnpm start:dev`:
 
 ```text
-node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
+node --max-old-space-size=160 --import @cadenway/nest-common/register --import ./dist/telemetry.js dist/main.js
 ```
+
+Readiness answers 503 from the first moment of a stop, and the gateway keeps serving for
+`SHUTDOWN_DELAY_MS` (3 seconds, `src/app.module.ts`) before it closes its listener: the GitOps
+agent stops the old container as soon as the new one is healthy, and Traefik may need up to its
+2 second provider throttle to route to the new one.
+
+The gateway has no broker connection yet. As cadenway-ops `docs/service-environment.md` lists,
+it gets `NATS_URL`, `NATS_USER: api-gateway` and `NATS_PASSWORD` once it publishes its usage
+event `api-usage.recorded.v1` (phase P5 of the integration plan), through
+`@cadenway/nest-messaging` without an outbox.
 
 ## Purpose and target structure
 

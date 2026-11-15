@@ -5,7 +5,9 @@ paths:
 
 # Authentication and authorization
 
-- The organization and the member come from the verified token only.
+- The organization and the member come from the verified token only. The guard that verified it
+  gives the request its context with `setRequestOrganizationContext` of `@cadenway/nest-common`,
+  with what the introspection returned, and nothing else sets a request context.
 - API tokens carry scopes (`tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`); each route
   declares the scopes it needs.
 - Services receive a short-lived internal token, never the user's credential.

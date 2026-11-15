@@ -54,7 +54,8 @@ Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
    single quotes.
 
 Every variable is validated at start-up: a missing or invalid one stops the process with a
-`ConfigError` that names it and never prints its value. `.env.example` describes each of them.
+`ConfigError` that names it and never prints its value, written as one JSON line on the standard
+error. `.env.example` describes each of them.
 
 ## Minimum checks by change
 
