@@ -1,87 +1,15 @@
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { Writable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { loadConfig } from '@cadenway/nest-common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { appConfigSchema } from '../src/config/app-config.js';
 import { createGatewayApplication } from '../src/gateway-application.js';
-
-/**
- * Constant ALLOWED_ORIGIN
- *
- * @description
- * Origin of the web application in this test; the only other allowed one is the website.
- *
- * @type {string}
- */
-const ALLOWED_ORIGIN = 'https://app.cadenway.test';
-
-/**
- * Function redisImage
- *
- * @description
- * Reads the Redis image of `compose.dev.yaml`, so the tests run the image the workstation runs and
- * the pin Renovate updates lives in one file.
- *
- * @returns {string} The image reference, tag and digest.
- * @throws {Error} When `compose.dev.yaml` names no Redis image.
- */
-function redisImage(): string {
-  const compose: string = readFileSync(new URL('../compose.dev.yaml', import.meta.url), 'utf8');
-  const image: string | undefined = /^\s*image:\s*(redis:\S+)\s*$/mu.exec(compose)?.[1];
-  if (image === undefined) {
-    throw new Error('compose.dev.yaml names no Redis image.');
-  }
-  return image;
-}
-
-/**
- * Function testEnvironment
- *
- * @description
- * Environment of the gateway under test: the disposable Redis, a signing key generated for this
- * run (no key is ever committed) and service addresses nothing listens on, since no route calls a
- * service yet.
- *
- * @param {string} redisUrl - Address of the disposable Redis.
- * @returns {Record<string, string>} The variables to stub.
- */
-function testEnvironment(redisUrl: string): Record<string, string> {
-  const jwk: JsonWebKey = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' });
-  const privateJwk: string = JSON.stringify({
-    kty: 'OKP',
-    crv: 'Ed25519',
-    x: jwk.x,
-    d: jwk.d,
-    kid: randomBytes(8).toString('hex'),
-  });
-  return {
-    NODE_ENV: 'test',
-    PORT: '3000',
-    LOG_LEVEL: 'info',
-    REDIS_URL: redisUrl,
-    ALLOWED_ORIGINS: `${ALLOWED_ORIGIN},https://cadenway.test`,
-    INTERNAL_TOKEN_ISSUER: 'api-gateway',
-    INTERNAL_TOKEN_PRIVATE_JWK: privateJwk,
-    IDENTITY_SERVICE_URL: 'http://127.0.0.1:1',
-    ORGANIZATION_SERVICE_URL: 'http://127.0.0.1:1',
-    BILLING_SERVICE_URL: 'http://127.0.0.1:1',
-    TASK_SERVICE_URL: 'http://127.0.0.1:1',
-    DOCUMENT_SERVICE_URL: 'http://127.0.0.1:1',
-    STORAGE_SERVICE_URL: 'http://127.0.0.1:1',
-    NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:1',
-    AUTOMATION_SERVICE_URL: 'http://127.0.0.1:1',
-    INTEGRATION_SERVICE_URL: 'http://127.0.0.1:1',
-    SEARCH_SERVICE_URL: 'http://127.0.0.1:1',
-  };
-}
+import { redisImage } from './support/redis-image.js';
+import { ALLOWED_ORIGIN, testConfig } from './support/test-environment.js';
 
 /**
  * Function readinessStatus
@@ -116,18 +44,14 @@ describe('gateway start-up', () => {
   beforeAll(async () => {
     redis = await new RedisContainer(redisImage()).start();
     redisAddress = `${redis.getHost()}:${String(redis.getMappedPort(6379))}`;
-    // `ConfigModule` validates the environment of the process again when the application is
-    // created, so the variables are stubbed as well as passed.
-    for (const [name, value] of Object.entries(testEnvironment(redis.getConnectionUrl()))) {
-      vi.stubEnv(name, value);
-    }
     const sink: Writable = new Writable({
       write(chunk: Buffer, _encoding: BufferEncoding, done: () => void): void {
         logLines.push(...chunk.toString('utf8').split('\n').filter(Boolean));
         done();
       },
     });
-    app = await createGatewayApplication(loadConfig(appConfigSchema), sink);
+    // Service addresses nothing listens on: no route of this file calls a service.
+    app = await createGatewayApplication(testConfig({ REDIS_URL: redis.getConnectionUrl() }), sink);
     // A real listener on a free loopback port: the shutdown test probes it while the application
     // stops.
     await app.listen(0, '127.0.0.1');
@@ -141,7 +65,6 @@ describe('gateway start-up', () => {
     if (!redisStopped) {
       await redis.stop();
     }
-    vi.unstubAllEnvs();
   });
 
   it('answers the liveness route', async () => {

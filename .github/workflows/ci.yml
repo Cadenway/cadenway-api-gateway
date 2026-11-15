@@ -35,6 +35,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The internal clients are generated from the specs the installed @cadenway/contracts ships
+      # and committed: a difference means a hand edit, or a contracts update without regeneration.
+      - run: pnpm generate:clients
+      - name: Check that the generated clients match the installed contracts
+        run: |
+          changes="$(git status --porcelain -- src/clients/generated)"
+          if [ -n "$changes" ]; then
+            printf '%s\n' "$changes"
+            git diff -- src/clients/generated
+            echo "::error::src/clients/generated differs from what the installed @cadenway/contracts generates: run pnpm generate:clients and commit the result."
+            exit 1
+          fi
       - run: pnpm format:check
       - run: pnpm test:lint
       - run: pnpm lint

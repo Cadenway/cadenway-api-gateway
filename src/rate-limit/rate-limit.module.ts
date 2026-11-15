@@ -22,7 +22,7 @@ export const CONNECTION_NAME: string = 'api-gateway';
  * Owns the Redis connection of the per-token rate-limit counters, provided under the
  * `ResilientRedisClient` class of `@cadenway/nest-common/redis`. Redis holds those counters and
  * nothing else for the gateway. The limiter itself (600 requests per minute per token, 429 with
- * `Retry-After`) is not built yet; it arrives here with the first authenticated routes.
+ * `Retry-After`) is not built yet; it arrives here in phase P2b of the integration plan.
  *
  * - The connection is opened at start-up from `REDIS_URL` without waiting for it: the application
  *   starts while Redis is still unreachable, and readiness answers 503 until it is ready.

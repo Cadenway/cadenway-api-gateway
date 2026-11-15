@@ -9,8 +9,8 @@ import { createGatewayApplication, SERVICE_NAME } from './gateway-application.js
 // standard error, and the process exits with code 1.
 await runApplication({ service: SERVICE_NAME }, async (): Promise<void> => {
   // Read here, before the application exists: the logger and the internal token signer that
-  // `createApplication` installs need it. `ConfigModule` validates the same environment again
-  // when the application is created and provides it to the modules under `CONFIG`.
+  // `createApplication` installs need it. The same validated value is provided to the modules
+  // under `CONFIG`: the environment is validated once.
   const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
   const app: NestExpressApplication = await createGatewayApplication(config);
   await app.listen(config.PORT);

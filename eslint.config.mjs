@@ -36,7 +36,7 @@ const rejectedPackages = [
 ].map(([name, message]) => ({ regex: `^${name}(/|$)`, message }));
 
 export default defineConfig(
-  globalIgnores(['dist/', 'coverage/', 'docs/', '.claude/', '.codex/']),
+  globalIgnores(['dist/', 'coverage/', 'docs/', '.claude/', '.codex/', 'src/clients/generated/']),
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,

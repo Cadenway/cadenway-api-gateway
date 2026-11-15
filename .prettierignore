@@ -1,6 +1,7 @@
 # Generated trees and files owned by a tool.
 dist/
 coverage/
+src/clients/generated/
 pnpm-lock.yaml
 CHANGELOG.md
 

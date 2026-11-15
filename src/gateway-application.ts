@@ -1,4 +1,5 @@
 import { createApplication, type CreateApplicationOptions } from '@cadenway/nest-common';
+import type { DynamicModule, Type } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
@@ -99,8 +100,11 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
  * @description
  * Creates the gateway with the shared formats of `@cadenway/nest-common` and the settings of a
  * public edge, ready to listen. `main.ts` calls it with the configuration of the process; the
- * integration tests call it with theirs, so both run the same start-up.
+ * tests call it with theirs, so all run the same start-up.
  *
+ * - The configuration `main.ts` validated is provided globally under `CONFIG`
+ *   (`provideConfig: true`): the environment is validated once, not again when the application is
+ *   created.
  * - The internal token is signed for the calls the gateway makes (`INTERNAL_TOKEN_ISSUER`,
  *   `INTERNAL_TOKEN_PRIVATE_JWK`) and verified on none: the gateway authenticates the
  *   applications itself.
@@ -116,15 +120,19 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
  * @param {Readonly<AppConfig>} config - Validated configuration of the gateway.
  * @param {CreateApplicationOptions['logDestination']} logDestination - Stream of the log lines;
  * the standard output when omitted. For tests.
+ * @param {Type | DynamicModule} applicationModule - Root module; `AppModule` when omitted. For the
+ * route tests, which serve the same routes with the internal services faked.
  * @returns {Promise<NestExpressApplication>} The application, not yet listening.
  */
 export async function createGatewayApplication(
   config: Readonly<AppConfig>,
   logDestination?: CreateApplicationOptions['logDestination'],
+  applicationModule: Type | DynamicModule = AppModule,
 ): Promise<NestExpressApplication> {
-  const app: NestExpressApplication = await createApplication(AppModule, {
+  const app: NestExpressApplication = await createApplication(applicationModule, {
     service: SERVICE_NAME,
     config,
+    provideConfig: true,
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
