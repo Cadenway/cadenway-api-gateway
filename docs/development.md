@@ -2,11 +2,13 @@
 
 [Documentation index](README.md) · [Repository overview](../.github/README.md) · [Repository instructions](../AGENTS.md)
 
-## Bootstrap status
+## Status
 
-This checkout is a bootstrapped scaffold: `package.json`, a NestJS application under `src/` that only answers the health routes, and the GitHub workflows exist. No business code, route, event or migration exists yet; the target architecture in this guide is what they must follow.
-
-The commands below are the documented **target workflow**, copied from the repository overview and instructions. They are not proof that scripts, infrastructure, CI, or dependencies currently exist. Inspect the repository's actual manifests and files before running them, and report unavailable checks rather than inventing replacements. Run Git, pnpm, build, and test commands with this repository as the working directory, never from the parent workspace.
+The gateway runs on the shared runtime of `@cadenway/nest-common` and answers the health routes; no
+public route, internal client, authentication or rate limiter exists yet (see the
+[documentation index](README.md)). The scripts and checks below exist in `package.json` and CI.
+Run Git, pnpm, build, and test commands with this repository as the working directory, never from
+the parent workspace.
 
 ## Before making a change
 
@@ -16,7 +18,7 @@ The commands below are the documented **target workflow**, copied from the repos
 - `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
   versions elsewhere: a copy goes stale.
 
-## Planned setup
+## Setup
 
 Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
 
@@ -33,8 +35,26 @@ Requirements: Node.js LTS and pnpm (versions in `package.json`), and Docker.
 
    ```bash
    pnpm install
-   pnpm start:dev              # http://localhost:3000
+   cp .env.example .env
+   docker compose -f compose.dev.yaml up -d   # Redis, for the rate-limit counters
+   pnpm start:dev                             # http://localhost:3000, reads .env
    ```
+
+   The gateway refuses to start until `INTERNAL_TOKEN_PRIVATE_JWK` holds an Ed25519 private key,
+   and no key is committed, not even a development one. Generate one from `cadenway-ops`:
+
+   ```bash
+   cd ../cadenway-ops/compose
+   cp .env.example .env        # once, if it is not there yet: it names compose.local.yaml
+   docker compose run --rm internal-token-keys --print
+   ```
+
+   It prints a fresh pair per issuer on the terminal and writes nothing. Put the value of
+   `API_GATEWAY_INTERNAL_TOKEN_PRIVATE_JWK` into `INTERNAL_TOKEN_PRIVATE_JWK` of `.env`, between
+   single quotes.
+
+Every variable is validated at start-up: a missing or invalid one stops the process with a
+`ConfigError` that names it and never prints its value. `.env.example` describes each of them.
 
 ## Minimum checks by change
 
@@ -53,10 +73,11 @@ narrowest check that covers the change first, then widen:
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.
 
-## Planned full check list
+## Full check list
 
-The following commands match the planned local gate. Run `/cw-quality` in Claude Code or
-`$cw-quality` in Codex without arguments. Verify CI coverage once workflows exist.
+`pnpm quality` runs the commands below except the integration tests and the Compose check; CI runs
+all of them on each pull request, and builds the image. Run `/cw-quality` in Claude Code or
+`$cw-quality` in Codex without arguments.
 
 ```bash
 pnpm format:check
@@ -64,7 +85,7 @@ pnpm lint
 pnpm typecheck
 pnpm test:architecture
 pnpm test:coverage
-pnpm test:integration                    # Redis in Docker, internal services faked
+pnpm test:integration                    # disposable Redis in Docker, internal services faked
 pnpm build
 docker compose -f compose.dev.yaml config -q
 ```

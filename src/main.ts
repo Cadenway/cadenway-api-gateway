@@ -1,29 +1,30 @@
-import { NestFactory } from '@nestjs/core';
-import type { INestApplication } from '@nestjs/common';
+import { loadConfig } from '@cadenway/nest-common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 
-import { AppModule } from './app.module.js';
-import { loadAppConfig } from './config/app-config.js';
+import { appConfigSchema } from './config/app-config.js';
 import type { AppConfig } from './config/app-config.js';
+import { createGatewayApplication } from './gateway-application.js';
 
 /**
  * Constant config
  *
  * @description
- * Validated configuration for the service process.
+ * Validated configuration of the process. A missing or invalid variable throws a `ConfigError`
+ * naming it, and the process exits before it listens.
  *
- * @type {AppConfig}
+ * @type {Readonly<AppConfig>}
  */
-const config: AppConfig = loadAppConfig(process.env);
+const config: Readonly<AppConfig> = loadConfig(appConfigSchema);
+
 /**
  * Constant app
  *
  * @description
- * Nest application serving the public HTTP API.
+ * The gateway, serving the public HTTP API behind Traefik. Telemetry is already running: the start
+ * command preloads `telemetry.js` before this module (see `telemetry.ts`).
  *
- * @type {INestApplication}
+ * @type {NestExpressApplication}
  */
-const app: INestApplication = await NestFactory.create(AppModule);
-// The deployment starts the new version next to the old one, then stops the old one: the stop must
-// close open connections instead of cutting them.
-app.enableShutdownHooks();
-await app.listen(config.port);
+const app: NestExpressApplication = await createGatewayApplication(config);
+
+await app.listen(config.PORT);

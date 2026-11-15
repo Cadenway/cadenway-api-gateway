@@ -12,7 +12,7 @@ export default defineConfig({
         test: {
           name: 'integration',
           include: ['src/**/*.int-spec.ts', 'test/**/*.int-spec.ts'],
-          // Disposable PostgreSQL and NATS containers start in the hooks.
+          // A disposable Redis container starts in the hooks.
           testTimeout: 60_000,
           hookTimeout: 120_000,
         },

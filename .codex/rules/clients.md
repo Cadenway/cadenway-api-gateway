@@ -11,7 +11,8 @@ paths:
   the spec files shipped in `@cadenway/contracts`. Neither the script nor the shipped specs exist
   yet: both arrive with the first internal contract.
 - Default timeout, retries only for idempotent calls, the internal token on every call.
-- Base URLs from environment variables named `<SERVICE>_URL`, documented in `.env.example`.
+- Base URLs from environment variables named `<NAME>_SERVICE_URL` (`TASK_SERVICE_URL`), validated
+  by `src/config/app-config.ts` and documented in `.env.example`.
 - The route budget travels as a deadline: a call gets the time left, 2 seconds at most.
 - One retry, on a connection error or a `503` only.
 - One circuit breaker per service.

@@ -38,10 +38,31 @@ description: "The token types the gateway accepts (session, personal API token),
 - A JWT signed with `alg: Ed25519`, valid 60 seconds, with `aud` set to the called service and a
   `kid` header.
 - It carries the user, organization, member role, scopes and trace id of the table.
-- Signing and verification come from `@cadenway/nest-common`.
+- Signing and verification come from `@cadenway/nest-common`. This gateway signs with
+  `INTERNAL_TOKEN_ISSUER` (`api-gateway`) and `INTERNAL_TOKEN_PRIVATE_JWK`, a secret of
+  cadenway-ops (`API_GATEWAY_INTERNAL_TOKEN_PRIVATE_JWK`), and verifies no internal token
+  (`internalTokenVerification: 'off'`): it authenticates the applications itself.
 - This gateway signs the token of the calls it makes. The realtime gateway,
   cadenway-automation-service and cadenway-integration-service sign the token of their own
   calls, each with its own key: a service verifies against the issuers and keys of its
   configuration.
 - A route without a user or an organization (sign-up, sign-in, introspection, intake form,
   webhooks) carries a token with an anonymous subject.
+
+## Public edge
+
+`src/gateway-application.ts` applies these settings to every request. The rules above require the
+cookie and the CSRF check; the settings below are inferred from a public API served behind Traefik
+on another origin than the applications, not prescribed by a rule:
+
+- `trust proxy` is `1`: Express believes the `X-Forwarded-*` headers of one hop, Traefik, and never
+  a header the client wrote itself.
+- `helmet` with its defaults.
+- `cookie-parser` without a secret: the session token is opaque and verified by introspection, so
+  no cookie is signed.
+- CORS answers the origins of `ALLOWED_ORIGINS` only (the webapp `app.<domain>` and the website
+  `<domain>`), compared exactly, with credentials; never `*`. A preflight from another origin gets
+  no `Access-Control-Allow-Origin`, so the browser refuses the request. The CSRF check compares
+  `Origin` to the same list.
+- An incoming `X-Request-Id` or `X-Request-Timeout-Ms` is ignored: a client chooses neither the
+  reference of its request nor the budget of the internal calls.

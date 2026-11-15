@@ -4,7 +4,25 @@
 
 ## Status
 
-The checkout contains a NestJS bootstrap and health endpoints. The following ownership map governs gateway capabilities as they are implemented.
+The checkout contains the runtime wiring below and no capability yet. The ownership map that
+follows governs gateway capabilities as they are implemented.
+
+## Runtime wiring
+
+| File                         | Holds                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/telemetry.ts`           | `startTelemetry` of `@cadenway/nest-common/telemetry`, preloaded by the start command before `main.js`                                                                                                                                                       |
+| `src/main.ts`                | Validates the environment, creates the application, listens on `PORT`                                                                                                                                                                                        |
+| `src/gateway-application.ts` | `createApplication` with the options of a public gateway (signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
+| `src/app.module.ts`          | `ConfigModule`, the rate-limit module and `HealthModule` with the Redis indicator                                                                                                                                                                            |
+| `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                            |
+| `src/rate-limit/`            | The Redis connection of the counters, closed on shutdown; the limiter comes with the first authenticated routes                                                                                                                                              |
+
+Start command, in the `Dockerfile` and `pnpm start:dev`:
+
+```text
+node --experimental-loader=@cadenway/nest-common/hook.mjs --import ./dist/telemetry.js dist/main.js
+```
 
 ## Purpose and target structure
 
