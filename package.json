@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@cadenway/contracts": "^0.4.0",
-    "@cadenway/nest-common": "^0.4.2",
+    "@cadenway/nest-common": "0.4.3",
     "@nestjs/common": "^12.4.2",
     "@nestjs/core": "^12.4.2",
     "@nestjs/platform-express": "^12.4.2",
@@ -41,7 +41,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cadenway/nest-testing": "0.3.0",
+    "@cadenway/nest-testing": "0.4.0",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",
