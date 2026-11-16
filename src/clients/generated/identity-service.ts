@@ -130,11 +130,29 @@ export interface Session {
   persistent: boolean;
 }
 
+/**
+ * An account. identity-service always sends `displayName`, `jobTitle` and `timeZone` from this
+ * version on; they are optional here so that the API gateway can move to this version of the
+ * contracts before identity-service does. Until then the gateway answers them as `null`,
+ * `null` and `Europe/Paris`, their values for an account that never set them.
+ */
 export interface User {
   id: string;
   name: string;
   email: Email;
   language: Language;
+  /**
+     * Name used for the mentions; `null` until the person chooses one.
+     * @nullable
+     */
+  displayName?: string | null;
+  /**
+     * Job title; `null` when there is none.
+     * @nullable
+     */
+  jobTitle?: string | null;
+  /** IANA time zone name; `Europe/Paris` until the person chooses another. */
+  timeZone?: string;
   /**
      * Version of the account.
      * @minimum 1
@@ -166,24 +184,30 @@ export interface IntrospectionRequest {
 export interface ActiveToken {
   active: true;
   /**
-     * Kind of token: `session` today. Personal API tokens add `api-token` later, without a
-     * new version (`x-extensible-enum`).
+     * Kind of token: always `session` on this route. A personal API token is introspected by
+     * `POST /internal/v1/api-tokens/introspect`, which answers `api-token`. Later versions
+     * may add kinds without a new version (`x-extensible-enum`).
      */
   tokenType: string;
   sessionId: string;
   userId: string;
   /**
-     * Organization of the session. Always `null` in this version: a session belongs to an
-     * organization once the organization selection exists.
+     * Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
+     * `null` when it has none, or when its user no longer belongs to it.
      * @nullable
      */
   organizationId: string | null;
   /**
-     * Member role in that organization; always `null` in this version.
+     * Role of the user in that organization, from the copy of the memberships: `owner`,
+     * `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
+     * in the internal token; organization-service decides from its own members.
      * @nullable
      */
   role: string | null;
-  /** Scopes the token grants; empty in this version, since no route needs one yet. */
+  /**
+     * Scopes the token grants. A session holds every scope: `tasks:read`, `tasks:write`,
+     * `members:read` and `webhooks:manage` today, more as they are added.
+     */
   scopes: string[];
   /** When the session ends at the latest. */
   expiresAt: string;
@@ -195,6 +219,186 @@ export const InactiveTokenValue = {
 export type InactiveToken = typeof InactiveTokenValue;
 
 export type Introspection = ActiveToken | InactiveToken;
+
+/**
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
+export type ProfilePatchLanguage = typeof ProfilePatchLanguage[keyof typeof ProfilePatchLanguage];
+
+
+export const ProfilePatchLanguage = {
+  fr: 'fr',
+  en: 'en',
+  de: 'de',
+  es: 'es',
+} as const;
+
+/**
+ * JSON Merge Patch of the profile, as the public request carried it.
+ */
+export interface ProfilePatch {
+  /**
+     * Full name, trimmed here; a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 120
+     */
+  name?: string;
+  /**
+     * @minLength 1
+     * @maxLength 60
+     * @nullable
+     */
+  displayName?: string | null;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     * @nullable
+     */
+  jobTitle?: string | null;
+  /**
+     * IANA time zone name, checked here.
+     * @minLength 1
+     * @maxLength 64
+     */
+  timeZone?: string;
+  language?: ProfilePatchLanguage;
+}
+
+export interface OrganizationChoice {
+  organizationId: string;
+}
+
+export interface SessionOrganization {
+  organizationId: string;
+  /** Role of the actor in it, from the copy of the memberships. */
+  role: Role;
+}
+
+/**
+ * A scope a personal API token can be given.
+ */
+export type ApiTokenScope = typeof ApiTokenScope[keyof typeof ApiTokenScope];
+
+
+export const ApiTokenScope = {
+  'tasks:read': 'tasks:read',
+  'tasks:write': 'tasks:write',
+  'members:read': 'members:read',
+  'webhooks:manage': 'webhooks:manage',
+} as const;
+
+/**
+ * Lifetime counted from the creation; `never` gives no expiry.
+ */
+export type ApiTokenCreationExpiration = typeof ApiTokenCreationExpiration[keyof typeof ApiTokenCreationExpiration];
+
+
+export const ApiTokenCreationExpiration = {
+  '30-days': '30-days',
+  '90-days': '90-days',
+  '1-year': '1-year',
+  never: 'never',
+} as const;
+
+export interface ApiTokenCreation {
+  /**
+     * Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /**
+     * At least one; the same scope twice counts once.
+     * @minItems 1
+     * @maxItems 4
+     */
+  scopes: ApiTokenScope[];
+  /** Lifetime counted from the creation; `never` gives no expiry. */
+  expiration?: ApiTokenCreationExpiration;
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  /**
+     * First 11 characters of the secret.
+     * @minLength 11
+     * @maxLength 11
+     */
+  prefix: string;
+  scopes: string[];
+  organizationId: string;
+  createdAt: string;
+  /** @nullable */
+  expiresAt: string | null;
+  /**
+     * Recorded at most once a minute.
+     * @nullable
+     */
+  lastUsedAt: string | null;
+}
+
+export interface ApiTokenCreated {
+  apiToken: ApiToken;
+  /**
+     * The token, returned once. A secret, never logged, never stored by the gateway.
+     * @pattern ^cw_pat_[0-9A-Za-z]{36}$
+     */
+  secret: string;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface ApiTokenPage {
+  items: ApiToken[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ApiTokenIntrospectionRequest {
+  /**
+     * Value of the bearer token. A secret, never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  token: string;
+}
+
+export interface ActiveApiToken {
+  active: true;
+  /** Always `api-token` on this route (`x-extensible-enum`). */
+  tokenType: string;
+  /** Id of the token; the gateway counts its rate limit on it. */
+  apiTokenId: string;
+  userId: string;
+  /** Organization the token acts in, the one it was created in. */
+  organizationId: string;
+  /** Role of the user in it, from the copy of the memberships. */
+  role: Role;
+  /** Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks. */
+  scopes: string[];
+  /**
+     * When the token stops working; `null` for a token without expiry.
+     * @nullable
+     */
+  expiresAt: string | null;
+}
+
+export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
 
 /**
  * Members specific to the code, for example the fields that failed validation.
@@ -240,7 +444,8 @@ export type InternalTokenRefusedResponse = Problem;
 
 /**
  * The internal token is valid but the route does not accept its issuer
- * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`).
+ * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or the route requires
+ * an organization the token does not carry (`auth.organization-required`).
  */
 export type InternalAccessRefusedResponse = Problem;
 
@@ -306,6 +511,44 @@ export type SessionNotFoundResponse = Problem;
  * `user.not-found`: no account with this id is readable by the actor.
  */
 export type UserNotFoundResponse = Problem;
+
+/**
+ * - `session.not-found`: no session with this id belongs to the actor;
+ * - `organization.not-found`: the copy of the memberships holds no membership of the actor in
+ *   this organization, also for a few seconds after a creation or an acceptance.
+ */
+export type SessionOrOrganizationNotFoundResponse = Problem;
+
+/**
+ * `api-token.not-found`: no token with this id belongs to the actor in the organization of the internal token.
+ */
+export type ApiTokenNotFoundResponse = Problem;
+
+/**
+ * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
+ */
+export type VersionMismatchResponse = Problem;
+
+/**
+ * Opaque cursor taken from the `nextCursor` of the previous page.
+ */
+export type CursorParameter = string;
+
+/**
+ * Page size.
+ */
+export type LimitParameter = number;
+
+export type ListApiTokensInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
 
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
 export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
@@ -608,14 +851,17 @@ const getIntrospectTokenUrl = () => {
 }
 
 /**
- * Tells whether the token of a session cookie is active and, when it is, whose it is. The
- * gateway calls it on every request that carries the cookie, never caches the answer, and
- * gives the request its context from it (`setRequestOrganizationContext`).
+ * Tells whether the token of a session cookie is active and, when it is, whose it is and
+ * which organization it acts on. The gateway calls it on every request that carries the
+ * cookie, never caches the answer, and gives the request its context from it
+ * (`setRequestOrganizationContext`): `organizationId`, `role` and `scopes` go into the
+ * internal token of its calls.
  *
  * A token that is unknown, expired, revoked or malformed answers `200` with
- * `active: false`, never an error. An active answer counts as activity: the inactivity
- * period of the session (12 hours by default) starts again. Calling it twice has the same
- * effect as once, so the call can be retried. Internal token: actor `system`, no
+ * `active: false`, never an error; so does a personal API token, introspected by
+ * `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
+ * inactivity period of the session (12 hours by default) starts again. Calling it twice has
+ * the same effect as once, so the call can be retried. Internal token: actor `system`, no
  * organization.
  * @summary Introspect a session token
  */
@@ -707,7 +953,240 @@ const getUser = async (userId: string, options?: RequestInit): Promise<getUserRe
 
 
 
-return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl };
+const getUpdateUserUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}`
+}
+
+/**
+ * Applies a JSON Merge Patch to the profile of the account of the actor, as
+ * `PATCH /v1/me` says: another id, or an unknown one, answers `404 user.not-found`; a time
+ * zone that is not an IANA name answers `400 request.invalid`; `If-Match` is optional
+ * (`412 request.version-mismatch`). Emits `user.profile-updated.v1` when something changed.
+ * Internal token: actor `user`, no organization.
+ * @summary Update the profile of a user
+ */
+const updateUser = async (userId: string,
+    profilePatch: ProfilePatch, options?: RequestInit): Promise<updateUserResponse> => {
+
+  const res = await fetchFn(getUpdateUserUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(profilePatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateUserResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateUserResponse
+}
+
+
+
+const getSwitchSessionOrganizationUrl = (sessionId: string,) => {
+
+
+
+
+  return `/internal/v1/sessions/${sessionId}/organization`
+}
+
+/**
+ * Makes an organization the current organization of a session of the actor, and the one the
+ * next sessions of the actor start in. The membership is checked against the copy of the
+ * memberships: an organization the actor does not belong to, or one whose
+ * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
+ * another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
+ * as `401 auth.session-expired`: the session ended since its introspection. Choosing the
+ * current organization again answers `200` and changes nothing. From the next introspection
+ * the session carries the organization and the role. Internal token: actor `user`, no
+ * organization.
+ * @summary Choose the current organization of a session
+ */
+const switchSessionOrganization = async (sessionId: string,
+    organizationChoice: OrganizationChoice, options?: RequestInit): Promise<switchSessionOrganizationResponse> => {
+
+  const res = await fetchFn(getSwitchSessionOrganizationUrl(sessionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(organizationChoice)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: switchSessionOrganizationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as switchSessionOrganizationResponse
+}
+
+
+
+const getCreateApiTokenInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/api-tokens`
+}
+
+/**
+ * Creates a token of the actor in the organization of the internal token, the current
+ * organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
+ * `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
+ * identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
+ * Internal token: actor `user`, organization required.
+ * @summary Create a personal API token
+ */
+const createApiTokenInternal = async (apiTokenCreation: ApiTokenCreation, options?: RequestInit): Promise<createApiTokenInternalResponse> => {
+
+  const res = await fetchFn(getCreateApiTokenInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(apiTokenCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createApiTokenInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createApiTokenInternalResponse
+}
+
+
+
+const getListApiTokensInternalUrl = (params?: ListApiTokensInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/api-tokens?${stringifiedParams}` : `/internal/v1/api-tokens`
+}
+
+/**
+ * Lists the tokens of the actor in the organization of the internal token that are neither
+ * revoked nor expired, the most recently created first, never with their secret. Internal
+ * token: actor `user`, organization required.
+ * @summary List the personal API tokens
+ */
+const listApiTokensInternal = async (params?: ListApiTokensInternalParams, options?: RequestInit): Promise<listApiTokensInternalResponse> => {
+
+  const res = await fetchFn(getListApiTokensInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listApiTokensInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listApiTokensInternalResponse
+}
+
+
+
+const getRevokeApiTokenInternalUrl = (apiTokenId: string,) => {
+
+
+
+
+  return `/internal/v1/api-tokens/${apiTokenId}`
+}
+
+/**
+ * Revokes a token of the actor in the organization of the internal token: from the next
+ * introspection it is inactive. Revoking it again answers `204`; a token of another user or
+ * organization, or an unknown id, answers `404 api-token.not-found`. Internal token: actor
+ * `user`, organization required.
+ * @summary Revoke a personal API token
+ */
+const revokeApiTokenInternal = async (apiTokenId: string, options?: RequestInit): Promise<revokeApiTokenInternalResponse> => {
+
+  const res = await fetchFn(getRevokeApiTokenInternalUrl(apiTokenId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revokeApiTokenInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as revokeApiTokenInternalResponse
+}
+
+
+
+const getIntrospectApiTokenUrl = () => {
+
+
+
+
+  return `/internal/v1/api-tokens/introspect`
+}
+
+/**
+ * Tells whether a personal API token, sent as `Authorization: Bearer`, is active and, when it
+ * is, whose it is, which organization it acts in and with which scopes. The gateway calls it
+ * on every request that carries a bearer token, never caches the answer, and gives the request
+ * its context from it, as for a session.
+ *
+ * A token is active when it is known by its hash, neither revoked nor expired, and its user
+ * still belongs to its organization in the copy of the memberships. Any other token,
+ * malformed ones and session tokens included, answers `200` with `active: false`, never an
+ * error. An active answer records the last use of the token, at most once a minute. The call
+ * can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer
+ * always names a session and an expiry: a personal token has neither a session nor, with
+ * `never`, an expiry. Internal token: actor `system`, no organization.
+ * @summary Introspect a personal API token
+ */
+const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospectionRequest, options?: RequestInit): Promise<introspectApiTokenResponse> => {
+
+  const res = await fetchFn(getIntrospectApiTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(apiTokenIntrospectionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: introspectApiTokenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as introspectApiTokenResponse
+}
+
+
+
+return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
 };
 
 export type discoverSignInMethodsInternalResponse200 = {
@@ -1063,3 +1542,203 @@ export type getUserResponseError = (getUserResponse400 | getUserResponse401 | ge
 };
 
 export type getUserResponse = (getUserResponseSuccess | getUserResponseError)
+
+
+export type updateUserResponse200 = {
+  data: User
+  status: 200
+}
+
+export type updateUserResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateUserResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateUserResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type updateUserResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type updateUserResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateUserResponseSuccess = (updateUserResponse200) & {
+  headers: Headers;
+};
+export type updateUserResponseError = (updateUserResponse400 | updateUserResponse401 | updateUserResponse403 | updateUserResponse404 | updateUserResponse412) & {
+  headers: Headers;
+};
+
+export type updateUserResponse = (updateUserResponseSuccess | updateUserResponseError)
+
+
+export type switchSessionOrganizationResponse200 = {
+  data: SessionOrganization
+  status: 200
+}
+
+export type switchSessionOrganizationResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type switchSessionOrganizationResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type switchSessionOrganizationResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type switchSessionOrganizationResponse404 = {
+  data: SessionOrOrganizationNotFoundResponse
+  status: 404
+}
+
+export type switchSessionOrganizationResponseSuccess = (switchSessionOrganizationResponse200) & {
+  headers: Headers;
+};
+export type switchSessionOrganizationResponseError = (switchSessionOrganizationResponse400 | switchSessionOrganizationResponse401 | switchSessionOrganizationResponse403 | switchSessionOrganizationResponse404) & {
+  headers: Headers;
+};
+
+export type switchSessionOrganizationResponse = (switchSessionOrganizationResponseSuccess | switchSessionOrganizationResponseError)
+
+
+export type createApiTokenInternalResponse201 = {
+  data: ApiTokenCreated
+  status: 201
+}
+
+export type createApiTokenInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createApiTokenInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createApiTokenInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type createApiTokenInternalResponseSuccess = (createApiTokenInternalResponse201) & {
+  headers: Headers;
+};
+export type createApiTokenInternalResponseError = (createApiTokenInternalResponse400 | createApiTokenInternalResponse401 | createApiTokenInternalResponse403) & {
+  headers: Headers;
+};
+
+export type createApiTokenInternalResponse = (createApiTokenInternalResponseSuccess | createApiTokenInternalResponseError)
+
+
+export type listApiTokensInternalResponse200 = {
+  data: ApiTokenPage
+  status: 200
+}
+
+export type listApiTokensInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listApiTokensInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listApiTokensInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listApiTokensInternalResponseSuccess = (listApiTokensInternalResponse200) & {
+  headers: Headers;
+};
+export type listApiTokensInternalResponseError = (listApiTokensInternalResponse400 | listApiTokensInternalResponse401 | listApiTokensInternalResponse403) & {
+  headers: Headers;
+};
+
+export type listApiTokensInternalResponse = (listApiTokensInternalResponseSuccess | listApiTokensInternalResponseError)
+
+
+export type revokeApiTokenInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type revokeApiTokenInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type revokeApiTokenInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type revokeApiTokenInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type revokeApiTokenInternalResponse404 = {
+  data: ApiTokenNotFoundResponse
+  status: 404
+}
+
+export type revokeApiTokenInternalResponseSuccess = (revokeApiTokenInternalResponse204) & {
+  headers: Headers;
+};
+export type revokeApiTokenInternalResponseError = (revokeApiTokenInternalResponse400 | revokeApiTokenInternalResponse401 | revokeApiTokenInternalResponse403 | revokeApiTokenInternalResponse404) & {
+  headers: Headers;
+};
+
+export type revokeApiTokenInternalResponse = (revokeApiTokenInternalResponseSuccess | revokeApiTokenInternalResponseError)
+
+
+export type introspectApiTokenResponse200 = {
+  data: ApiTokenIntrospection
+  status: 200
+}
+
+export type introspectApiTokenResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type introspectApiTokenResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type introspectApiTokenResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type introspectApiTokenResponseSuccess = (introspectApiTokenResponse200) & {
+  headers: Headers;
+};
+export type introspectApiTokenResponseError = (introspectApiTokenResponse400 | introspectApiTokenResponse401 | introspectApiTokenResponse403) & {
+  headers: Headers;
+};
+
+export type introspectApiTokenResponse = (introspectApiTokenResponseSuccess | introspectApiTokenResponseError)
