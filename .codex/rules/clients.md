@@ -13,8 +13,9 @@ paths:
   generate.
 - Every generated call goes through an `InternalHttpClient` of `@cadenway/nest-common`, one per
   service; its answers are checked against the zod validators of `@cadenway/contracts`.
-- Guards and routes reach a client through a port they define, bound in `ClientsModule`: only
-  `src/clients/`, an `infrastructure/` adapter or a module imports `src/clients/`.
+- `ClientsModule` exposes technical clients. Each capability owns its port, token, adapter and binding in its own
+  `composition/`. Technical clients do not import capability ports or tokens. Guards and
+  controllers depend on the capability's application use cases.
 - Default timeout, retries only for idempotent calls, the internal token on every call.
 - Base URLs from environment variables named `<NAME>_SERVICE_URL` (`TASK_SERVICE_URL`), validated
   by `src/config/app-config.ts` and documented in `.env.example`.
@@ -22,3 +23,5 @@ paths:
 - One retry, on a connection error or a `503` only.
 - One circuit breaker per service.
 - A failed call surfaces as an `application/problem+json` error (RFC 9457) with a stable `code`.
+- Only the technical client implementation reads `src/clients/generated/`; capability adapters
+  use the technical client.

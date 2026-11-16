@@ -2,10 +2,9 @@ import { HealthModule, redisIndicator, type HealthModuleOptions } from '@cadenwa
 import { ResilientRedisClient } from '@cadenway/nest-common/redis';
 import { Module, type Type } from '@nestjs/common';
 
-import { ClientsModule } from './clients/clients.module.js';
-import { RateLimitModule } from './rate-limit/rate-limit.module.js';
-import { AuthRoutesModule } from './routes/auth/auth-routes.module.js';
-import { MeRoutesModule } from './routes/me/me-routes.module.js';
+import { RateLimitModule } from './infrastructure/redis/rate-limit.module.js';
+import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
+import { MeRoutesModule } from './modules/me/me.module.js';
 
 /**
  * Constant ROUTE_MODULES
@@ -50,8 +49,7 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  * - `CONFIG` is not provided here: `createGatewayApplication` hands the configuration that
  *   `main.ts` validated once to `createApplication` (`provideConfig: true`), which provides it
  *   globally. Importing this module reads nothing.
- * - `ClientsModule` builds the clients of the internal services (identity-service today) and
- *   provides, globally, the ports the guards and routes use.
+ * - Route capabilities import technical clients and bind their own ports.
  * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule` and `MeRoutesModule`, the routes
  *   of `openapi/public/auth.yaml`.
  * - `RateLimitModule` opens the Redis connection of the rate-limit counters.
@@ -61,13 +59,10 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  *   probe.
  *
  * The gateway has no broker connection yet: it gets NATS when it publishes its usage event, as
- * cadenway-ops `docs/service-environment.md` lists. The modules of `src/routes/`,
- * `src/aggregates/` and `src/public/` are registered here as they are created; `src/auth/` holds
- * guards, which the controllers use directly, and no module.
+ * cadenway-ops `docs/service-environment.md` lists. Public HTTP capabilities under `src/modules/` register here as they are created.
  */
 @Module({
   imports: [
-    ClientsModule,
     RateLimitModule,
     HealthModule.forRootAsync({
       imports: [RateLimitModule],

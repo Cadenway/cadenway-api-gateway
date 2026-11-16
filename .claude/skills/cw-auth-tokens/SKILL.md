@@ -53,7 +53,7 @@ description: "The token types the gateway accepts (session, personal API token),
 ## Organization context
 
 The organization and the actor of a request come from the verified session or API token only.
-The guard of `src/auth/` (phase P2a of the integration plan) gives a verified request its context
+The guard of `src/modules/auth/` (phase P2a of the integration plan) gives a verified request its context
 with `setRequestOrganizationContext(request, context)` of `@cadenway/nest-common`: see
 [Organization context](https://github.com/Cadenway/cadenway-service-kit/blob/main/packages/nest-common/README.md#organization-context)
 in the kit README. It is the sanctioned way for an application that verifies its callers itself

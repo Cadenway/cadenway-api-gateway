@@ -81,9 +81,9 @@ check that writes files. No agent delegates further.
 
 | File | Subject | Loads for |
 | --- | --- | --- |
-| `routes.md` | Public routes | `src/routes/**` |
-| `aggregates.md` | Aggregates | `src/aggregates/**` |
-| `auth.md` | Authentication and authorization | `src/auth/**` |
+| `routes.md` | Public routes | `src/modules/**/presentation/http/**` |
+| `aggregates.md` | Aggregates | `src/modules/**/application/use-cases/queries/**` |
+| `auth.md` | Authentication and authorization | `src/modules/auth/**` |
 | `clients.md` | Internal clients | `src/clients/**` |
 | `tests.md` | Tests | `**/*.spec.ts`, `test/**` |
 | `deploy.md` | Deployment files | `Dockerfile`, `deploy/**`, `compose.dev.yaml`, `.env.example` |

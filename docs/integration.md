@@ -29,19 +29,19 @@ mapped to its internal route of `openapi/internal/identity-service.yaml`:
 | `POST /v1/auth/sign-out`                  | Cross-site, session (optional) | `DELETE /internal/v1/sessions/{sessionId}`, `user`              |
 | `GET /v1/me`                              | Session                        | `GET /internal/v1/users/{userId}`, `user`                       |
 
-- **Session guard** (`src/auth/session.guard.ts`): reads `__Host-cw_session` and introspects it with
+- **Session guard** (`src/modules/auth/presentation/http/guards/session/session.guard.ts`): reads `__Host-cw_session` and introspects it with
   `POST /internal/v1/tokens/introspect` as the actor `system` on every request, without a cache, so
   a revoked session stops at the next request. No cookie answers `401 auth.session-required`; a
   cookie that is not active, or that cannot be a token, `401 auth.session-expired`. An active
   session opens the organization context of the request with `setRequestOrganizationContext`: a
   user actor, no organization in P2a. A route without a session (`security: []`) has no guard and
   never reads the cookie, so a stale one is ignored.
-- **Cross-site check** (`src/auth/cross-site.ts`): every unsafe route needs an `Origin` exactly
+- **Cross-site check** (`src/modules/auth/presentation/http/validation/session/cross-site.validation.ts`): every unsafe route needs an `Origin` exactly
   equal to one of `ALLOWED_ORIGINS` and `Content-Type: application/json`, signed in or not
   (see [Decisions](#decisions-of-the-walking-skeleton)), else `403 auth.csrf-rejected` before the
   route runs. The
   session guard applies it to every unsafe request it authenticates.
-- **Cookie** (`src/auth/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
+- **Cookie** (`src/presentation/http/session/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
 SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a persistent session
   only; the sign-out clears it with `Max-Age=0`. The token leaves the gateway in this header only.
 - **Browser**: `client.ipAddress` is `request.ip` behind one trusted proxy hop, `client.userAgent`
@@ -171,7 +171,7 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
 ### Organization context
 
 The organization and the actor of a request come from the verified session or API token only.
-The guard of `src/auth/` (phase P2a of the integration plan) gives a verified request its context
+The guard of `src/modules/auth/` (phase P2a of the integration plan) gives a verified request its context
 with `setRequestOrganizationContext(request, context)` of `@cadenway/nest-common`: see
 [Organization context](https://github.com/Cadenway/cadenway-service-kit/blob/main/packages/nest-common/README.md#organization-context)
 in the kit README. It is the sanctioned way for an application that verifies its callers itself

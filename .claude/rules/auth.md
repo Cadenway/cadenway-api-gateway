@@ -1,6 +1,6 @@
 ---
 paths:
-  - 'src/auth/**'
+  - 'src/modules/auth/**'
 ---
 
 # Authentication and authorization
@@ -18,3 +18,5 @@ paths:
 - CSRF: an unsafe method authenticated by the session cookie requires an `Origin` exactly equal to an
   allowed origin and `Content-Type: application/json`.
 - The internal token is a JWT (`alg: Ed25519`, 60 seconds, `aud` = the called service, `kid`).
+- In the V2 layout, keep guards, cookie and CSRF handling in `presentation/http/`. Put
+  verification orchestration and its ports under `application/`.

@@ -14,7 +14,7 @@ the parent workspace.
 
 - `../cadenway-api-contracts/openapi/public/` for the route you touch, and the internal spec of each service it calls.
 - The [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N), section "cadenway-api-gateway".
-- The `src/aggregates/` folder when the route composes several services.
+- The `src/modules/` folder when the route composes several services.
 - `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
   versions elsewhere: a copy goes stale.
 
@@ -63,14 +63,14 @@ The scripts below are this repository's contract. While the repository is being 
 create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
 narrowest check that covers the change first, then widen:
 
-| Changed                         | Minimum check                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| Routes or aggregates            | `pnpm test src/routes` or `pnpm test src/aggregates`, then the contract tests |
-| Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit`            |
-| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                            |
-| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`                  |
-| Installed `@cadenway/contracts` | `pnpm generate:clients`, then commit `src/clients/generated/` if it changed   |
-| Docs or agent instructions only | Scoped formatting and link review                                             |
+| Changed                         | Minimum check                                                               |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| Routes or aggregates            | `pnpm test src/modules/<module>`, then the contract tests                   |
+| Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit`          |
+| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                          |
+| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`                |
+| Installed `@cadenway/contracts` | `pnpm generate:clients`, then commit `src/clients/generated/` if it changed |
+| Docs or agent instructions only | Scoped formatting and link review                                           |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.

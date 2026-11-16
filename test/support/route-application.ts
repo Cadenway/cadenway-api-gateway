@@ -6,8 +6,9 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { App } from 'supertest/types.js';
 
 import { ROUTE_MODULES } from '../../src/app.module.js';
+import { IdentityServiceClient } from '../../src/clients/identity-service.client.js';
 import { createGatewayApplication } from '../../src/gateway-application.js';
-import { fakeIdentityModule, type FakeIdentity } from './fake-identity.js';
+import type { FakeIdentity } from './fake-identity.js';
 import { testConfig } from './test-environment.js';
 
 /**
@@ -47,9 +48,10 @@ export async function createRouteApplication(fake: FakeIdentity): Promise<RouteA
   });
   const root: DynamicModule = {
     module: RouteTestModule,
-    imports: [fakeIdentityModule(fake), ...ROUTE_MODULES],
+    imports: [...ROUTE_MODULES],
   };
   const app: NestExpressApplication = await createGatewayApplication(testConfig(), sink, root);
+  Object.assign(app.get(IdentityServiceClient), fake);
   await app.init();
   return { app, server: app.getHttpServer() as App, logLines };
 }

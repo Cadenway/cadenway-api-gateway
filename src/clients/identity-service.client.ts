@@ -31,11 +31,20 @@ import {
 import { trace } from '@opentelemetry/api';
 import type { z } from 'zod';
 
-import type { SessionIntrospector } from '../auth/session-introspector.port.js';
-import type { VerifiedSession } from '../auth/verified-session.js';
-import type { IdentityAuth } from '../routes/auth/identity-auth.port.js';
-import type { IdentityUsers } from '../routes/me/identity-users.port.js';
 import { getIdentityServiceInternalRoutes } from './generated/identity-service.js';
+
+/**
+ * Type IdentitySession
+ *
+ * @description
+ * Validated fields returned for an active Identity session.
+ *
+ * @type {Omit<Extract<z.output<typeof IntrospectTokenResponse>, { active: true }>, "active" | "tokenType">}
+ */
+type IdentitySession = Omit<
+  Extract<z.output<typeof IntrospectTokenResponse>, { active: true }>,
+  'active' | 'tokenType'
+>;
 
 /**
  * Constant IDENTITY_SERVICE
@@ -246,7 +255,7 @@ async function answered<TResponse>(
  * - Every success is checked against the internal contract before it is returned; a mismatch is
  *   `503 upstream.failed`.
  */
-export class IdentityServiceClient implements SessionIntrospector, IdentityAuth, IdentityUsers {
+export class IdentityServiceClient {
   // #region Properties
   /**
    * Property routes
@@ -294,10 +303,10 @@ export class IdentityServiceClient implements SessionIntrospector, IdentityAuth,
    * error or a `503`: the contract makes the call idempotent.
    *
    * @param {string} token - Value of the session cookie. A secret: it travels in the body only.
-   * @returns {Promise<VerifiedSession | null>} The session, or `null` when the token is not an
+   * @returns {Promise<IdentitySession | null>} The session, or `null` when the token is not an
    * active session token.
    */
-  public async introspect(token: string): Promise<VerifiedSession | null> {
+  public async introspect(token: string): Promise<IdentitySession | null> {
     const options: InternalRequestInit = { ...callerClaims('system'), idempotent: true };
     const answer: z.output<typeof IntrospectTokenResponse> = expectBody(
       'introspectToken',

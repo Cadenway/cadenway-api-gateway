@@ -1,0 +1,52 @@
+/**
+ * Interface SessionIssued
+ *
+ * @description
+ * Gateway-owned data for Identity orchestration.
+ */
+export interface SessionIssued {
+  // #region Properties
+  /**
+   * Property token
+   *
+   * @description
+   * Opaque token returned once, kept out of logs.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly token: string;
+
+  /**
+   * Property session
+   *
+   * @description
+   * Identifier and lifetime of the issued session.
+   *
+   * @type {{ readonly id: string; readonly expiresAt: string; readonly persistent: boolean }}
+   * @readonly
+   */
+  readonly session: {
+    readonly id: string;
+    readonly expiresAt: string;
+    readonly persistent: boolean;
+  };
+
+  /**
+   * Property user
+   *
+   * @description
+   * Account returned with the session.
+   *
+   * @type {{ readonly id: string; readonly name: string; readonly email: string; readonly language: string; readonly version: number }}
+   * @readonly
+   */
+  readonly user: {
+    readonly id: string;
+    readonly name: string;
+    readonly email: string;
+    readonly language: string;
+    readonly version: number;
+  };
+  // #endregion
+}

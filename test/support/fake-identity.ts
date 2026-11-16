@@ -11,16 +11,12 @@ import type {
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import { ProblemException, type ProblemStatus } from '@cadenway/nest-common';
-import { Global, Module, type DynamicModule } from '@nestjs/common';
 import { vi, type Mock } from 'vitest';
 
-import {
-  SESSION_INTROSPECTOR,
-  type SessionIntrospector,
-} from '../../src/auth/session-introspector.port.js';
-import type { VerifiedSession } from '../../src/auth/verified-session.js';
-import { IDENTITY_AUTH, type IdentityAuth } from '../../src/routes/auth/identity-auth.port.js';
-import { IDENTITY_USERS, type IdentityUsers } from '../../src/routes/me/identity-users.port.js';
+import type { SessionIntrospector } from '../../src/modules/auth/application/ports/outbound/identity/session/session-introspector.port.js';
+import type { VerifiedSession } from '../../src/modules/auth/application/models/session/verified-session.model.js';
+import type { IdentityAuth } from '../../src/modules/auth-routes/application/ports/outbound/identity/auth/identity-auth.port.js';
+import type { IdentityUsers } from '../../src/modules/me/application/ports/outbound/identity/me/identity-users.port.js';
 
 /**
  * Account of the mockup, as identity-service returns it.
@@ -125,31 +121,4 @@ export function identityUnavailable(reason = 'unavailable'): ProblemException {
     detail: 'A service this request depends on is not available.',
     details: { service: 'identity-service' },
   });
-}
-
-/**
- * Empty module the fake ports are provided from.
- */
-@Global()
-@Module({})
-class FakeIdentityModule {}
-
-/**
- * Provides the fake globally under the tokens `ClientsModule` provides, as the route tests replace
- * the clients of the internal services.
- *
- * @param fake - The fake of identity-service.
- * @returns The global module.
- */
-export function fakeIdentityModule(fake: FakeIdentity): DynamicModule {
-  return {
-    module: FakeIdentityModule,
-    global: true,
-    providers: [
-      { provide: SESSION_INTROSPECTOR, useValue: fake },
-      { provide: IDENTITY_AUTH, useValue: fake },
-      { provide: IDENTITY_USERS, useValue: fake },
-    ],
-    exports: [SESSION_INTROSPECTOR, IDENTITY_AUTH, IDENTITY_USERS],
-  };
 }
