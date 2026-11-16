@@ -1,10 +1,10 @@
 /**
- * Interface SignUpRequest
+ * Interface SignUpInput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface SignUpRequest {
+export interface SignUpInput {
   // #region Properties
   /**
    * Property name

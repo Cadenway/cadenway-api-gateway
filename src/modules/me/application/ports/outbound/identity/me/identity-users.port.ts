@@ -1,4 +1,4 @@
-import type { User } from '../../../../use-cases/queries/me/get-current-user/get-current-user.output.js';
+import type { GetCurrentUserOutput } from '../../../../use-cases/queries/me/get-current-user/get-current-user.output.js';
 
 /**
  * Interface IdentityUsers
@@ -17,10 +17,10 @@ export interface IdentityUsers {
    * `GET /internal/v1/users/{userId}`. A user reads its own account only.
    *
    * @param {string} userId - Id of the account, as the introspection returned it.
-   * @returns {Promise<User>} The account, matched against the internal contract.
+   * @returns {Promise<GetCurrentUserOutput>} The account, matched against the internal contract.
    * @throws {ProblemException} `404 user.not-found` when the account is not readable, or
    * `503 upstream.*` when identity-service cannot answer or answers outside its contract.
    */
-  getUser(userId: string): Promise<User>;
+  getUser(userId: string): Promise<GetCurrentUserOutput>;
   // #endregion
 }

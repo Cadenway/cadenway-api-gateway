@@ -1,5 +1,5 @@
-import type { SignInMethodsRequest } from './discover-sign-in-methods.input.js';
-import type { SignInMethods } from './discover-sign-in-methods.output.js';
+import type { DiscoverSignInMethodsInput } from './discover-sign-in-methods.input.js';
+import type { DiscoverSignInMethodsOutput } from './discover-sign-in-methods.output.js';
 import type { IdentityAuth } from '../../../../ports/outbound/identity/auth/identity-auth.port.js';
 
 /**
@@ -44,10 +44,10 @@ export class DiscoverSignInMethods {
    * @description
    * Reads the sign-in methods available for the address.
    *
-   * @param {SignInMethodsRequest} input - Input selected by the presentation boundary.
-   * @returns {Promise<SignInMethods>} The outcome provided by Identity.
+   * @param {DiscoverSignInMethodsInput} input - Input selected by the presentation boundary.
+   * @returns {Promise<DiscoverSignInMethodsOutput>} The outcome provided by Identity.
    */
-  public execute(input: SignInMethodsRequest): Promise<SignInMethods> {
+  public execute(input: DiscoverSignInMethodsInput): Promise<DiscoverSignInMethodsOutput> {
     return this.identity.discoverSignInMethods(input);
   }
   // #endregion

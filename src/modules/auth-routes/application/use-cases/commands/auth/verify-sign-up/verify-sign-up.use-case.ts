@@ -1,4 +1,4 @@
-import type { SignUpVerification } from './verify-sign-up.input.js';
+import type { VerifySignUpInput } from './verify-sign-up.input.js';
 import type { SessionIssued } from '../../../../models/auth/session-issued.model.js';
 import type { IdentityAuth } from '../../../../ports/outbound/identity/auth/identity-auth.port.js';
 
@@ -44,10 +44,10 @@ export class VerifySignUp {
    * @description
    * Verifies the account registration and opens a session when Identity accepts the proof.
    *
-   * @param {SignUpVerification} input - Input selected by the presentation boundary.
+   * @param {VerifySignUpInput} input - Input selected by the presentation boundary.
    * @returns {Promise<SessionIssued>} The outcome provided by Identity.
    */
-  public execute(input: SignUpVerification): Promise<SessionIssued> {
+  public execute(input: VerifySignUpInput): Promise<SessionIssued> {
     return this.identity.verifySignUp(input);
   }
   // #endregion

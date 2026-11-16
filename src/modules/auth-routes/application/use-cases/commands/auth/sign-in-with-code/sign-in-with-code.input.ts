@@ -1,12 +1,12 @@
 import type { Client } from '../../../../models/auth/client.model.js';
 
 /**
- * Interface CodeVerification
+ * Interface SignInWithCodeInput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface CodeVerification {
+export interface SignInWithCodeInput {
   // #region Properties
   /**
    * Property email

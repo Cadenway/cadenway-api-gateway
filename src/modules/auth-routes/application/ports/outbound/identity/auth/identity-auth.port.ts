@@ -1,11 +1,11 @@
-import type { SignInMethodsRequest } from '../../../../use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.input.js';
-import type { SignInMethods } from '../../../../use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.output.js';
-import type { SignUpRequest } from '../../../../use-cases/commands/auth/sign-up/sign-up.input.js';
+import type { DiscoverSignInMethodsInput } from '../../../../use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.input.js';
+import type { DiscoverSignInMethodsOutput } from '../../../../use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.output.js';
+import type { SignUpInput } from '../../../../use-cases/commands/auth/sign-up/sign-up.input.js';
 import type { CodeRequest } from '../../../../models/auth/code-request.model.js';
 import type { CodeSent } from '../../../../models/auth/code-sent.model.js';
-import type { SignUpVerification } from '../../../../use-cases/commands/auth/verify-sign-up/verify-sign-up.input.js';
-import type { CodeVerification } from '../../../../use-cases/commands/auth/sign-in-with-code/sign-in-with-code.input.js';
-import type { PasswordSignIn } from '../../../../use-cases/commands/auth/sign-in-with-password/sign-in-with-password.input.js';
+import type { VerifySignUpInput } from '../../../../use-cases/commands/auth/verify-sign-up/verify-sign-up.input.js';
+import type { SignInWithCodeInput } from '../../../../use-cases/commands/auth/sign-in-with-code/sign-in-with-code.input.js';
+import type { SignInWithPasswordInput } from '../../../../use-cases/commands/auth/sign-in-with-password/sign-in-with-password.input.js';
 import type { SessionIssued } from '../../../../models/auth/session-issued.model.js';
 
 /**
@@ -28,10 +28,10 @@ export interface IdentityAuth {
    * @description
    * `POST /internal/v1/auth/sign-in-methods`.
    *
-   * @param {SignInMethodsRequest} request - Address to discover the methods of.
-   * @returns {Promise<SignInMethods>} The methods to offer.
+   * @param {DiscoverSignInMethodsInput} request - Address to discover the methods of.
+   * @returns {Promise<DiscoverSignInMethodsOutput>} The methods to offer.
    */
-  discoverSignInMethods(request: SignInMethodsRequest): Promise<SignInMethods>;
+  discoverSignInMethods(request: DiscoverSignInMethodsInput): Promise<DiscoverSignInMethodsOutput>;
 
   /**
    * Method signUp
@@ -39,10 +39,10 @@ export interface IdentityAuth {
    * @description
    * `POST /internal/v1/auth/sign-up`.
    *
-   * @param {SignUpRequest} request - Name, address, password and acceptance of the terms.
+   * @param {SignUpInput} request - Name, address, password and acceptance of the terms.
    * @returns {Promise<CodeSent>} When the code expires and when another can be asked for.
    */
-  signUp(request: SignUpRequest): Promise<CodeSent>;
+  signUp(request: SignUpInput): Promise<CodeSent>;
 
   /**
    * Method resendSignUpCode
@@ -63,11 +63,11 @@ export interface IdentityAuth {
    * with the right code, `password` is not the one of the latest sign-up of the address, or is
    * missing after a repeated sign-up.
    *
-   * @param {SignUpVerification} request - Address, code, the password of the sign-up when the
+   * @param {VerifySignUpInput} request - Address, code, the password of the sign-up when the
    * browser sent one, persistence and browser of the session.
    * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
    */
-  verifySignUp(request: SignUpVerification): Promise<SessionIssued>;
+  verifySignUp(request: VerifySignUpInput): Promise<SessionIssued>;
 
   /**
    * Method signInWithPassword
@@ -75,10 +75,10 @@ export interface IdentityAuth {
    * @description
    * `POST /internal/v1/auth/sign-in`.
    *
-   * @param {PasswordSignIn} request - Address, password, persistence and browser of the session.
+   * @param {SignInWithPasswordInput} request - Address, password, persistence and browser of the session.
    * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
    */
-  signInWithPassword(request: PasswordSignIn): Promise<SessionIssued>;
+  signInWithPassword(request: SignInWithPasswordInput): Promise<SessionIssued>;
 
   /**
    * Method requestSignInCode
@@ -97,10 +97,10 @@ export interface IdentityAuth {
    * @description
    * `POST /internal/v1/auth/sign-in/code/verification`.
    *
-   * @param {CodeVerification} request - Address, code, persistence and browser of the session.
+   * @param {SignInWithCodeInput} request - Address, code, persistence and browser of the session.
    * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
    */
-  signInWithCode(request: CodeVerification): Promise<SessionIssued>;
+  signInWithCode(request: SignInWithCodeInput): Promise<SessionIssued>;
 
   /**
    * Method revokeSession

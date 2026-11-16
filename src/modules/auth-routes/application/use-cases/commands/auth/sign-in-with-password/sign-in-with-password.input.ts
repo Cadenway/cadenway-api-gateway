@@ -1,12 +1,12 @@
 import type { Client } from '../../../../models/auth/client.model.js';
 
 /**
- * Interface PasswordSignIn
+ * Interface SignInWithPasswordInput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface PasswordSignIn {
+export interface SignInWithPasswordInput {
   // #region Properties
   /**
    * Property email

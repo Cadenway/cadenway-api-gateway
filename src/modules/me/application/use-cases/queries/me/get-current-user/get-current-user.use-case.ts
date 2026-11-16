@@ -1,4 +1,4 @@
-import type { User } from './get-current-user.output.js';
+import type { GetCurrentUserOutput } from './get-current-user.output.js';
 import type { IdentityUsers } from '../../../../ports/outbound/identity/me/identity-users.port.js';
 
 /**
@@ -44,9 +44,9 @@ export class GetCurrentUser {
    * Reads the account identified by the verified session.
    *
    * @param {string} input - Input selected by the presentation boundary.
-   * @returns {Promise<User>} The outcome provided by Identity.
+   * @returns {Promise<GetCurrentUserOutput>} The outcome provided by Identity.
    */
-  public execute(input: string): Promise<User> {
+  public execute(input: string): Promise<GetCurrentUserOutput> {
     return this.identity.getUser(input);
   }
   // #endregion

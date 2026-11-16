@@ -1,4 +1,4 @@
-import type { SignUpRequest } from './sign-up.input.js';
+import type { SignUpInput } from './sign-up.input.js';
 import type { CodeSent } from '../../../../models/auth/code-sent.model.js';
 import type { IdentityAuth } from '../../../../ports/outbound/identity/auth/identity-auth.port.js';
 
@@ -44,10 +44,10 @@ export class SignUp {
    * @description
    * Registers an unverified account and requests a verification code.
    *
-   * @param {SignUpRequest} input - Input selected by the presentation boundary.
+   * @param {SignUpInput} input - Input selected by the presentation boundary.
    * @returns {Promise<CodeSent>} The outcome provided by Identity.
    */
-  public execute(input: SignUpRequest): Promise<CodeSent> {
+  public execute(input: SignUpInput): Promise<CodeSent> {
     return this.identity.signUp(input);
   }
   // #endregion

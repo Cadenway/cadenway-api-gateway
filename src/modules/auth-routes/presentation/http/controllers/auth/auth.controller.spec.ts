@@ -10,16 +10,16 @@ import {
   identityProblem,
   identityUnavailable,
   type FakeIdentity,
-} from '../../../../../../../test/support/fake-identity.js';
-import { expectPublicResponse } from '../../../../../../../test/support/public-contract.js';
+} from '../../../../../../../tests/support/fake-identity.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import {
   createRouteApplication,
   type RouteApplication,
-} from '../../../../../../../test/support/route-application.js';
+} from '../../../../../../../tests/support/route-application.js';
 import {
   ALLOWED_ORIGIN,
   WEBSITE_ORIGIN,
-} from '../../../../../../../test/support/test-environment.js';
+} from '../../../../../../../tests/support/test-environment.js';
 
 /**
  * Constant NOW

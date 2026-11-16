@@ -10,12 +10,12 @@ import {
 } from '@cadenway/nest-common';
 import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-import { CAMILLE, CAMILLE_SESSION } from '../../test/support/fake-identity.js';
+import { CAMILLE, CAMILLE_SESSION } from '../../tests/support/fake-identity.js';
 import {
   GATEWAY_ISSUER,
   generateSigningKeys,
   type SigningKeys,
-} from '../../test/support/test-environment.js';
+} from '../../tests/support/test-environment.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 
 /**

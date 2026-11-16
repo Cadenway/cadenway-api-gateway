@@ -1,12 +1,12 @@
 import type { Client } from '../../../../models/auth/client.model.js';
 
 /**
- * Interface SignUpVerification
+ * Interface VerifySignUpInput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface SignUpVerification {
+export interface VerifySignUpInput {
   // #region Properties
   /**
    * Property email

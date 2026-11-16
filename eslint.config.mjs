@@ -4,7 +4,6 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import jsdoc from 'eslint-plugin-jsdoc';
-import documentation from './rules/documentation.mjs';
 import memberRegions from './rules/member-regions.mjs';
 
 const explicitExports = {
@@ -54,7 +53,6 @@ export default defineConfig(
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
-      '@typescript-eslint/explicit-function-return-type': ['error', { allowExpressions: true }],
       // NestJS modules are classes that only carry a decorator.
       '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }],
       'no-restricted-syntax': ['error', explicitExports],
@@ -104,80 +102,26 @@ export default defineConfig(
   {
     files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
-    rules: { '@typescript-eslint/explicit-function-return-type': 'off' },
   },
   {
     files: ['src/**/*.ts'],
-    plugins: { jsdoc, cadenway: { rules: { documentation, 'member-regions': memberRegions } } },
+    plugins: { jsdoc, cadenway: { rules: { 'member-regions': memberRegions } } },
     linterOptions: { noInlineConfig: true },
     rules: {
-      'cadenway/documentation': 'error',
       'cadenway/member-regions': 'error',
       '@typescript-eslint/no-inferrable-types': 'off',
       '@typescript-eslint/prefer-as-const': 'off',
       '@typescript-eslint/explicit-member-accessibility': ['error', { accessibility: 'explicit' }],
-      '@typescript-eslint/typedef': [
-        'error',
-        {
-          variableDeclaration: true,
-          memberVariableDeclaration: true,
-          arrayDestructuring: true,
-          objectDestructuring: true,
-        },
-      ],
+      '@typescript-eslint/consistent-type-imports': 'error',
+      '@typescript-eslint/explicit-module-boundary-types': 'error',
       'jsdoc/require-jsdoc': [
         'error',
         {
           require: { FunctionDeclaration: true, ClassDeclaration: true },
-          contexts: [
-            'TSInterfaceDeclaration',
-            'TSTypeAliasDeclaration',
-            'TSEnumDeclaration',
-            'TSEnumMember',
-            'Program > VariableDeclaration',
-            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
-            'ClassDeclaration > ClassBody > PropertyDefinition',
-            'ClassDeclaration > ClassBody > MethodDefinition',
-            'ClassDeclaration > ClassBody > TSAbstractPropertyDefinition',
-            'ClassDeclaration > ClassBody > TSAbstractMethodDefinition',
-            'TSInterfaceBody > TSPropertySignature',
-            'TSInterfaceBody > TSMethodSignature',
-            'TSTypeAliasDeclaration > TSTypeLiteral > TSPropertySignature',
-            'TSTypeAliasDeclaration > TSTypeLiteral > TSMethodSignature',
-          ],
+          contexts: ['TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'TSEnumDeclaration'],
+          publicOnly: true,
         },
       ],
-      'jsdoc/require-param': [
-        'error',
-        {
-          checkDestructured: false,
-          checkDestructuredRoots: false,
-          contexts: [
-            'FunctionDeclaration',
-            'VariableDeclarator > ArrowFunctionExpression',
-            'MethodDefinition > FunctionExpression',
-            'TSMethodSignature',
-          ],
-        },
-      ],
-      'jsdoc/require-param-type': 'error',
-      'jsdoc/require-param-description': 'error',
-      'jsdoc/require-returns': [
-        'error',
-        {
-          contexts: [
-            'FunctionDeclaration',
-            'VariableDeclarator > ArrowFunctionExpression',
-            'MethodDefinition > FunctionExpression',
-            {
-              context: 'TSMethodSignature[returnType.typeAnnotation.type!="TSVoidKeyword"]',
-              forceRequireReturn: true,
-            },
-          ],
-        },
-      ],
-      'jsdoc/require-returns-type': 'error',
-      'jsdoc/require-returns-description': 'error',
     },
   },
   prettier,

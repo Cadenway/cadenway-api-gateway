@@ -1,10 +1,10 @@
 /**
- * Interface SignInMethodsRequest
+ * Interface DiscoverSignInMethodsInput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface SignInMethodsRequest {
+export interface DiscoverSignInMethodsInput {
   // #region Properties
   /**
    * Property email

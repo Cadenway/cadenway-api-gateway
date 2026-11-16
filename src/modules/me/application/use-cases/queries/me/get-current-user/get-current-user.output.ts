@@ -1,10 +1,10 @@
 /**
- * Interface User
+ * Interface GetCurrentUserOutput
  *
  * @description
  * Gateway-owned data for Identity orchestration.
  */
-export interface User {
+export interface GetCurrentUserOutput {
   // #region Properties
   /**
    * Property id

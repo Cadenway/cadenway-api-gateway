@@ -16,8 +16,8 @@
     "generate:clients": "orval --config orval.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint .",
-    "test:lint": "node --test rules/documentation.test.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "test:lint": "node --test tests/lint/eslint-rules.test.mjs",
     "test:architecture": "node --test tests/architecture/project.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --project unit",
@@ -41,7 +41,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@cadenway/nest-testing": "0.2.0",
+    "@cadenway/nest-testing": "0.3.0",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",

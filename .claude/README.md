@@ -85,7 +85,7 @@ check that writes files. No agent delegates further.
 | `aggregates.md` | Aggregates | `src/modules/**/application/use-cases/queries/**` |
 | `auth.md` | Authentication and authorization | `src/modules/auth/**` |
 | `clients.md` | Internal clients | `src/clients/**` |
-| `tests.md` | Tests | `**/*.spec.ts`, `test/**` |
+| `tests.md` | Tests | `**/*.spec.ts`, `tests/**` |
 | `deploy.md` | Deployment files | `Dockerfile`, `deploy/**`, `compose.dev.yaml`, `.env.example` |
 | `language.md` | Language | always |
 | `git-and-commits.md` | Git and commits | always |

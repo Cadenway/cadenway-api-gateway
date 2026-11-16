@@ -1,4 +1,4 @@
-import type { CodeVerification } from './sign-in-with-code.input.js';
+import type { SignInWithCodeInput } from './sign-in-with-code.input.js';
 import type { SessionIssued } from '../../../../models/auth/session-issued.model.js';
 import type { IdentityAuth } from '../../../../ports/outbound/identity/auth/identity-auth.port.js';
 
@@ -44,10 +44,10 @@ export class SignInWithCode {
    * @description
    * Opens a session after Identity verifies the sign-in code.
    *
-   * @param {CodeVerification} input - Input selected by the presentation boundary.
+   * @param {SignInWithCodeInput} input - Input selected by the presentation boundary.
    * @returns {Promise<SessionIssued>} The outcome provided by Identity.
    */
-  public execute(input: CodeVerification): Promise<SessionIssued> {
+  public execute(input: SignInWithCodeInput): Promise<SessionIssued> {
     return this.identity.signInWithCode(input);
   }
   // #endregion

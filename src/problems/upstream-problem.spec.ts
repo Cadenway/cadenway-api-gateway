@@ -2,7 +2,7 @@ import { ProblemException } from '@cadenway/nest-common';
 import type { Response } from 'express';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
-import { identityProblem, identityUnavailable } from '../../test/support/fake-identity.js';
+import { identityProblem, identityUnavailable } from '../../tests/support/fake-identity.js';
 import {
   isUpstreamProblem,
   relayUpstream,

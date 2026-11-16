@@ -11,7 +11,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'integration',
-          include: ['src/**/*.int-spec.ts', 'test/**/*.int-spec.ts'],
+          include: ['src/**/*.int-spec.ts', 'tests/**/*.int-spec.ts'],
           // A disposable Redis container starts in the hooks.
           testTimeout: 60_000,
           hookTimeout: 120_000,

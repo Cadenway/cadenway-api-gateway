@@ -3,10 +3,10 @@
 [Documentation index](README.md) · [Repository instructions](../AGENTS.md)
 
 **Status:** This page records the design from repository instructions and skills. The public edge,
-the logs and the telemetry start-up are implemented and covered by `test/gateway.int-spec.ts`; the
+the logs and the telemetry start-up are implemented and covered by `tests/gateway.int-spec.ts`; the
 routes of `openapi/public/auth.yaml`, the session guard and the client of identity-service are
 implemented (see [Authentication routes](#authentication-routes)) and covered by the route tests and
-`test/auth.int-spec.ts`; API tokens, scopes and the rate limit are not built yet.
+`tests/auth.int-spec.ts`; API tokens, scopes and the rate limit are not built yet.
 
 ## Public and internal boundaries
 

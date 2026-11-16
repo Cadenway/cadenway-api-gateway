@@ -12,7 +12,7 @@ import { isUpstreamProblem, toPublicProblem } from '../../../../../../problems/u
 import { toCurrentUser } from '../../../../../../presentation/http/mappers/current-user.mapper.js';
 import { GetCurrentUser } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.use-case.js';
 
-import type { User } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.output.js';
+import type { GetCurrentUserOutput } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.output.js';
 
 /**
  * Class MeController
@@ -76,7 +76,7 @@ export class MeController {
     if (session === undefined) {
       throw new Error('GET /v1/me ran without a verified session.');
     }
-    let user: User;
+    let user: GetCurrentUserOutput;
     try {
       user = await this.users.execute(session.userId);
     } catch (error) {
