@@ -207,8 +207,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@cadenway/nest-testing':
-        specifier: 0.5.0
-        version: 0.5.0(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)
+        specifier: 0.5.1
+        version: 0.5.1(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)
       '@commitlint/cli':
         specifier: ^21.2.4
         version: 21.2.4(conventional-commits-parser@7.1.4)(typescript@6.0.3)
@@ -375,10 +375,10 @@ packages:
       pg: ^8.23.1
       zod: ^4.6.0
 
-  '@cadenway/nest-testing@0.5.0':
-    resolution: {integrity: sha512-Ts06LyorZvxGqZ5z4eWjklj18tjs7qPovk03ji4K/lYseCB4B4oDFB9VbpH3sRMo/mCzekc9AFdmolyjv2Wugw==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-testing/0.5.0/d80b879fcbf59f01a611d16cabbaf5da925b5970}
+  '@cadenway/nest-testing@0.5.1':
+    resolution: {integrity: sha512-RLSHG+QZeQI/NypxebSCv1vZJOb5usrD+lphV1AjOV7B5o82AgSKERNbFqd9TRFXpgLr8mQsR/1VwOVrIAyJlQ==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-testing/0.5.1/2f3de32653d165aaff992565c6b92b75af189028}
     peerDependencies:
-      '@cadenway/nest-messaging': ^0.0.1
+      '@cadenway/nest-messaging': ^0.0.1 || ^0.2.0
       '@nestjs/testing': ^12.4.2
       drizzle-orm: ^0.45.4
       pg: ^8.23.1
@@ -4109,7 +4109,7 @@ snapshots:
       pg: 8.23.1
       zod: 4.6.7
 
-  '@cadenway/nest-testing@0.5.0(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)':
+  '@cadenway/nest-testing@0.5.1(@cadenway/nest-messaging@0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7))(@nestjs/testing@12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2))(@types/node@24.19.2)(bare-buffer@3.7.1)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(supertest@7.3.2)(vite@8.3.7(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))(vitest@5.1.0)':
     dependencies:
       '@cadenway/nest-messaging': 0.0.1(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(pg@8.23.1)(zod@4.6.7)
       '@nestjs/testing': 12.4.2(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2)
