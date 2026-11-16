@@ -24,7 +24,7 @@ inspection from executed checks.
 
 ## Role scope
 
-Code under `src/aggregates/`.
+Code under `src/modules/<owner>/`.
 
 ## The request is the deliverable
 
@@ -57,7 +57,7 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 
 ## Checks
 
-- `pnpm test src/aggregates`
+- `pnpm test src/modules/<owner>`
 
 ## Report
 

@@ -18,6 +18,9 @@
 5. Rate limit: 600 requests per minute per token, 429 with `Retry-After`; counters in Redis.
 6. Strict TypeScript; no `any`; no non-null assertion.
 
+Put gateway capabilities under `src/modules/` and use the shared V2 layering in
+[AGENTS.md](AGENTS.md). A controller always drives an application use case.
+
 ## Boundaries (hard rules)
 
 - No database: Redis only, for rate-limit counters.

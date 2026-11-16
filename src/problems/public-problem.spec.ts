@@ -1,7 +1,7 @@
 import { ProblemException, type Problem } from '@cadenway/nest-common';
 import { describe, expect, it } from 'vitest';
 
-import { problemExamples } from '../../test/support/public-contract.js';
+import { problemExamples } from '../../tests/support/public-contract.js';
 import { PROBLEM_TITLES, isProblemStatus, publicProblem } from './public-problem.js';
 
 /**

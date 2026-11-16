@@ -11,7 +11,7 @@ and [Codex](.codex/README.md) for agents, skills, commands and hooks.
 
 - `../cadenway-api-contracts/openapi/public/` for the route you touch, and the internal spec of each service it calls.
 - The [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N), section "cadenway-api-gateway".
-- The `src/aggregates/` folder when the route composes several services.
+- The owning module under `src/modules/` when the route composes several services.
 - `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
   versions elsewhere: a copy goes stale.
 
@@ -42,13 +42,18 @@ Public routes without a session: the sign-up and sign-in flows of `openapi/publi
 
 See the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for dependency and test rules.
 
-- `src/auth/`: token verification, scopes, organization context.
-- `src/rate-limit/`: per-token counters in Redis.
-- `src/routes/<resource>/`: one folder per public resource, the authentication included (`auth/`, `me/`).
-- `src/aggregates/`: compositions across services.
-- `src/public/`: the other routes without a session (intake form, newsletter, contact form, webhooks).
-- `src/problems/`: translation of internal errors to the public problems, and the French titles the gateway owns.
-- `src/clients/`: clients generated from the internal specs, one per service.
+- Capabilities live under `src/modules/<module>/` and declare their boundaries in `MODULE.md`.
+  Authentication and guards belong to `auth`, the public authentication routes to `auth-routes`,
+  and the current account route to `me`. Future aggregations, unauthenticated flows, and rate
+  limiting get separately owned modules.
+- Use the [NestJS architecture guide](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md#api-gateway-profile)
+  for the service-style layering. Keep HTTP entry points under `presentation/`, use cases and
+  ports under `application/`, local outgoing adapters under `infrastructure/`. Bind ports in `<module>.module.ts` or use
+  the optional `composition/` wiring directory. Every route invokes an application use case, including a simple forwarded
+  call. Use a query for aggregations.
+- `ClientsModule` exports shared technical clients. Each capability owns its port, token, adapter,
+  and binding. `src/presentation/http/` holds only shared transport helpers, and `src/problems/`
+  holds problem translation.
 
 ## Boundaries (hard rules)
 
@@ -78,13 +83,13 @@ The scripts below are this repository's contract. While the repository is being 
 create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
 narrowest check that covers the change first, then widen:
 
-| Changed                         | Minimum check                                                                 |
-| ------------------------------- | ----------------------------------------------------------------------------- |
-| Routes or aggregates            | `pnpm test src/routes` or `pnpm test src/aggregates`, then the contract tests |
-| Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit`            |
-| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                            |
-| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`                  |
-| Docs or agent instructions only | Scoped formatting and link review                                             |
+| Changed                         | Minimum check                                                      |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Routes or aggregates            | `pnpm test src/modules/<module>` , then the contract tests         |
+| Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit` |
+| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                 |
+| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`       |
+| Docs or agent instructions only | Scoped formatting and link review                                  |
 
 Report the commands you actually ran and their results; a check you did not run is reported as not
 run.

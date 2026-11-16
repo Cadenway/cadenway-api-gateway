@@ -1,0 +1,55 @@
+import type { Client } from '../../../../models/auth/client.model.js';
+
+/**
+ * Interface SignInWithPasswordInput
+ *
+ * @description
+ * Gateway-owned data for Identity orchestration.
+ */
+export interface SignInWithPasswordInput {
+  // #region Properties
+  /**
+   * Property email
+   *
+   * @description
+   * Address of the account.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly email: string;
+
+  /**
+   * Property password
+   *
+   * @description
+   * Password supplied by the caller, kept out of logs.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly password: string;
+
+  /**
+   * Property rememberMe
+   *
+   * @description
+   * Whether the session survives the browser.
+   *
+   * @type {boolean}
+   * @readonly
+   */
+  readonly rememberMe?: boolean;
+
+  /**
+   * Property client
+   *
+   * @description
+   * Browser for which the session is opened.
+   *
+   * @type {Client}
+   * @readonly
+   */
+  readonly client: Client;
+  // #endregion
+}

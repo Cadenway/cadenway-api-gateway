@@ -24,7 +24,7 @@ inspection from executed checks.
 
 ## Role scope
 
-Code under `src/public/`.
+Code under `src/modules/<capability>/`.
 
 ## The request is the deliverable
 
@@ -51,12 +51,12 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 ## Procedure
 
 1. Rate-limit and validate strictly; these routes face the internet.
-2. Forms: validate against the contract, then call the owning service.
-3. Webhooks: relay the raw body and headers unchanged to cadenway-integration-service; do not parse or verify here.
+2. Forms: validate against the contract and call a use case. The use case reaches the owning service through its port.
+3. Webhooks: the use case relays the raw body and headers unchanged to cadenway-integration-service through its port. Keep parsing and signature checks in the owning service.
 
 ## Checks
 
-- `pnpm test src/public`
+- `pnpm test src/modules/<capability>`
 
 ## Report
 

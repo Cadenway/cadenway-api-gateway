@@ -16,9 +16,9 @@ implemented.
 | `src/telemetry.ts`           | `startTelemetry` of `@cadenway/nest-common/telemetry`, preloaded by the start command before `main.js`                                                                                                                                                                                                         |
 | `src/main.ts`                | Inside `runApplication`: validates the environment once, creates the application, listens on `PORT`; a failed start-up is one JSON line on the standard error and exit code 1                                                                                                                                  |
 | `src/gateway-application.ts` | `createApplication` with the options of a public gateway (the validated configuration provided as `CONFIG`, signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
-| `src/app.module.ts`          | The clients module, the rate-limit module, `HealthModule` with the Redis indicator and the shutdown delay, and the route modules                                                                                                                                                                               |
+| `src/app.module.ts`          | The shared Redis module, `HealthModule` with the Redis indicator and the shutdown delay, and the route modules                                                                                                                                                                                                 |
 | `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                                                                              |
-| `src/rate-limit/`            | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes in phase P2b                                                                                                                                                            |
+| `src/infrastructure/redis/`  | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes in phase P2b                                                                                                                                                            |
 
 Start command, in the `Dockerfile` and `pnpm start:dev`:
 
@@ -42,16 +42,14 @@ event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/clients/generated/`                 | The client orval generates from `specs/openapi/internal/identity-service.yaml` of the installed `@cadenway/contracts` (`pnpm generate:clients`); committed, never edited |
 | `src/clients/identity-service.client.ts` | The outgoing adapter of identity-service: the generated functions on an `InternalHttpClient`, the actor of each call, every answer checked against the contract          |
-| `src/clients/clients.module.ts`          | Global: one `InternalHttpClient` per called service, bound to the ports of the guards and routes                                                                         |
-| `src/auth/`                              | `SessionGuard` (introspection on every request, organization context), `CsrfGuard` and the cross-site check, the session cookie, the `SessionIntrospector` port          |
+| `src/clients/clients.module.ts`          | One technical client per called service, bound to a separate `InternalHttpClient`                                                                                        |
+| `src/modules/auth/`                      | `SessionGuard` (introspection on every request, organization context), `CsrfGuard` and the cross-site check and the `SessionIntrospector` port                           |
 | `src/problems/`                          | The French titles of the public problems, the translation of internal errors, `Retry-After`                                                                              |
-| `src/routes/auth/`                       | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                |
-| `src/routes/me/`                         | `GET /v1/me` and its `IdentityUsers` port                                                                                                                                |
-| `src/routes/*.ts`                        | What the route folders share: the mapping to `CurrentUser` and the `Cache-Control: no-store` middleware                                                                  |
+| `src/modules/auth-routes/`               | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                |
+| `src/modules/me/`                        | `GET /v1/me` and its `IdentityUsers` port                                                                                                                                |
+| `src/presentation/http/`                 | Shared HTTP helpers for current-user mapping, cache policy and session cookies and request identifiers                                                                   |
 
-A guard or a controller never imports `src/clients/`: it injects the port it defines, which
-`ClientsModule` binds to the client (the architecture check refuses the import). The route tests
-provide the same tokens with a fake.
+The auth capability and each route bind their own port in composition. The outgoing adapters call the technical client exported by `ClientsModule`. Controllers call local use cases, and the session guard uses the verify-session query. Route tests run the real bindings and substitute the technical client methods.
 
 ## Purpose and target structure
 
@@ -69,13 +67,17 @@ Public routes without a session: the sign-up and sign-in flows of `openapi/publi
 
 Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for ports, adapters, dependency direction, naming and test placement.
 
-- `src/auth/`: token verification, scopes, organization context.
-- `src/rate-limit/`: per-token counters in Redis.
-- `src/routes/<resource>/`: one folder per public resource, the authentication included (`auth/`, `me/`).
-- `src/aggregates/`: compositions across services.
-- `src/public/`: the other routes without a session (intake form, newsletter, contact form, webhooks).
-- `src/problems/`: translation of internal errors to the public problems, and the French titles the gateway owns.
-- `src/clients/`: clients generated from the internal specs, one per service.
+- Each capability lives at `src/modules/<module>/` with `MODULE.md` and `<module>.module.ts`.
+  The existing owners are `auth`, `auth-routes`, and `me`. Add new owners for aggregated resources,
+  unauthenticated workflows, and rate-limit policy when those capabilities are implemented.
+- HTTP controllers, guards and DTOs live in `presentation/http/`. Every route delegates to an
+  operation in `application/use-cases/{commands,queries}/<area>/<operation>/`. Application uses
+  capability-local outbound ports. `infrastructure/adapters/` contains their implementations.
+  Bind ports and register factories in `<module>.module.ts`, using the optional `composition/`
+  wiring directory for separate files.
+- `ClientsModule` exposes technical clients using `src/clients/generated/`. Shared infrastructure,
+  problem mappers and HTTP session, cache and mapping helpers stay outside the capability folders.
+  The current counter connection and readiness integration live under `src/infrastructure/redis/`.
 
 ## Boundaries
 

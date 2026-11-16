@@ -24,7 +24,7 @@ inspection from executed checks.
 
 ## Role scope
 
-Code under `src/routes/<resource>/`.
+Code under `src/modules/<module>/`.
 
 ## The request is the deliverable
 
@@ -53,12 +53,12 @@ Load them with the `Skill` tool when their subject comes up (if the tool is unav
 
 1. Find the route in the installed `@cadenway/contracts`; if missing, stop: the contract change comes first.
 2. Apply auth, scopes and the organization context with the shared guards.
-3. Call the owning service through its generated client; map its response to the public contract.
+3. Call an application use case. It reaches the service through the owned port and generated client adapter. Map its response to the public contract.
 4. Translate internal errors to the public error format with stable codes; never leak internal details.
 
 ## Checks
 
-- `pnpm test src/routes/<resource>`
+- `pnpm test src/modules/<module>`
 
 ## Report
 

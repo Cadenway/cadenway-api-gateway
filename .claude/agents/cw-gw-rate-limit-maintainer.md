@@ -24,7 +24,7 @@ inspection from executed checks.
 
 ## Role scope
 
-Code under `src/rate-limit/`.
+Code under `src/modules/rate-limit/`.
 
 ## The request is the deliverable
 
