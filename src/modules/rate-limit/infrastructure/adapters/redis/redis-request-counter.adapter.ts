@@ -1,7 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import {
-  RateLimiterMemory,
   RateLimiterRedis,
   RateLimiterRes,
   RLWrapperTimeouts,
@@ -10,6 +9,7 @@ import {
 
 import type { RequestAllowance } from '../../../application/models/requests/request-allowance.model.js';
 import type { RequestCounter } from '../../../application/ports/outbound/counters/requests/request-counter.port.js';
+import { BoundedMemoryWindows } from '../memory/bounded-memory-windows.js';
 
 /**
  * Interface RequestQuota
@@ -80,6 +80,18 @@ export interface RequestQuota {
 const REDIS_RETRY_DELAY_MS: number = 1000;
 
 /**
+ * Constant MAX_FALLBACK_KEYS
+ *
+ * @description
+ * Most keys a counter holds in memory while Redis cannot count: about 170 bytes each, so about
+ * 8 MB per counter at most, whatever the number of addresses a flood rotates through. Past it, new
+ * keys share one overflow window (see `BoundedMemoryWindows`).
+ *
+ * @type {number}
+ */
+const MAX_FALLBACK_KEYS: number = 50_000;
+
+/**
  * Constant KEY_PREFIX
  *
  * @description
@@ -116,11 +128,12 @@ function allowance(refusal?: RateLimiterRes): RequestAllowance {
  *
  * When Redis cannot count or read a counter (unreachable, not ready, or slower than
  * `storeTimeoutMs`), the request is counted or read in the memory of this instance with the same
- * quota for one second before Redis is tried again, and a `warn` line names the limit once per
- * outage; a line says when Redis counts again. The routes keep working, and a key is still limited
- * per instance (at most the quota times the number of instances in a window) rather than not at
- * all. Redis answers again on its own: the connection keeps reconnecting, and readiness reports
- * the outage meanwhile.
+ * quota, and a `warn` line names the limit once per outage; a line says when Redis counts again.
+ * Once a second, one request tries Redis again while the others keep counting in memory. The
+ * routes keep working, and a key is still limited per instance (at most the quota times the
+ * number of instances in a window) rather than not at all; the memory holds at most
+ * `MAX_FALLBACK_KEYS` keys per counter. Redis answers again on its own: the connection keeps
+ * reconnecting, and readiness reports the outage meanwhile.
  */
 export class RedisRequestCounter implements RequestCounter {
   // #region Properties
@@ -152,10 +165,10 @@ export class RedisRequestCounter implements RequestCounter {
    * @description
    * Counters in the memory of this instance, used while Redis cannot count.
    *
-   * @type {RateLimiterMemory}
+   * @type {BoundedMemoryWindows}
    * @readonly
    */
-  private readonly fallback: RateLimiterMemory;
+  private readonly fallback: BoundedMemoryWindows;
 
   /**
    * Property logger
@@ -183,7 +196,7 @@ export class RedisRequestCounter implements RequestCounter {
    *
    * @description
    * Instant, in milliseconds since the epoch, before which requests are counted in memory without
-   * trying Redis.
+   * trying Redis; `0` while Redis counts.
    *
    * @type {number}
    */
@@ -211,10 +224,10 @@ export class RedisRequestCounter implements RequestCounter {
       rejectIfRedisNotReady: true,
     });
     this.store = new RLWrapperTimeouts({ limiter, timeoutMs: quota.storeTimeoutMs });
-    this.fallback = new RateLimiterMemory({
-      keyPrefix: KEY_PREFIX,
-      points: quota.requests,
-      duration: quota.windowSeconds,
+    this.fallback = new BoundedMemoryWindows({
+      requests: quota.requests,
+      windowSeconds: quota.windowSeconds,
+      maxKeys: MAX_FALLBACK_KEYS,
     });
     this.logger = new Logger('RateLimit');
     this.degraded = false;
@@ -233,7 +246,7 @@ export class RedisRequestCounter implements RequestCounter {
    * @returns {Promise<RequestAllowance>} Whether the request is allowed, and when to retry.
    */
   public async consume(key: string): Promise<RequestAllowance> {
-    if (Date.now() >= this.retryRedisAt) {
+    if (this.triesRedis()) {
       try {
         await this.store.consume(key);
         this.recovered();
@@ -246,15 +259,7 @@ export class RedisRequestCounter implements RequestCounter {
         this.degrade(rejection);
       }
     }
-    try {
-      await this.fallback.consume(key);
-      return allowance();
-    } catch (rejection) {
-      if (rejection instanceof RateLimiterRes) {
-        return allowance(rejection);
-      }
-      throw rejection;
-    }
+    return this.fallback.consume(key, Date.now());
   }
 
   /**
@@ -268,7 +273,7 @@ export class RedisRequestCounter implements RequestCounter {
    * @returns {Promise<RequestAllowance>} Whether one more request fits, and when to retry.
    */
   public async peek(key: string): Promise<RequestAllowance> {
-    if (Date.now() >= this.retryRedisAt) {
+    if (this.triesRedis()) {
       try {
         const state: RateLimiterRes | null = await this.store.get(key);
         this.recovered();
@@ -277,7 +282,28 @@ export class RedisRequestCounter implements RequestCounter {
         this.degrade(failure);
       }
     }
-    return this.remainingOf(await this.fallback.get(key));
+    return this.fallback.peek(key, Date.now());
+  }
+
+  /**
+   * Method triesRedis
+   *
+   * @description
+   * Tells whether this request goes to Redis: always while Redis counts; during an outage, one
+   * request a second, and the requests that come while it waits count in memory, so a stalled
+   * Redis holds one request a second rather than every request of that moment.
+   *
+   * @returns {boolean} `true` when the request tries Redis.
+   */
+  private triesRedis(): boolean {
+    const now: number = Date.now();
+    if (now < this.retryRedisAt) {
+      return false;
+    }
+    if (this.degraded) {
+      this.retryRedisAt = now + REDIS_RETRY_DELAY_MS;
+    }
+    return true;
   }
 
   /**
@@ -331,6 +357,7 @@ export class RedisRequestCounter implements RequestCounter {
       return;
     }
     this.degraded = false;
+    this.retryRedisAt = 0;
     this.logger.log({ limit: this.quota.limit }, 'rate limit counted in redis again');
   }
   // #endregion

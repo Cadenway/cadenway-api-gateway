@@ -121,7 +121,8 @@ Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
   do not declare. While Redis cannot count (unreachable, not ready, or slower than 100
   milliseconds), the request, and those of the next second, are counted in the memory of the
   instance with the same quota, logged once per outage: the routes stay available, and a
-  credential is still limited per instance.
+  credential is still limited per instance. Once a second, one request tries Redis again while
+  the others keep counting in memory.
 - **Limits per client address** (decision 2 of the P2b security follow-ups), with the same `429`,
   `Retry-After` and Redis fallback; a request with a valid session or token keeps only the limit
   of its credential:
@@ -140,6 +141,10 @@ Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
     HKDF from the private part of `INTERNAL_TOKEN_PRIVATE_JWK`, which every instance holds. An
     unkeyed hash of an IPv4 address would be reversed by hashing the 2^32 addresses. No log line
     carries an address or a pseudonym.
+  - While Redis cannot count, the memory fallback holds at most 50,000 keys per counter; new keys
+    then share one overflow window. A burst of bad tokens sent concurrently can pass the 10
+    failures by the requests it keeps in flight, once per window (see the rate-limit
+    `MODULE.md`).
 - **Errors.** Each route answers the client errors its operation declares, with the French title
   of the contract; any other is `503 upstream.failed`. On a route about one member or invitation,
   `404 organization.not-found` (the caller left the organization) answers the

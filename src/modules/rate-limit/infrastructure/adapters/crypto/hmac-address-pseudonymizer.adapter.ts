@@ -1,4 +1,4 @@
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHmac, createSecretKey, hkdfSync, type KeyObject } from 'node:crypto';
 import { isIPv4, isIPv6 } from 'node:net';
 
 import type { AddressPseudonymizer } from '../../../application/ports/outbound/pseudonyms/addresses/address-pseudonymizer.port.js';
@@ -55,6 +55,17 @@ const MIN_SECRET_BYTES: number = 32;
  * @type {number}
  */
 const PSEUDONYM_BYTES: number = 16;
+
+/**
+ * Constant SIX_TO_FOUR_PREFIX
+ *
+ * @description
+ * First group of a 6to4 address (`2002::/16`, RFC 3056), whose next two groups are the IPv4
+ * address of the host that owns its `/48`.
+ *
+ * @type {number}
+ */
+const SIX_TO_FOUR_PREFIX: number = 0x2002;
 
 /**
  * Constant EMBEDDED_IPV4
@@ -128,8 +139,9 @@ function ipv6Groups(address: string): number[] {
  * The network a client address is limited as: the IPv4 address itself, or the `/64` prefix of an
  * IPv6 address, the block one subscriber holds whole and could otherwise rotate through. An IPv4
  * address mapped into IPv6 (`::ffff:203.0.113.7`, as a dual-stack socket reports it) is the IPv4
- * address, and a zone (`%eth0`) is dropped. Any other text, which Express never derives from a
- * socket, is kept as it is.
+ * address, and so is a 6to4 address (`2002:cb00:7107::/48`), whose whole `/48` any host of that
+ * IPv4 address may use. A zone (`%eth0`) is dropped. Any other text, which Express never derives
+ * from a socket, is kept as it is.
  *
  * @param {string} address - The client address.
  * @returns {string} The canonical network, the input of the pseudonym.
@@ -145,9 +157,9 @@ function clientNetworkOf(address: string): string {
   const groups: number[] = ipv6Groups(unzoned);
   const mapped: boolean =
     groups.slice(0, 5).every((group: number) => group === 0) && groups[5] === 0xffff;
-  if (mapped) {
-    const high: number = groups[6] ?? 0;
-    const low: number = groups[7] ?? 0;
+  if (mapped || groups[0] === SIX_TO_FOUR_PREFIX) {
+    const high: number = (mapped ? groups[6] : groups[1]) ?? 0;
+    const low: number = (mapped ? groups[7] : groups[2]) ?? 0;
     return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
   }
   return `${groups
@@ -173,12 +185,13 @@ export class HmacAddressPseudonymizer implements AddressPseudonymizer {
    * Property key
    *
    * @description
-   * The HMAC key, derived from the secret. Never logged.
+   * The HMAC key, derived from the secret once: a key object, so that no request imports it
+   * again. Never logged.
    *
-   * @type {Buffer}
+   * @type {KeyObject}
    * @readonly
    */
-  private readonly key: Buffer;
+  private readonly key: KeyObject;
   // #endregion
 
   // #region Constructor
@@ -196,7 +209,9 @@ export class HmacAddressPseudonymizer implements AddressPseudonymizer {
     if (secret.byteLength < MIN_SECRET_BYTES) {
       throw new Error(`The pseudonym secret needs at least ${String(MIN_SECRET_BYTES)} bytes.`);
     }
-    this.key = Buffer.from(hkdfSync('sha256', secret, KEY_SALT, KEY_INFO, KEY_BYTES));
+    this.key = createSecretKey(
+      Buffer.from(hkdfSync('sha256', secret, KEY_SALT, KEY_INFO, KEY_BYTES)),
+    );
   }
   // #endregion
 

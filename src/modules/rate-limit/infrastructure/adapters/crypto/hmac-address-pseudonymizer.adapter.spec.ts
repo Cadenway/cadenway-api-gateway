@@ -47,6 +47,14 @@ describe('HmacAddressPseudonymizer', () => {
     expect(pseudonymizer.pseudonymize('0:0:0:0:0:ffff:203.0.113.7')).toBe(ipv4);
   });
 
+  it('gives a 6to4 address the pseudonym of the IPv4 address its /48 comes from', () => {
+    const ipv4: string = pseudonymizer.pseudonymize('203.0.113.7');
+
+    expect(pseudonymizer.pseudonymize('2002:cb00:7107::1')).toBe(ipv4);
+    expect(pseudonymizer.pseudonymize('2002:cb00:7107:ffff:1::')).toBe(ipv4);
+    expect(pseudonymizer.pseudonymize('2002:cb00:7108::1')).not.toBe(ipv4);
+  });
+
   it('gives every IPv6 address of one /64 the same pseudonym, whatever its notation', () => {
     const network: string = pseudonymizer.pseudonymize('2001:db8:85a3:7::1');
 

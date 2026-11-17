@@ -127,6 +127,36 @@ describe('RedisRequestCounter on Redis', () => {
     }
   });
 
+  it('lets one request a second try a stalled Redis while the others count in memory at once', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const stalled: RedisRequestCounter = new RedisRequestCounter(client, {
+      limit: 'anonymous',
+      requests: 60,
+      windowSeconds: 60,
+      storeTimeoutMs: 100,
+    });
+    try {
+      await client.client('PAUSE', '3000', 'ALL');
+      await stalled.consume(`anonymous:${randomUUID()}`);
+      await delay(1_100);
+
+      const durations: number[] = await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          const started: number = performance.now();
+          await stalled.consume(`anonymous:${randomUUID()}`);
+          return performance.now() - started;
+        }),
+      );
+
+      expect(durations.filter((duration: number) => duration >= 80)).toHaveLength(1);
+      await delay(2_000);
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   it('reads a counter without counting: room while the quota is not used, the seconds left once it is', async () => {
     const failures: RedisRequestCounter = new RedisRequestCounter(client, {
       limit: 'bearer-failures',

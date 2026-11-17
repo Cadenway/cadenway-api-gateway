@@ -47,13 +47,18 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
   the introspection could tell a valid token from another. A malformed token, or one the
   introspection does not find active (`401 auth.api-token-invalid`), counts one failure
   (`CountBearerFailure`); a valid token, a refused scope (`403`) or a failed introspection
-  (`503`) counts none. Requests sent concurrently before the tenth failure is counted are all
-  checked; from then on the address waits for the end of the window.
+  (`503`) counts none. The check and the count are two steps around the introspection, so the
+  tokens of requests sent concurrently before the tenth failure is counted are all introspected:
+  a burst can pass the 10 by as many requests as it keeps in flight, once per window. From then on
+  the address waits for the end of the window. Bounding the requests in flight instead would also
+  refuse an integration that sends more than 10 valid requests at once.
 - **Client address.** `toClientAddress` of `src/presentation/http/mappers/`: `request.ip` with
   `trust proxy` set to one hop, the address Traefik saw, the same address identity-service records
   with a session. An IPv4 address is limited alone, an IPv6 address with its whole `/64`, which
-  one subscriber holds and could rotate through; an IPv4 address mapped into IPv6 is the IPv4
-  address.
+  one subscriber holds and could rotate through; an IPv4 address mapped into IPv6, and a 6to4
+  address, are the IPv4 address. Clients behind one address (a carrier-grade NAT, a shared egress)
+  share its limits: 10 bad tokens from one of them refuse the bearer tokens of all for the rest of
+  the window, but not their sessions.
 - **Pseudonyms.** A key holds the first 128 bits, in base64url, of an HMAC-SHA-256 of the network
   of the address under a key derived with HKDF-SHA-256 from the private part of
   `INTERNAL_TOKEN_PRIVATE_JWK`. A plain hash would not do: the 2^32 IPv4 addresses can be hashed in
@@ -61,12 +66,16 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
   on every instance and the same within an environment, so the counters stay shared and no new
   secret is distributed; the HKDF context separates the derived key from the signing key. Rotating
   the signing key changes every pseudonym, which only restarts the windows in progress. No log
-  line carries an address or a pseudonym.
+  line carries an address or a pseudonym; the Redis spans of the kit's ioredis instrumentation
+  carry the keys, so pseudonyms, never an address.
 - **Headers.** Only `Retry-After`: the contracts declare no `RateLimit` header.
 - **Redis down.** When Redis cannot count or read a counter (unreachable, not ready, or slower
-  than 100 milliseconds), the request is counted, or the counter read, in the memory of the
-  instance with the same quota, and so are the requests of the next second before Redis is tried
-  again; a `warn` line names the limit once per outage and a line says when Redis counts again.
-  The same holds for the three limits: the routes stay available, and a credential or an address
-  is still limited per instance (at most the quota times the number of instances per minute)
-  rather than not at all; readiness reports the outage meanwhile.
+  than 100 milliseconds, which a saturated event loop can cause too), the request is counted,
+  or the counter read, in the memory of the instance with the same quota; once a second one
+  request tries Redis again while the others keep counting in memory. A `warn` line names the
+  limit once per outage and a line says when Redis counts again. The same holds for the three
+  limits: the routes stay available, and a credential or an address is still limited per
+  instance (at most the quota times the number of instances per minute) rather than not at all;
+  readiness reports the outage meanwhile. Each counter holds at most 50,000 keys in memory, about
+  8 MB: past it, new keys share one overflow window with the same quota, so a flood of addresses
+  cannot exhaust the heap.
