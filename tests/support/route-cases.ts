@@ -34,8 +34,12 @@ export interface CaseFakes {
   readonly identity: FakeIdentity;
   /** The fake of organization-service. */
   readonly organization: FakeOrganization;
-  /** The fake of the request counters. */
+  /** The fake of the counters of the sessions and personal API tokens. */
   readonly counter: FakeCounter;
+  /** The fake of the counters of the requests without a credential, per client address. */
+  readonly anonymousCounter: FakeCounter;
+  /** The fake of the counters of the failed bearer-token authentications, per client address. */
+  readonly bearerFailureCounter: FakeCounter;
 }
 
 /**
@@ -117,6 +121,8 @@ export async function runRouteCase(
     identity,
     organization: application.organization,
     counter: application.counter,
+    anonymousCounter: application.anonymousCounter,
+    bearerFailureCounter: application.bearerFailureCounter,
   };
   routeCase.arrange?.(fakes);
   const unsafe: boolean = routeCase.method !== 'get';

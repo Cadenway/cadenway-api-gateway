@@ -30,6 +30,14 @@ injector. Route handlers declare the security of their public operation with
 - The token is introspected before the operation is checked, so an inactive token answers
   `401 auth.api-token-invalid` on every route, and an active one on a session-only route
   `403 auth.api-token-not-accepted`.
+- Failed bearer tokens are limited per client address (decision 2 of the P2b security
+  follow-ups): `VerifyApiToken` asks its `BearerFailureLimit` port, bound to the counters of
+  `rate-limit`, before anything else, and answers `throttled` once the address failed 10 times in
+  the current minute, so the guard answers `429 rate-limit.exceeded` with `Retry-After` without an
+  introspection, whatever the token. A malformed token, or one the introspection does not find
+  active, counts one failure and answers `401 auth.api-token-invalid`. A verified token counts
+  none and keeps only the per-token limit. `VerifyApiToken` is a command because it records those
+  failures.
 - The cross-site check applies to requests authenticated by the cookie: an exact `Origin` and
   `Content-Type: application/json`, but a bodiless `DELETE`, which passes on its `Origin` alone.
   The routes of `openapi/public/auth.yaml` without a session keep `CsrfGuard`, signed in or not.

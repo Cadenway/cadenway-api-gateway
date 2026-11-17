@@ -39,6 +39,11 @@ description: "The token types the gateway accepts (session, personal API token),
   and scopes. It needs no `Origin`: it is no ambient credential.
 - A route whose `security` names no `apiToken` answers `403 auth.api-token-not-accepted`; a token
   without the scopes of the `apiToken` requirement `403 auth.scope-missing`.
+- Failed bearer authentications are limited per client address: once an address has had 10
+  tokens refused (`401 auth.api-token-invalid`, malformed ones included) in the current minute,
+  every bearer token it sends answers `429 rate-limit.exceeded` with `Retry-After` before any
+  introspection, a valid one too, until the window ends. A valid token counts no failure and keeps
+  only its own limit; the sessions of the address are unaffected.
 
 ## Internal token
 
@@ -83,7 +88,9 @@ cookie and the CSRF check; the settings below are inferred from a public API ser
 on another origin than the applications, not prescribed by a rule:
 
 - `trust proxy` is `1`: Express believes the `X-Forwarded-*` headers of one hop, Traefik, and never
-  a header the client wrote itself.
+  a header the client wrote itself. `request.ip` is then the address Traefik saw:
+  `toClientAddress` of `src/presentation/http/mappers/` reads it for the `client` of a sign-in and
+  for the limits per client address.
 - `helmet` with its defaults.
 - `cookie-parser` without a secret: the session token is opaque and verified by introspection, so
   no cookie is signed.

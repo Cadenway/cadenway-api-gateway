@@ -1041,4 +1041,121 @@ describe('routes of /v1/auth', () => {
       expect(response.body).not.toMatchObject({ code: 'auth.csrf-rejected' });
     });
   });
+
+  describe.each(ROUTES.filter((route: Route) => route.path !== '/v1/auth/sign-out'))(
+    'limit per client address of POST $path, which carries no credential',
+    ({ path, body }: Route) => {
+      it('counts the request on a pseudonym of the address Traefik saw, never on the address', async () => {
+        application.logLines.length = 0;
+
+        await post(application, path, body).set('X-Forwarded-For', '198.51.100.23, 86.247.12.30');
+        await post(application, path, body).set('X-Forwarded-For', '86.247.12.30');
+        await post(application, path, body).set('X-Forwarded-For', '86.247.12.31');
+
+        const keys: string[] = application.anonymousCounter.consume.mock.calls.map(
+          ([key]: [string]) => key,
+        );
+        expect(keys).toHaveLength(3);
+        expect(keys.every((key: string) => /^anonymous:[\w-]{22}$/u.test(key))).toBe(true);
+        // The entry the client wrote is not its address: only the hop Traefik added counts.
+        expect(keys[0]).toBe(keys[1]);
+        expect(keys[2]).not.toBe(keys[0]);
+        expect(keys.join('\n')).not.toMatch(/86\.247|198\.51/u);
+        expect(application.counter.consume).not.toHaveBeenCalled();
+        const logs: string = application.logLines.join('\n');
+        expect(logs).not.toContain('86.247.12.30');
+        expect(logs).not.toContain(keys[0]?.slice('anonymous:'.length));
+      });
+
+      it('answers 429 rate-limit.exceeded with Retry-After beyond the quota of the address, calling nothing', async () => {
+        application.anonymousCounter.consume.mockResolvedValue({
+          allowed: false,
+          retryAfterSeconds: 41,
+        });
+
+        const response: request.Response = await post(application, path, body).set(
+          'X-Forwarded-For',
+          '86.247.12.30',
+        );
+
+        expectPublicResponse('post', path, response);
+        expect(response.status).toBe(429);
+        expect(response.body).toEqual({
+          type: 'about:blank',
+          title: 'Trop de requêtes : réessayez dans un instant.',
+          status: 429,
+          code: 'rate-limit.exceeded',
+          detail: 'Too many requests from this client; retry after the delay of Retry-After.',
+        });
+        expect(response.headers['retry-after']).toBe('41');
+        expect(response.headers['cache-control']).toBe('no-store');
+        expect(response.headers['set-cookie']).toBeUndefined();
+        for (const mock of Object.values(identity)) {
+          expect(mock).not.toHaveBeenCalled();
+        }
+      });
+
+      it('counts a request whose body is invalid too: the limit runs before the validation', async () => {
+        const response: request.Response = await post(application, path, { unexpected: 1 });
+
+        expect(response.status).toBe(400);
+        expect(application.anonymousCounter.consume).toHaveBeenCalledTimes(1);
+      });
+
+      it('neither reads nor counts the failed bearer tokens of the address: the route ignores a bearer token', async () => {
+        await post(application, path, body).set('Authorization', 'Bearer not-a-token');
+
+        expect(application.bearerFailureCounter.peek).not.toHaveBeenCalled();
+        expect(application.bearerFailureCounter.consume).not.toHaveBeenCalled();
+        expect(application.anonymousCounter.consume).toHaveBeenCalledTimes(1);
+      });
+    },
+  );
+
+  describe('limit of POST /v1/auth/sign-out', () => {
+    it('counts a sign-out without an active session on the pseudonym of its address', async () => {
+      const response: request.Response = await post(application, '/v1/auth/sign-out', {}).set(
+        'Cookie',
+        '__Host-cw_session=revoked-token',
+      );
+
+      expect(response.status).toBe(204);
+      expect(application.anonymousCounter.consume).toHaveBeenCalledTimes(1);
+      expect(application.counter.consume).not.toHaveBeenCalled();
+    });
+
+    it('counts a sign-out with an active session on the session only', async () => {
+      identity.revokeSession.mockResolvedValue(undefined);
+      application.anonymousCounter.consume.mockResolvedValue({
+        allowed: false,
+        retryAfterSeconds: 41,
+      });
+
+      const response: request.Response = await post(application, '/v1/auth/sign-out', {}).set(
+        'Cookie',
+        `__Host-cw_session=${CAMILLE_TOKEN}`,
+      );
+
+      expect(response.status).toBe(204);
+      expect(application.counter.consume).toHaveBeenCalledWith(
+        `session:${CAMILLE_SESSION.sessionId}`,
+      );
+      expect(application.anonymousCounter.consume).not.toHaveBeenCalled();
+    });
+
+    it('answers 429 to a sign-out without a session beyond the quota of the address, keeping the cookie', async () => {
+      application.anonymousCounter.consume.mockResolvedValue({
+        allowed: false,
+        retryAfterSeconds: 8,
+      });
+
+      const response: request.Response = await post(application, '/v1/auth/sign-out', {});
+
+      expectPublicResponse('post', '/v1/auth/sign-out', response);
+      expect(response.status).toBe(429);
+      expect(response.body).toMatchObject({ code: 'rate-limit.exceeded' });
+      expect(response.headers['retry-after']).toBe('8');
+      expect(response.headers['set-cookie']).toBeUndefined();
+    });
+  });
 });

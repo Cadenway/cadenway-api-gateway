@@ -15,7 +15,7 @@
 2. Every public route is in `openapi/public/` of the installed `@cadenway/contracts`; every internal call uses the generated client of `openapi/internal/`.
 3. The organization comes from the verified token, never from the request body or a header the client chooses.
 4. Aggregations tolerate a slow or failing secondary service: explicit timeouts, partial responses where the contract allows them.
-5. Rate limit: 600 requests per minute per token, 429 with `Retry-After`; counters in Redis.
+5. Rate limit: 600 requests per minute per token; per client address, 60 requests without a credential and 10 failed bearer tokens per minute; 429 with `Retry-After`; counters in Redis, addresses as keyed hashes.
 6. Strict TypeScript; no `any`; no non-null assertion.
 
 Put gateway capabilities under `src/modules/` and use the shared V2 layering in

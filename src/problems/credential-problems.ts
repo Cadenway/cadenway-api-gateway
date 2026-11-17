@@ -88,3 +88,39 @@ export function rateLimitExceededProblem(): ProblemException {
     detail: 'Too many requests for this credential; retry after the delay of Retry-After.',
   });
 }
+
+/**
+ * Function anonymousRateLimitExceededProblem
+ *
+ * @description
+ * `429 rate-limit.exceeded`: the client address of a request without a credential used its
+ * requests of the current window. The caller sets `Retry-After`.
+ *
+ * @returns {ProblemException} The problem to throw.
+ */
+export function anonymousRateLimitExceededProblem(): ProblemException {
+  return publicProblem({
+    status: 429,
+    code: 'rate-limit.exceeded',
+    detail: 'Too many requests from this client; retry after the delay of Retry-After.',
+  });
+}
+
+/**
+ * Function bearerFailureLimitExceededProblem
+ *
+ * @description
+ * `429 rate-limit.exceeded`: the client address of a request with a bearer token used its failed
+ * bearer-token authentications of the current window, so the token is not checked. The caller sets
+ * `Retry-After`.
+ *
+ * @returns {ProblemException} The problem to throw.
+ */
+export function bearerFailureLimitExceededProblem(): ProblemException {
+  return publicProblem({
+    status: 429,
+    code: 'rate-limit.exceeded',
+    detail:
+      'Too many failed personal API token authentications from this client; retry after the delay of Retry-After.',
+  });
+}

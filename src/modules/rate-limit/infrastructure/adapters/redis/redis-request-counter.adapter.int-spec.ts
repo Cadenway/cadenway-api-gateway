@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { redisImage } from '../../../../../../tests/support/redis-image.js';
 import type { RequestAllowance } from '../../../application/models/requests/request-allowance.model.js';
-import { RedisRequestCounter } from './redis-request-counter.adapter.js';
+import { RedisRequestCounter, type RequestQuota } from './redis-request-counter.adapter.js';
 
 /**
  * Constant QUOTA
@@ -16,9 +16,10 @@ import { RedisRequestCounter } from './redis-request-counter.adapter.js';
  * @description
  * The quota of the gateway.
  *
- * @type {{ requests: number; windowSeconds: number; storeTimeoutMs: number }}
+ * @type {RequestQuota}
  */
-const QUOTA: { requests: number; windowSeconds: number; storeTimeoutMs: number } = {
+const QUOTA: RequestQuota = {
+  limit: 'credential',
   requests: 600,
   windowSeconds: 60,
   storeTimeoutMs: 100,
@@ -111,6 +112,7 @@ describe('RedisRequestCounter on Redis', () => {
         (call) => call[1] === 'rate limit counted in memory: redis cannot count',
       );
       expect(outages).toHaveLength(1);
+      expect(outages[0]?.[0]).toMatchObject({ limit: 'credential' });
       expect(JSON.stringify(outages)).not.toContain(key);
 
       await delay(1_200);
@@ -119,6 +121,91 @@ describe('RedisRequestCounter on Redis', () => {
       expect(log.mock.calls.some((call) => call[1] === 'rate limit counted in redis again')).toBe(
         true,
       );
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it('lets one request a second try a stalled Redis while the others count in memory at once', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const stalled: RedisRequestCounter = new RedisRequestCounter(client, {
+      limit: 'anonymous',
+      requests: 60,
+      windowSeconds: 60,
+      storeTimeoutMs: 100,
+    });
+    try {
+      await client.client('PAUSE', '3000', 'ALL');
+      await stalled.consume(`anonymous:${randomUUID()}`);
+      await delay(1_100);
+
+      const durations: number[] = await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          const started: number = performance.now();
+          await stalled.consume(`anonymous:${randomUUID()}`);
+          return performance.now() - started;
+        }),
+      );
+
+      expect(durations.filter((duration: number) => duration >= 80)).toHaveLength(1);
+      await delay(2_000);
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it('reads a counter without counting: room while the quota is not used, the seconds left once it is', async () => {
+    const failures: RedisRequestCounter = new RedisRequestCounter(client, {
+      limit: 'bearer-failures',
+      requests: 3,
+      windowSeconds: 60,
+      storeTimeoutMs: 100,
+    });
+    const key = `bearer-failures:${randomUUID()}`;
+
+    const fresh: RequestAllowance = await failures.peek(key);
+    await expect(client.exists(`rate-limit:${key}`)).resolves.toBe(0);
+    await consumeTimes(failures, key, 2);
+    const twice: RequestAllowance = await failures.peek(key);
+    await failures.consume(key);
+    const used: RequestAllowance = await failures.peek(key);
+
+    expect(fresh).toEqual({ allowed: true, retryAfterSeconds: 0 });
+    expect(twice).toEqual({ allowed: true, retryAfterSeconds: 0 });
+    expect(used.allowed).toBe(false);
+    expect(used.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(used.retryAfterSeconds).toBeLessThanOrEqual(60);
+    await expect(client.get(`rate-limit:${key}`)).resolves.toBe('3');
+  });
+
+  it('reads the counters in memory while Redis cannot answer, as it counts them', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const failures: RedisRequestCounter = new RedisRequestCounter(client, {
+      limit: 'bearer-failures',
+      requests: 2,
+      windowSeconds: 60,
+      storeTimeoutMs: 100,
+    });
+    const key = `bearer-failures:${randomUUID()}`;
+    try {
+      await client.client('PAUSE', '1000', 'ALL');
+
+      const before: RequestAllowance = await failures.peek(key);
+      await consumeTimes(failures, key, 2);
+      const after: RequestAllowance = await failures.peek(key);
+
+      expect(before).toEqual({ allowed: true, retryAfterSeconds: 0 });
+      expect(after.allowed).toBe(false);
+      const outages = warn.mock.calls.filter(
+        (call) => call[1] === 'rate limit counted in memory: redis cannot count',
+      );
+      expect(outages).toHaveLength(1);
+      expect(outages[0]?.[0]).toMatchObject({ limit: 'bearer-failures' });
+      await delay(1_200);
     } finally {
       warn.mockRestore();
       log.mockRestore();

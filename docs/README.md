@@ -13,7 +13,8 @@ the clients of identity-service and organization-service generated from their in
 (phases P2a and P2b of the integration plan). It authenticates the session cookie and the
 personal API token by introspecting them on every request, enforces the security requirement and
 the organization scope of each operation, and limits each session or token to 600 requests per
-minute on Redis. The broker connection with the usage event comes in phase P5. The target
+minute on Redis, each client address to 60 requests without a credential and 10 failed bearer
+tokens per minute. The broker connection with the usage event comes in phase P5. The target
 architecture in this guide is what the rest must follow.
 
 ## Read the guides

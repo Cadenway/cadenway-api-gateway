@@ -590,6 +590,150 @@ describe('routes of /v1/members', () => {
       expect(identity.introspect).not.toHaveBeenCalled();
     });
 
+    describe('failed bearer tokens per client address', () => {
+      /**
+       * Constant FORWARDED
+       *
+       * @description
+       * `X-Forwarded-For` as Traefik sends it: the entry the client wrote, then the address it saw.
+       *
+       * @type {Readonly<Record<string, string>>}
+       */
+      const FORWARDED: Readonly<Record<string, string>> = {
+        'X-Forwarded-For': '198.51.100.23, 86.247.12.30',
+      };
+
+      it('reads the failures of the address Traefik saw, then counts an inactive token as one, on a pseudonym', async () => {
+        application.logLines.length = 0;
+
+        await runRouteCase(application, identity, {
+          name: 'revoked',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          credential: { bearer: 'Bearer cw_pat_RevokedTokenOfSomebody00000000000000' },
+          headers: FORWARDED,
+          status: 401,
+          code: 'auth.api-token-invalid',
+        });
+
+        const read: string | undefined = application.bearerFailureCounter.peek.mock.calls[0]?.[0];
+        expect(read).toMatch(/^bearer-failures:[\w-]{22}$/u);
+        expect(application.bearerFailureCounter.consume.mock.calls).toEqual([[read]]);
+        expect(application.bearerFailureCounter.peek.mock.invocationCallOrder[0]).toBeLessThan(
+          identity.introspectApiToken.mock.invocationCallOrder[0] ?? 0,
+        );
+        expect(application.counter.consume).not.toHaveBeenCalled();
+        expect(application.anonymousCounter.consume).not.toHaveBeenCalled();
+        const logs: string = application.logLines.join('\n');
+        expect(logs).not.toContain('86.247.12.30');
+        expect(logs).not.toContain(read?.slice('bearer-failures:'.length));
+      });
+
+      it('counts a malformed bearer token as a failure of the address without calling identity-service', async () => {
+        await runRouteCase(application, identity, {
+          name: 'malformed',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          credential: { bearer: 'Bearer not-a-token' },
+          headers: FORWARDED,
+          status: 401,
+          code: 'auth.api-token-invalid',
+        });
+
+        expect(application.bearerFailureCounter.consume).toHaveBeenCalledTimes(1);
+        expect(identity.introspectApiToken).not.toHaveBeenCalled();
+      });
+
+      it('answers 429 rate-limit.exceeded with Retry-After before any introspection once the address has used its failures, a valid token too', async () => {
+        application.bearerFailureCounter.peek.mockResolvedValue({
+          allowed: false,
+          retryAfterSeconds: 19,
+        });
+
+        const response: request.Response = await runRouteCase(application, identity, {
+          name: 'throttled',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          credential: 'members-token',
+          headers: FORWARDED,
+          status: 429,
+          code: 'rate-limit.exceeded',
+        });
+
+        expect(response.body).toEqual({
+          type: 'about:blank',
+          title: 'Trop de requêtes : réessayez dans un instant.',
+          status: 429,
+          code: 'rate-limit.exceeded',
+          detail:
+            'Too many failed personal API token authentications from this client; retry after the delay of Retry-After.',
+        });
+        expect(response.headers['retry-after']).toBe('19');
+        expect(identity.introspectApiToken).not.toHaveBeenCalled();
+        expect(application.bearerFailureCounter.consume).not.toHaveBeenCalled();
+        expect(application.counter.consume).not.toHaveBeenCalled();
+        expect(application.organization.listMembers).not.toHaveBeenCalled();
+      });
+
+      it('counts no failure for a valid token, which keeps only the limit of the token', async () => {
+        application.organization.listMembers.mockResolvedValue({ ...PAGE });
+
+        await runRouteCase(application, identity, {
+          name: 'valid token',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          credential: 'members-token',
+          headers: FORWARDED,
+          status: 200,
+        });
+
+        expect(application.bearerFailureCounter.consume).not.toHaveBeenCalled();
+        expect(application.anonymousCounter.consume).not.toHaveBeenCalled();
+        expect(application.counter.consume).toHaveBeenCalledWith(
+          `api-token:${MEMBERS_API_TOKEN.apiTokenId}`,
+        );
+      });
+
+      it('counts no failure for an active token that lacks the scope', async () => {
+        await runRouteCase(application, identity, {
+          name: 'scope',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          credential: 'tasks-token',
+          headers: FORWARDED,
+          status: 403,
+          code: 'auth.scope-missing',
+        });
+
+        expect(application.bearerFailureCounter.consume).not.toHaveBeenCalled();
+      });
+
+      it('leaves a session alone: its address is neither read nor counted, even past the failures of the address', async () => {
+        application.organization.listMembers.mockResolvedValue({ ...PAGE });
+        application.bearerFailureCounter.peek.mockResolvedValue({
+          allowed: false,
+          retryAfterSeconds: 19,
+        });
+
+        await runRouteCase(application, identity, {
+          name: 'session',
+          method: 'get',
+          path: '/v1/members',
+          url: '/v1/members',
+          headers: FORWARDED,
+          status: 200,
+        });
+
+        expect(application.bearerFailureCounter.peek).not.toHaveBeenCalled();
+        expect(application.anonymousCounter.consume).not.toHaveBeenCalled();
+      });
+    });
+
     it('lets another Authorization scheme fall back to the session cookie', async () => {
       application.organization.listMembers.mockResolvedValue({ ...PAGE });
 
