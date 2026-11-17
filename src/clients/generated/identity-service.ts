@@ -14,8 +14,9 @@ export type Email = string;
 export type Language = string;
 
 /**
- * The browser the session is opened for, as the gateway saw it. Stored with the session, to
- * show its device and place later; never logged with the token.
+ * The browser a request came from, as the gateway saw it. Stored with the session it opens,
+ * to show its device and address; shown in the security email of the request. No place is
+ * derived from the address. Never logged with a token.
  */
 export interface Client {
   /**
@@ -154,7 +155,15 @@ export interface User {
   /** IANA time zone name; `Europe/Paris` until the person chooses another. */
   timeZone?: string;
   /**
-     * Version of the account.
+     * When the password was last set: at the sign-up, by a change or by a reset.
+     * identity-service always sends it from this version on; it is optional so that the
+     * gateway can move to this version first, and the gateway leaves it out of the public
+     * answer until identity-service sends it.
+     */
+  passwordChangedAt?: string;
+  /**
+     * Version of the account. A change of the profile, of the password, of the address or of
+     * the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
@@ -170,6 +179,11 @@ export interface SessionIssued {
   token: string;
   session: Session;
   user: User;
+  /**
+     * `true` when this sign-in cancelled the scheduled deletion of the account; the gateway
+     * passes it on in the public answer. Absent or `false` otherwise.
+     */
+  deletionCancelled?: boolean;
 }
 
 export interface IntrospectionRequest {
@@ -317,6 +331,13 @@ export const ApiTokenCreationExpiration = {
 
 export interface ApiTokenCreation {
   /**
+     * The session of the public request, as the introspection returned it, whose recent
+     * authentication is checked. The gateway always sends it: without it the creation answers
+     * `403 auth.reauthentication-required`. It is optional in the schema only so that adding
+     * it changes no existing request.
+     */
+  sessionId?: string;
+  /**
      * Name as typed; trimmed here, a name made only of spaces answers `400 request.invalid`.
      * @minLength 1
      * @maxLength 100
@@ -403,6 +424,189 @@ export interface ActiveApiToken {
 }
 
 export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
+
+export interface PasswordResetRequest {
+  email: Email;
+  /** The browser that asks for the link, shown in the email. */
+  client: Client;
+}
+
+/**
+ * Answered the same way whether or not a link was issued.
+ */
+export interface PasswordResetLinkSent {
+  email: Email;
+  /** When a link issued now stops working, 30 minutes later. */
+  expiresAt: string;
+  /** 45 seconds later, or the end of the hour once 5 links were asked for the address in it. */
+  resendAvailableAt: string;
+}
+
+/**
+ * The token of the reset link, as the public request carried it. A secret, never logged;
+ * identity-service keeps only its SHA-256 hash.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ResetToken = string;
+
+export interface PasswordResetToken {
+  token: ResetToken;
+}
+
+export interface PasswordResetLink {
+  /** Address of the account of the link. */
+  email: Email;
+  expiresAt: string;
+  /**
+     * Open sessions of the account.
+     * @minimum 0
+     */
+  sessionCount: number;
+}
+
+export interface PasswordResetConfirmation {
+  token: ResetToken;
+  /**
+     * At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+     * @maxLength 256
+     */
+  newPassword: string;
+  /** Revokes every open session of the account; `false` leaves them open. */
+  closeOtherSessions?: boolean;
+  /** The browser the new password is chosen in, shown in the email. */
+  client: Client;
+}
+
+export interface PasswordResetCompleted {
+  email: Email;
+  /** @minimum 0 */
+  closedSessionCount: number;
+}
+
+/**
+ * Later versions add a two-step code; `password` then becomes optional beside it.
+ */
+export interface ReauthenticationRequest {
+  /**
+     * Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  password: string;
+}
+
+export interface RecentAuthentication {
+  /** The recent authentication recorded for the session. */
+  authenticatedAt: string;
+  /** 10 minutes later, when the guarded routes require it again. */
+  expiresAt: string;
+}
+
+export interface PasswordChange {
+  /** The session of the public request, which the right current password authenticates again. */
+  sessionId: string;
+  /**
+     * Never logged.
+     * @minLength 1
+     * @maxLength 256
+     */
+  currentPassword: string;
+  /**
+     * At least 12 characters, checked here (`auth.password-too-short`). Never logged.
+     * @maxLength 256
+     */
+  newPassword: string;
+  /** The browser the password is changed in, shown in the email. */
+  client: Client;
+}
+
+export interface EmailChangeRequest {
+  /** The session of the public request, whose recent authentication is checked. */
+  sessionId: string;
+  /** The new address. */
+  email: Email;
+}
+
+export interface EmailChangeCodeSent {
+  /** The new address. */
+  email: Email;
+  /** 15 minutes after the code was issued. */
+  expiresAt: string;
+  /** 30 seconds later, or the end of the hour once 5 codes were asked for the new address in it. */
+  resendAvailableAt: string;
+}
+
+export interface EmailChangeConfirmation {
+  /** The session of the public request. */
+  sessionId: string;
+  /**
+     * Never logged.
+     * @pattern ^[0-9]{6}$
+     */
+  code: string;
+  /** The browser the address is confirmed in, shown in the notice to the previous address. */
+  client: Client;
+}
+
+export interface DeletionRequest {
+  /** The session of the public request, whose recent authentication is checked; it is revoked too. */
+  sessionId: string;
+}
+
+export interface DeletionScheduled {
+  /** 30 days after the scheduling. */
+  deleteAt: string;
+}
+
+/**
+ * The device of a session, read with `bowser` from the `User-Agent` of its `client`. A member
+ * that cannot be read is `null`.
+ */
+export interface Device {
+  /** `desktop`, `mobile`, `tablet` or `unknown` today; more later (`x-extensible-enum`). */
+  type: string;
+  /** @nullable */
+  browser: string | null;
+  /**
+     * Major version.
+     * @nullable
+     */
+  browserVersion: string | null;
+  /** @nullable */
+  os: string | null;
+  /**
+     * `null` when the `User-Agent` does not tell it reliably (Windows 10 and 11, macOS).
+     * @nullable
+     */
+  osVersion: string | null;
+}
+
+export interface OpenSession {
+  id: string;
+  /** `true` for `currentSessionId`. */
+  current: boolean;
+  device: Device;
+  /** Address of the `client` of the sign-in that opened the session. */
+  ipAddress: string;
+  signedInAt: string;
+  /** Last active introspection, recorded at most once a minute. */
+  lastActiveAt: string;
+  expiresAt: string;
+}
+
+export interface OpenSessionPage {
+  items: OpenSession[];
+  nextCursor: NextCursor | null;
+}
+
+export interface RevokedSessions {
+  /**
+     * Sessions revoked by the request.
+     * @minimum 0
+     */
+  revokedCount: number;
+}
 
 /**
  * Members specific to the code, for example the fields that failed validation.
@@ -498,8 +702,9 @@ export type AccountLockedResponse = Problem;
 
 /**
  * `auth.code-throttled`, with `details.resendAvailableAt`: the code requests of the address
- * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code and
- * the sign-in code routes count together. A request is refused less than 30 seconds after
+ * are throttled whatever their purpose, account or not, so the sign-up, the sign-up code,
+ * the sign-in code and the change of address, counted on the new address, count together. A
+ * request is refused less than 30 seconds after
  * the last accepted one, and once 5 were accepted in the current hour, which starts with the
  * first request accepted after the previous hour ended. `details.resendAvailableAt` is 30
  * seconds after the last accepted request, or the end of the hour.
@@ -534,6 +739,74 @@ export type ApiTokenNotFoundResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * `auth.reset-throttled`, with `details.resendAvailableAt`: the password reset requests of
+ * the address are throttled, account or not, apart from the code requests. A request is
+ * refused less than 45 seconds after the last accepted one, and once 5 were accepted in the
+ * current hour, which starts with the first request accepted after the previous hour ended.
+ * `details.resendAvailableAt` is 45 seconds after the last accepted request, or the end of
+ * the hour.
+ */
+export type ResetThrottledResponse = Problem;
+
+/**
+ * `auth.reset-link-expired`: the link expired, was used, was replaced, or is unknown or malformed.
+ */
+export type ResetLinkExpiredResponse = Problem;
+
+/**
+ * `auth.reset-link-expired` (the link is checked first), then `auth.password-too-short`
+ * (with `details.minLength`) or `auth.password-compromised`, which leave the link usable.
+ */
+export type PasswordResetRefusedResponse = Problem;
+
+/**
+ * `auth.password-incorrect`, with `details.remainingAttempts` (at least 1): the failures left
+ * before the lockout of the password sign-in of the address of the account.
+ */
+export type PasswordRefusedResponse = Problem;
+
+/**
+ * The new password first: `auth.password-too-short` (with `details.minLength`) or
+ * `auth.password-compromised`, no attempt counted; then the current one:
+ * `auth.password-incorrect`, with `details.remainingAttempts`.
+ */
+export type PasswordChangeRefusedResponse = Problem;
+
+/**
+ * - `auth.reauthentication-required`: the session has no authentication in the last 10
+ *   minutes. `details.methods` lists the ways its person can confirm, `password` today; the
+ *   gateway forwards the code, its `details` and the French title of
+ *   `openapi/public/auth.yaml`;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
+ *   a route that requires an organization: see the internal token.
+ */
+export type RecentAuthenticationRequiredResponse = Problem;
+
+/**
+ * `auth.email-unchanged`: the new address is the current address of the account.
+ */
+export type EmailUnchangedResponse = Problem;
+
+/**
+ * `auth.code-invalid` (wrong code, or no pending change of address) or `auth.code-expired`
+ * (expired, used, replaced by a newer request or too many wrong attempts).
+ */
+export type EmailChangeCodeRefusedResponse = Problem;
+
+/**
+ * `account.organization-owner`: the copy of the memberships holds a membership of the actor
+ * with the role `owner`, not removed. `details.organizationIds` lists those organizations.
+ */
+export type OrganizationOwnerResponse = Problem;
+
+/**
+ * - `user.not-found`: the user id is not the actor, or no account has it;
+ * - `session.not-found`: the session of the request is not an open session of the actor. The
+ *   gateway answers it as `401 auth.session-expired`.
+ */
+export type UserOrSessionNotFoundResponse = Problem;
+
+/**
  * Opaque cursor taken from the `nextCursor` of the previous page.
  */
 export type CursorParameter = string;
@@ -542,6 +815,19 @@ export type CursorParameter = string;
  * Page size.
  */
 export type LimitParameter = number;
+
+export type ListUserSessionsInternalParams = {
+  /** The session of the public request, as the introspection returned it. */
+  currentSessionId: string;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
 
 export type ListApiTokensInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -752,8 +1038,17 @@ const getSignInWithPasswordInternalUrl = () => {
 
 /**
  * Checks the address and the password, counting failures per address whether or not an
- * account uses it, and opens a session for the `client`. Internal token: actor `anonymous`,
- * no organization.
+ * account uses it, and opens a session for the `client`.
+ *
+ * - An account whose deletion is scheduled is signed in and its deletion cancelled:
+ *   `deletionCancelled: true` and `user.deletion-cancelled.v1`.
+ * - A session opened on a device the account did not use in the last 90 days emits
+ *   `session.opened-on-new-device.v1`.
+ * - Later versions answer `202` with a two-step challenge, no token and no session, to an
+ *   account that needs one; only the `200` opens a session, cancels a deletion and counts the
+ *   device.
+ *
+ * Internal token: actor `anonymous`, no organization.
  * @summary Sign in with a password
  */
 const signInWithPasswordInternal = async (passwordSignIn: PasswordSignIn, options?: RequestInit): Promise<signInWithPasswordInternalResponse> => {
@@ -822,8 +1117,11 @@ const getSignInWithCodeInternalUrl = () => {
 
 /**
  * Checks the `sign-in` code and opens a session for the `client`. An address without a
- * verified account answers like a wrong code. Internal token: actor `anonymous`, no
- * organization.
+ * verified account answers like a wrong code. As with `POST /internal/v1/auth/sign-in`, the
+ * session cancels a scheduled deletion (`deletionCancelled: true`,
+ * `user.deletion-cancelled.v1`), emits `session.opened-on-new-device.v1` on a device the
+ * account did not use in the last 90 days, and later versions answer `202` with a two-step
+ * challenge when the account needs one. Internal token: actor `anonymous`, no organization.
  * @summary Sign in with a code
  */
 const signInWithCodeInternal = async (codeVerification: CodeVerification, options?: RequestInit): Promise<signInWithCodeInternalResponse> => {
@@ -901,7 +1199,9 @@ const getRevokeSessionUrl = (sessionId: string,) => {
  * Ends a session of the actor: its token is no longer active from the next introspection and
  * `session.revoked.v1` is emitted. Revoking a session that already ended answers `204` and
  * emits nothing. A session of another user, or an unknown id, answers
- * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * `404 session.not-found`. The gateway calls it for the sign-out, with the session of the
+ * cookie, and for `DELETE /v1/sessions/{sessionId}`, with the id of the path, which may be the
+ * session of the request too. Internal token: actor `user`, no organization.
  * @summary Revoke a session
  */
 const revokeSession = async (sessionId: string, options?: RequestInit): Promise<revokeSessionResponse> => {
@@ -1037,6 +1337,416 @@ const switchSessionOrganization = async (sessionId: string,
 
 
 
+const getRequestPasswordResetInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/password-reset`
+}
+
+/**
+ * Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
+ * uses the address, and makes the previous link of the account stop working; answers `202`
+ * the same way otherwise, an unverified account included, without a difference of time an
+ * observer could measure. The link works once, for 30 minutes, from any browser. Throttled
+ * per address, account or not, apart from the codes: 45 seconds between two requests and at
+ * most 5 in an hour (`ResetThrottled`). The `client` is the browser that asked, shown in the
+ * email. Internal token: actor `anonymous`, no organization.
+ * @summary Issue a password reset link
+ */
+const requestPasswordResetInternal = async (passwordResetRequest: PasswordResetRequest, options?: RequestInit): Promise<requestPasswordResetInternalResponse> => {
+
+  const res = await fetchFn(getRequestPasswordResetInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(passwordResetRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestPasswordResetInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestPasswordResetInternalResponse
+}
+
+
+
+const getInspectPasswordResetLinkInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/password-reset/inspection`
+}
+
+/**
+ * Returns the address of the account of a usable link, when it expires and how many open
+ * sessions the account has, without using the link. A link that expired, was used, was
+ * replaced or is unknown, and a malformed token, answer `422 auth.reset-link-expired`.
+ * Internal token: actor `anonymous`, no organization.
+ * @summary Read the account of a password reset link
+ */
+const inspectPasswordResetLinkInternal = async (passwordResetToken: PasswordResetToken, options?: RequestInit): Promise<inspectPasswordResetLinkInternalResponse> => {
+
+  const res = await fetchFn(getInspectPasswordResetLinkInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(passwordResetToken)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inspectPasswordResetLinkInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inspectPasswordResetLinkInternalResponse
+}
+
+
+
+const getConfirmPasswordResetInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/password-reset/confirmation`
+}
+
+/**
+ * Sets the new password of the account of the link and uses the link up, as
+ * `POST /v1/auth/password-reset/confirmation` says. Never opens a session.
+ *
+ * - The link first: `422 auth.reset-link-expired`. Then the new password:
+ *   `422 auth.password-too-short` or `422 auth.password-compromised`, which leave the link
+ *   usable.
+ * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
+ *   with `session.revoked.v1`.
+ * - Ends the lockout of the password sign-in of the address, drops a pending change of
+ *   address and ends the recent authentication of the sessions it leaves open; keeps the
+ *   personal API tokens; does not cancel a scheduled deletion.
+ *
+ * Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
+ * the device of the `client`. Internal token: actor `anonymous`, no organization.
+ * @summary Set a new password with a reset link
+ */
+const confirmPasswordResetInternal = async (passwordResetConfirmation: PasswordResetConfirmation, options?: RequestInit): Promise<confirmPasswordResetInternalResponse> => {
+
+  const res = await fetchFn(getConfirmPasswordResetInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(passwordResetConfirmation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmPasswordResetInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmPasswordResetInternalResponse
+}
+
+
+
+const getReauthenticateInternalUrl = (sessionId: string,) => {
+
+
+
+
+  return `/internal/v1/sessions/${sessionId}/reauthentication`
+}
+
+/**
+ * Checks the password of the actor and records a recent authentication of the session, which
+ * opens the 10-minute window of the guarded routes. A wrong password answers
+ * `422 auth.password-incorrect` and counts with the failed sign-ins of the address
+ * (`429 auth.account-locked` once locked); the session stays open. A session of another user,
+ * an unknown or an ended one, answers `404 session.not-found`. Internal token: actor `user`,
+ * no organization.
+ * @summary Confirm the password in a session
+ */
+const reauthenticateInternal = async (sessionId: string,
+    reauthenticationRequest: ReauthenticationRequest, options?: RequestInit): Promise<reauthenticateInternalResponse> => {
+
+  const res = await fetchFn(getReauthenticateInternalUrl(sessionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(reauthenticationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reauthenticateInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reauthenticateInternalResponse
+}
+
+
+
+const getRevokeOtherSessionsInternalUrl = (sessionId: string,) => {
+
+
+
+
+  return `/internal/v1/sessions/${sessionId}/revoke-others`
+}
+
+/**
+ * Revokes every open session of the actor except `sessionId`, each with
+ * `session.revoked.v1`, and says how many. The personal API tokens stay. A session of another
+ * user, an unknown or an ended one, answers `404 session.not-found` and revokes nothing.
+ * Internal token: actor `user`, no organization.
+ * @summary Revoke every other session of the actor
+ */
+const revokeOtherSessionsInternal = async (sessionId: string, options?: RequestInit): Promise<revokeOtherSessionsInternalResponse> => {
+
+  const res = await fetchFn(getRevokeOtherSessionsInternalUrl(sessionId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revokeOtherSessionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revokeOtherSessionsInternalResponse
+}
+
+
+
+const getListUserSessionsInternalUrl = (userId: string,
+    params: ListUserSessionsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/users/${userId}/sessions?${stringifiedParams}` : `/internal/v1/users/${userId}/sessions`
+}
+
+/**
+ * Lists the open sessions of the actor, sorted by sign-in, the most recent first, then by
+ * id, and marks `currentSessionId` as `current`. Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `currentSessionId` that is not an open session of the actor answers
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary List the open sessions of a user
+ */
+const listUserSessionsInternal = async (userId: string,
+    params: ListUserSessionsInternalParams, options?: RequestInit): Promise<listUserSessionsInternalResponse> => {
+
+  const res = await fetchFn(getListUserSessionsInternalUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listUserSessionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listUserSessionsInternalResponse
+}
+
+
+
+const getChangePasswordInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/password`
+}
+
+/**
+ * Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
+ * checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
+ * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
+ * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
+ * authentication of `sessionId`. Every session stays open, but a pending change of address is
+ * dropped and the recent authentication of the other sessions ends. Answers the account with
+ * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
+ * `method: change`, no closed session and the device of the `client`. Another user id, or an
+ * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
+ * actor, `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Change the password of a user
+ */
+const changePasswordInternal = async (userId: string,
+    passwordChange: PasswordChange, options?: RequestInit): Promise<changePasswordInternalResponse> => {
+
+  const res = await fetchFn(getChangePasswordInternalUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(passwordChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: changePasswordInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as changePasswordInternalResponse
+}
+
+
+
+const getRequestEmailChangeInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/email-change`
+}
+
+/**
+ * Records a pending change of address of the actor and issues an `email-change` code to the
+ * new address (`one-time-code.issued.v1`, 15 minutes); a new request replaces the pending
+ * change and its code. The pending change belongs to `sessionId`: the end or the revocation of
+ * that session, and a change or a reset of the password, drop it. The checks run in this
+ * order: recent authentication of `sessionId` (`403 auth.reauthentication-required`), the
+ * current address (`422 auth.email-unchanged`), a verified account of the new address
+ * (`409 auth.email-taken`; an unverified sign-up does not count), then the throttle of the
+ * code requests of the new address (`429 auth.code-throttled`). Another user id, or an
+ * unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Ask to change the address of a user
+ */
+const requestEmailChangeInternal = async (userId: string,
+    emailChangeRequest: EmailChangeRequest, options?: RequestInit): Promise<requestEmailChangeInternalResponse> => {
+
+  const res = await fetchFn(getRequestEmailChangeInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emailChangeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestEmailChangeInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestEmailChangeInternalResponse
+}
+
+
+
+const getConfirmEmailChangeInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/email-change/confirmation`
+}
+
+/**
+ * Checks the `email-change` code of the pending change of the actor and makes the new
+ * address the address of the account, verified. Without a pending change of `sessionId` (the
+ * session that asked for it), or with a wrong code: `422 auth.code-invalid`; a code no longer usable: `422 auth.code-expired`; a new
+ * address a verified account took since the request: `409 auth.email-taken`, and the change
+ * is dropped. Recent authentication is not required again. The codes and the reset link
+ * issued to the previous address stop working, an unverified sign-up of the new address
+ * ends, and the sessions and personal API tokens stay. Answers the account with the next
+ * `version`, and emits `user.email-changed.v1` with the device of the `client`. Another user
+ * id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+ * session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+ * organization.
+ * @summary Confirm the new address of a user
+ */
+const confirmEmailChangeInternal = async (userId: string,
+    emailChangeConfirmation: EmailChangeConfirmation, options?: RequestInit): Promise<confirmEmailChangeInternalResponse> => {
+
+  const res = await fetchFn(getConfirmEmailChangeInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emailChangeConfirmation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmEmailChangeInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmEmailChangeInternalResponse
+}
+
+
+
+const getScheduleAccountDeletionInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/deletion`
+}
+
+/**
+ * Schedules the deletion of the account of the actor in 30 days, as `POST /v1/me/deletion`
+ * says. The checks run in this order: an organization the actor owns in the copy of the
+ * memberships (`409 account.organization-owner`, with `details.organizationIds`), then the
+ * recent authentication of `sessionId` (`403 auth.reauthentication-required`).
+ *
+ * On success, in the same transaction: every session of the account, `sessionId` included,
+ * is revoked (`session.revoked.v1` each), every personal API token is revoked, a pending
+ * change of address is dropped, and `user.deletion-scheduled.v1` is emitted. The gateway
+ * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
+ * `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
+ * an organization then (one whose creation reached the copy after the scheduling) is not
+ * deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
+ * deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Schedule the deletion of a user
+ */
+const scheduleAccountDeletionInternal = async (userId: string,
+    deletionRequest: DeletionRequest, options?: RequestInit): Promise<scheduleAccountDeletionInternalResponse> => {
+
+  const res = await fetchFn(getScheduleAccountDeletionInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(deletionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: scheduleAccountDeletionInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as scheduleAccountDeletionInternalResponse
+}
+
+
+
 const getCreateApiTokenInternalUrl = () => {
 
 
@@ -1050,7 +1760,13 @@ const getCreateApiTokenInternalUrl = () => {
  * organization of the session, as `POST /v1/api-tokens` says, and returns its secret once:
  * `cw_pat_`, 30 base62 characters from `node:crypto`, then 6 characters of CRC32 check.
  * identity-service keeps its SHA-256 hash and its first 11 characters, never the secret.
- * Internal token: actor `user`, organization required.
+ *
+ * Requires a recent authentication of `sessionId`, the session of the public request: a
+ * session without one in the last 10 minutes, or a request without `sessionId`, answers
+ * `403 auth.reauthentication-required` with `details.methods` and creates nothing; a
+ * `sessionId` that is not an open session of the actor answers `404 session.not-found`, which
+ * the gateway answers as `401 auth.session-expired`. Internal token: actor `user`,
+ * organization required.
  * @summary Create a personal API token
  */
 const createApiTokenInternal = async (apiTokenCreation: ApiTokenCreation, options?: RequestInit): Promise<createApiTokenInternalResponse> => {
@@ -1194,7 +1910,7 @@ const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospe
 
 
 
-return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
+return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
 };
 
 export type discoverSignInMethodsInternalResponse200 = {
@@ -1627,6 +2343,406 @@ export type switchSessionOrganizationResponseError = (switchSessionOrganizationR
 export type switchSessionOrganizationResponse = (switchSessionOrganizationResponseSuccess | switchSessionOrganizationResponseError)
 
 
+export type requestPasswordResetInternalResponse202 = {
+  data: PasswordResetLinkSent
+  status: 202
+}
+
+export type requestPasswordResetInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type requestPasswordResetInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type requestPasswordResetInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type requestPasswordResetInternalResponse429 = {
+  data: ResetThrottledResponse
+  status: 429
+}
+
+export type requestPasswordResetInternalResponseSuccess = (requestPasswordResetInternalResponse202) & {
+  headers: Headers;
+};
+export type requestPasswordResetInternalResponseError = (requestPasswordResetInternalResponse400 | requestPasswordResetInternalResponse401 | requestPasswordResetInternalResponse403 | requestPasswordResetInternalResponse429) & {
+  headers: Headers;
+};
+
+export type requestPasswordResetInternalResponse = (requestPasswordResetInternalResponseSuccess | requestPasswordResetInternalResponseError)
+
+
+export type inspectPasswordResetLinkInternalResponse200 = {
+  data: PasswordResetLink
+  status: 200
+}
+
+export type inspectPasswordResetLinkInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type inspectPasswordResetLinkInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type inspectPasswordResetLinkInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type inspectPasswordResetLinkInternalResponse422 = {
+  data: ResetLinkExpiredResponse
+  status: 422
+}
+
+export type inspectPasswordResetLinkInternalResponseSuccess = (inspectPasswordResetLinkInternalResponse200) & {
+  headers: Headers;
+};
+export type inspectPasswordResetLinkInternalResponseError = (inspectPasswordResetLinkInternalResponse400 | inspectPasswordResetLinkInternalResponse401 | inspectPasswordResetLinkInternalResponse403 | inspectPasswordResetLinkInternalResponse422) & {
+  headers: Headers;
+};
+
+export type inspectPasswordResetLinkInternalResponse = (inspectPasswordResetLinkInternalResponseSuccess | inspectPasswordResetLinkInternalResponseError)
+
+
+export type confirmPasswordResetInternalResponse200 = {
+  data: PasswordResetCompleted
+  status: 200
+}
+
+export type confirmPasswordResetInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type confirmPasswordResetInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type confirmPasswordResetInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type confirmPasswordResetInternalResponse422 = {
+  data: PasswordResetRefusedResponse
+  status: 422
+}
+
+export type confirmPasswordResetInternalResponseSuccess = (confirmPasswordResetInternalResponse200) & {
+  headers: Headers;
+};
+export type confirmPasswordResetInternalResponseError = (confirmPasswordResetInternalResponse400 | confirmPasswordResetInternalResponse401 | confirmPasswordResetInternalResponse403 | confirmPasswordResetInternalResponse422) & {
+  headers: Headers;
+};
+
+export type confirmPasswordResetInternalResponse = (confirmPasswordResetInternalResponseSuccess | confirmPasswordResetInternalResponseError)
+
+
+export type reauthenticateInternalResponse200 = {
+  data: RecentAuthentication
+  status: 200
+}
+
+export type reauthenticateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type reauthenticateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type reauthenticateInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type reauthenticateInternalResponse404 = {
+  data: SessionNotFoundResponse
+  status: 404
+}
+
+export type reauthenticateInternalResponse422 = {
+  data: PasswordRefusedResponse
+  status: 422
+}
+
+export type reauthenticateInternalResponse429 = {
+  data: AccountLockedResponse
+  status: 429
+}
+
+export type reauthenticateInternalResponseSuccess = (reauthenticateInternalResponse200) & {
+  headers: Headers;
+};
+export type reauthenticateInternalResponseError = (reauthenticateInternalResponse400 | reauthenticateInternalResponse401 | reauthenticateInternalResponse403 | reauthenticateInternalResponse404 | reauthenticateInternalResponse422 | reauthenticateInternalResponse429) & {
+  headers: Headers;
+};
+
+export type reauthenticateInternalResponse = (reauthenticateInternalResponseSuccess | reauthenticateInternalResponseError)
+
+
+export type revokeOtherSessionsInternalResponse200 = {
+  data: RevokedSessions
+  status: 200
+}
+
+export type revokeOtherSessionsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type revokeOtherSessionsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type revokeOtherSessionsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type revokeOtherSessionsInternalResponse404 = {
+  data: SessionNotFoundResponse
+  status: 404
+}
+
+export type revokeOtherSessionsInternalResponseSuccess = (revokeOtherSessionsInternalResponse200) & {
+  headers: Headers;
+};
+export type revokeOtherSessionsInternalResponseError = (revokeOtherSessionsInternalResponse400 | revokeOtherSessionsInternalResponse401 | revokeOtherSessionsInternalResponse403 | revokeOtherSessionsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type revokeOtherSessionsInternalResponse = (revokeOtherSessionsInternalResponseSuccess | revokeOtherSessionsInternalResponseError)
+
+
+export type listUserSessionsInternalResponse200 = {
+  data: OpenSessionPage
+  status: 200
+}
+
+export type listUserSessionsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listUserSessionsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listUserSessionsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listUserSessionsInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type listUserSessionsInternalResponseSuccess = (listUserSessionsInternalResponse200) & {
+  headers: Headers;
+};
+export type listUserSessionsInternalResponseError = (listUserSessionsInternalResponse400 | listUserSessionsInternalResponse401 | listUserSessionsInternalResponse403 | listUserSessionsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listUserSessionsInternalResponse = (listUserSessionsInternalResponseSuccess | listUserSessionsInternalResponseError)
+
+
+export type changePasswordInternalResponse200 = {
+  data: User
+  status: 200
+}
+
+export type changePasswordInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type changePasswordInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type changePasswordInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type changePasswordInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type changePasswordInternalResponse422 = {
+  data: PasswordChangeRefusedResponse
+  status: 422
+}
+
+export type changePasswordInternalResponse429 = {
+  data: AccountLockedResponse
+  status: 429
+}
+
+export type changePasswordInternalResponseSuccess = (changePasswordInternalResponse200) & {
+  headers: Headers;
+};
+export type changePasswordInternalResponseError = (changePasswordInternalResponse400 | changePasswordInternalResponse401 | changePasswordInternalResponse403 | changePasswordInternalResponse404 | changePasswordInternalResponse422 | changePasswordInternalResponse429) & {
+  headers: Headers;
+};
+
+export type changePasswordInternalResponse = (changePasswordInternalResponseSuccess | changePasswordInternalResponseError)
+
+
+export type requestEmailChangeInternalResponse202 = {
+  data: EmailChangeCodeSent
+  status: 202
+}
+
+export type requestEmailChangeInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type requestEmailChangeInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type requestEmailChangeInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type requestEmailChangeInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type requestEmailChangeInternalResponse409 = {
+  data: EmailTakenResponse
+  status: 409
+}
+
+export type requestEmailChangeInternalResponse422 = {
+  data: EmailUnchangedResponse
+  status: 422
+}
+
+export type requestEmailChangeInternalResponse429 = {
+  data: CodeThrottledResponse
+  status: 429
+}
+
+export type requestEmailChangeInternalResponseSuccess = (requestEmailChangeInternalResponse202) & {
+  headers: Headers;
+};
+export type requestEmailChangeInternalResponseError = (requestEmailChangeInternalResponse400 | requestEmailChangeInternalResponse401 | requestEmailChangeInternalResponse403 | requestEmailChangeInternalResponse404 | requestEmailChangeInternalResponse409 | requestEmailChangeInternalResponse422 | requestEmailChangeInternalResponse429) & {
+  headers: Headers;
+};
+
+export type requestEmailChangeInternalResponse = (requestEmailChangeInternalResponseSuccess | requestEmailChangeInternalResponseError)
+
+
+export type confirmEmailChangeInternalResponse200 = {
+  data: User
+  status: 200
+}
+
+export type confirmEmailChangeInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type confirmEmailChangeInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type confirmEmailChangeInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type confirmEmailChangeInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type confirmEmailChangeInternalResponse409 = {
+  data: EmailTakenResponse
+  status: 409
+}
+
+export type confirmEmailChangeInternalResponse422 = {
+  data: EmailChangeCodeRefusedResponse
+  status: 422
+}
+
+export type confirmEmailChangeInternalResponseSuccess = (confirmEmailChangeInternalResponse200) & {
+  headers: Headers;
+};
+export type confirmEmailChangeInternalResponseError = (confirmEmailChangeInternalResponse400 | confirmEmailChangeInternalResponse401 | confirmEmailChangeInternalResponse403 | confirmEmailChangeInternalResponse404 | confirmEmailChangeInternalResponse409 | confirmEmailChangeInternalResponse422) & {
+  headers: Headers;
+};
+
+export type confirmEmailChangeInternalResponse = (confirmEmailChangeInternalResponseSuccess | confirmEmailChangeInternalResponseError)
+
+
+export type scheduleAccountDeletionInternalResponse202 = {
+  data: DeletionScheduled
+  status: 202
+}
+
+export type scheduleAccountDeletionInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type scheduleAccountDeletionInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type scheduleAccountDeletionInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type scheduleAccountDeletionInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type scheduleAccountDeletionInternalResponse409 = {
+  data: OrganizationOwnerResponse
+  status: 409
+}
+
+export type scheduleAccountDeletionInternalResponseSuccess = (scheduleAccountDeletionInternalResponse202) & {
+  headers: Headers;
+};
+export type scheduleAccountDeletionInternalResponseError = (scheduleAccountDeletionInternalResponse400 | scheduleAccountDeletionInternalResponse401 | scheduleAccountDeletionInternalResponse403 | scheduleAccountDeletionInternalResponse404 | scheduleAccountDeletionInternalResponse409) & {
+  headers: Headers;
+};
+
+export type scheduleAccountDeletionInternalResponse = (scheduleAccountDeletionInternalResponseSuccess | scheduleAccountDeletionInternalResponseError)
+
+
 export type createApiTokenInternalResponse201 = {
   data: ApiTokenCreated
   status: 201
@@ -1643,14 +2759,19 @@ export type createApiTokenInternalResponse401 = {
 }
 
 export type createApiTokenInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: RecentAuthenticationRequiredResponse
   status: 403
+}
+
+export type createApiTokenInternalResponse404 = {
+  data: SessionNotFoundResponse
+  status: 404
 }
 
 export type createApiTokenInternalResponseSuccess = (createApiTokenInternalResponse201) & {
   headers: Headers;
 };
-export type createApiTokenInternalResponseError = (createApiTokenInternalResponse400 | createApiTokenInternalResponse401 | createApiTokenInternalResponse403) & {
+export type createApiTokenInternalResponseError = (createApiTokenInternalResponse400 | createApiTokenInternalResponse401 | createApiTokenInternalResponse403 | createApiTokenInternalResponse404) & {
   headers: Headers;
 };
 
