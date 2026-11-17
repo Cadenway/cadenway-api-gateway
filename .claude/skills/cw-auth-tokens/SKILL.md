@@ -28,6 +28,8 @@ description: "The token types the gateway accepts (session, personal API token),
   session cookie must carry an `Origin` that is exactly one of the allowed origins (the webapp and
   the website, as for CORS) and `Content-Type: application/json`; a bodiless `DELETE` passes on
   its `Origin` alone. It is refused before the introspection otherwise.
+  Sessionless routes in `openapi/public/auth.yaml` require the allowed `Origin` and
+  `Content-Type: application/json` whether or not a session is present.
 
 ## Personal API token
 

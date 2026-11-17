@@ -6,7 +6,7 @@
 
 The checkout contains the runtime wiring below, the credential guard and the rate limit, and the
 routes of `openapi/public/auth.yaml`, `organizations.yaml`, `members.yaml` and `api-tokens.yaml`
-through the clients of identity-service and organization-service (phases P2a and P2b of the
+through the clients of identity-service and organization-service (phases P2a, P2b and P2c-1 of the
 integration plan). The ownership map that follows governs gateway capabilities as they are
 implemented.
 

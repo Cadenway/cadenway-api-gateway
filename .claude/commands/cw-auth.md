@@ -3,6 +3,4 @@ description: "Change token verification, scopes or organization context."
 argument-hint: "<change>"
 ---
 
-Delegate to the **cw-gw-auth-builder** subagent: $ARGUMENTS
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate to subagent **cw-gw-auth-builder** without restating its rules or procedure: $ARGUMENTS

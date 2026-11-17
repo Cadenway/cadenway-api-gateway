@@ -87,14 +87,14 @@ generated client to an `InternalHttpClient` of `@cadenway/nest-common` (deadline
 connection error or a `503` for an idempotent call, circuit breaker, internal token signed for the
 called service) and checks every answer against the zod validators of the contract.
 
-## Full check list
+## Full local quality gate
 
-`pnpm quality` runs the commands below except the integration tests and the Compose check; CI runs
-all of them on each pull request, and builds the image. Run `/cw-quality` in Claude Code or
-`$cw-quality` in Codex without arguments.
+Run the commands below from this repository, in order, and stop at the first failure.
+`pnpm quality` runs the package checks other than the integration suite and Compose validation.
 
 ```bash
 pnpm format:check
+pnpm test:lint
 pnpm lint
 pnpm typecheck
 pnpm test:architecture
@@ -103,6 +103,14 @@ pnpm test:integration                    # disposable Redis in Docker, internal 
 pnpm build
 docker compose -f compose.dev.yaml config -q
 ```
+
+For a focused check, use `pnpm test "<path>"` for unit specs and
+`pnpm test:integration "<path>"` for integration specs. Run both only when the path covers both
+suites. Pass the path as one argument.
+
+Report each command as passed, failed, not run or unavailable. When a test command runs,
+include the executed count. Report `0 tests executed` as unverified even if the process exits
+successfully. If a required dependency is unavailable, state what it prevented you from checking.
 
 ## Collaboration and release
 
