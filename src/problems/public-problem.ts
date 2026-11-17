@@ -37,6 +37,12 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ],
   ['auth.session-required', 'Connectez-vous pour continuer.'],
   ['auth.session-expired', 'Session expirée'],
+  ['auth.api-token-invalid', 'Jeton d’API invalide, expiré ou révoqué.'],
+  ['auth.api-token-not-accepted', 'Cette requête n’accepte pas de jeton d’API.'],
+  [
+    'request.version-mismatch',
+    'Ces informations ont été modifiées entre-temps : rechargez la page.',
+  ],
 ]);
 
 /**

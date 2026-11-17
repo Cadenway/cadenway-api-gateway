@@ -50,6 +50,15 @@ export interface GetCurrentUserOutput {
    */
   readonly language: string;
 
+  /** Optional mention name during the identity-service rollout. */
+  readonly displayName?: string | null;
+
+  /** Optional job title during the identity-service rollout. */
+  readonly jobTitle?: string | null;
+
+  /** Optional IANA time zone during the identity-service rollout. */
+  readonly timeZone?: string;
+
   /**
    * Property version
    *

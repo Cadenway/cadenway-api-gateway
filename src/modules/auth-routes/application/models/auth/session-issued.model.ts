@@ -46,6 +46,9 @@ export interface SessionIssued {
     readonly name: string;
     readonly email: string;
     readonly language: string;
+    readonly displayName?: string | null;
+    readonly jobTitle?: string | null;
+    readonly timeZone?: string;
     readonly version: number;
   };
   // #endregion

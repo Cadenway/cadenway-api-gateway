@@ -18,6 +18,9 @@ export function toCurrentUser(user: User): CurrentUser {
     name: user.name,
     email: user.email,
     language: user.language,
+    displayName: user.displayName ?? null,
+    jobTitle: user.jobTitle ?? null,
+    timeZone: user.timeZone ?? 'Europe/Paris',
     version: user.version,
   };
 }
