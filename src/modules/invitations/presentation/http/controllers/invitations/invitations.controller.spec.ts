@@ -1,3 +1,4 @@
+import type request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -23,13 +24,13 @@ import {
  * @description
  * What the internal HTTP client throws for a client error of organization-service.
  *
- * @param {400 | 403 | 404 | 409} status - Status organization-service answered.
+ * @param {400 | 403 | 404 | 409 | 429} status - Status organization-service answered.
  * @param {string} code - Code of its problem.
  * @param {Readonly<Record<string, unknown>>} details - Details of its problem.
  * @returns {ReturnType<typeof identityProblem>} The problem.
  */
 function organizationProblem(
-  status: 400 | 403 | 404 | 409,
+  status: 400 | 403 | 404 | 409 | 429,
   code: string,
   details: Readonly<Record<string, unknown>> = {},
 ): ReturnType<typeof identityProblem> {
@@ -58,6 +59,44 @@ const BATCH: Record<string, unknown> = {
   emails: ['marc.roux@ateliernord.fr', 'ines.robert@ateliernord.fr'],
   role: 'guest',
 };
+
+/**
+ * Constant RESEND_AVAILABLE_AT
+ *
+ * @description
+ * When the email of a throttled invitation can go out again: about an hour after the tests start.
+ *
+ * @type {string}
+ */
+const RESEND_AVAILABLE_AT: string = new Date(Date.now() + 3_600_000).toISOString();
+
+/**
+ * Constant NEXT_AVAILABLE_AT
+ *
+ * @description
+ * When the daily allowance of invitation emails grows again: about five hours after the tests
+ * start.
+ *
+ * @type {string}
+ */
+const NEXT_AVAILABLE_AT: string = new Date(Date.now() + 18_000_000).toISOString();
+
+/**
+ * Function expectRetryAfterUntil
+ *
+ * @description
+ * Checks that `Retry-After` gives the whole seconds left until an instant, rounded up, as the
+ * contract says; the tests take a few seconds at most to reach the request.
+ *
+ * @param {request.Response} response - The response.
+ * @param {string} instant - The instant the request can succeed.
+ */
+function expectRetryAfterUntil(response: request.Response, instant: string): void {
+  const expected: number = Math.ceil((Date.parse(instant) - Date.now()) / 1000);
+  const retryAfter: number = Number(response.headers['retry-after']);
+  expect(retryAfter).toBeGreaterThanOrEqual(expected);
+  expect(retryAfter).toBeLessThanOrEqual(expected + 5);
+}
 
 /**
  * Constant CASES
@@ -422,6 +461,101 @@ const CASES: readonly RouteCase[] = [
       ),
     status: 503,
     code: 'upstream.failed',
+  },
+  {
+    name: 'POST /v1/invitations relays 429 invitation.daily-limit-reached with its French title, the emails left and Retry-After',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    arrange: ({ organization }) =>
+      organization.inviteMembers.mockRejectedValue(
+        organizationProblem(429, 'invitation.daily-limit-reached', {
+          remaining: 1,
+          nextAvailableAt: NEXT_AVAILABLE_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.daily-limit-reached',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.',
+        status: 429,
+        code: 'invitation.daily-limit-reached',
+        details: { remaining: 1, nextAvailableAt: NEXT_AVAILABLE_AT },
+      });
+      expectRetryAfterUntil(response, NEXT_AVAILABLE_AT);
+    },
+  },
+  {
+    name: 'POST /v1/invitations answers 429 invitation.resend-throttled, which it does not declare, as 503',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    arrange: ({ organization }) =>
+      organization.inviteMembers.mockRejectedValue(
+        organizationProblem(429, 'invitation.resend-throttled', {
+          resendAvailableAt: RESEND_AVAILABLE_AT,
+        }),
+      ),
+    status: 503,
+    code: 'upstream.failed',
+    check: (response) => {
+      expect(response.headers['retry-after']).toBeUndefined();
+    },
+  },
+  {
+    name: 'POST /v1/invitations/{invitationId}/resend relays 429 invitation.resend-throttled with its French title and Retry-After',
+    method: 'post',
+    path: '/v1/invitations/{invitationId}/resend',
+    url: `${INVITATION_URL}/resend`,
+    body: {},
+    arrange: ({ organization }) =>
+      organization.resendInvitation.mockRejectedValue(
+        organizationProblem(429, 'invitation.resend-throttled', {
+          resendAvailableAt: RESEND_AVAILABLE_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.resend-throttled',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Cette invitation vient d’être renvoyée : réessayez dans une heure.',
+        status: 429,
+        code: 'invitation.resend-throttled',
+        details: { resendAvailableAt: RESEND_AVAILABLE_AT },
+      });
+      expectRetryAfterUntil(response, RESEND_AVAILABLE_AT);
+    },
+  },
+  {
+    name: 'POST /v1/invitations/{invitationId}/resend relays 429 invitation.daily-limit-reached with its French title, no email left and Retry-After',
+    method: 'post',
+    path: '/v1/invitations/{invitationId}/resend',
+    url: `${INVITATION_URL}/resend`,
+    body: {},
+    arrange: ({ organization }) =>
+      organization.resendInvitation.mockRejectedValue(
+        organizationProblem(429, 'invitation.daily-limit-reached', {
+          remaining: 0,
+          nextAvailableAt: NEXT_AVAILABLE_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.daily-limit-reached',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.',
+        status: 429,
+        code: 'invitation.daily-limit-reached',
+        details: { remaining: 0, nextAvailableAt: NEXT_AVAILABLE_AT },
+      });
+      expectRetryAfterUntil(response, NEXT_AVAILABLE_AT);
+    },
   },
 ];
 

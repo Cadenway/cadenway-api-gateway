@@ -37,13 +37,18 @@ const INTERNAL_ACCESS_CODES: ReadonlySet<string> = new Set<string>([
  *
  * @description
  * Members of `details` that say when a refused request can succeed, in the order they are read:
- * `lockedUntil` of `auth.account-locked` and `resendAvailableAt` of `auth.code-throttled`. The
+ * `lockedUntil` of `auth.account-locked`, `resendAvailableAt` of `auth.code-throttled` and
+ * `invitation.resend-throttled`, and `nextAvailableAt` of `invitation.daily-limit-reached`. The
  * internal HTTP client does not carry the headers of a problem, so `Retry-After` is derived from
  * them.
  *
  * @type {readonly string[]}
  */
-const RETRY_AFTER_DETAILS: readonly string[] = ['lockedUntil', 'resendAvailableAt'];
+const RETRY_AFTER_DETAILS: readonly string[] = [
+  'lockedUntil',
+  'resendAvailableAt',
+  'nextAvailableAt',
+];
 
 /**
  * Function upstreamProblem
@@ -154,8 +159,9 @@ export function toPublicProblem(
  * Function retryAfterSeconds
  *
  * @description
- * Derives `Retry-After` from a `429` problem: the whole seconds left until `details.lockedUntil`
- * or `details.resendAvailableAt`, rounded up and at least 1, as RFC 9110 and the contract require.
+ * Derives `Retry-After` from a `429` problem: the whole seconds left until `details.lockedUntil`,
+ * `details.resendAvailableAt` or `details.nextAvailableAt`, rounded up and at least 1, as RFC 9110
+ * and the contract require.
  *
  * @param {Problem} problem - Public problem about to be answered.
  * @param {Date} now - Current time.
@@ -187,6 +193,8 @@ export function retryAfterSeconds(problem: Problem, now: Date): number | undefin
  * @param {Response} response - Response of the public request.
  * @param {AcceptedProblems} accepted - Client errors the public operation declares.
  * @param {() => Promise<TResult>} call - The internal call.
+ * @param {Readonly<Record<string, string>>} aliases - Public code of an internal code, as for
+ * `toPublicProblem`; none when omitted.
  * @returns {Promise<TResult>} What the call resolved with.
  * @throws {unknown} The public problem, or an error that is not a problem, unchanged.
  */
@@ -194,11 +202,12 @@ export async function relayUpstream<TResult>(
   response: Response,
   accepted: AcceptedProblems,
   call: () => Promise<TResult>,
+  aliases: Readonly<Record<string, string>> = {},
 ): Promise<TResult> {
   try {
     return await call();
   } catch (error) {
-    const translated: unknown = toPublicProblem(error, accepted);
+    const translated: unknown = toPublicProblem(error, accepted, aliases);
     if (translated instanceof ProblemException) {
       const seconds: number | undefined = retryAfterSeconds(translated.problem, new Date());
       if (seconds !== undefined) {

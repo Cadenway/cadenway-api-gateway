@@ -107,6 +107,9 @@ export interface OrganizationPatch {
      */
   description?: string | null;
   /**
+     * Absolute URL; `null` clears it. Only the schemes `https` and `http` are accepted: any
+     * other (`javascript:`, `data:`, `mailto:`, `ftp:`) answers `400 request.invalid` with an
+     * issue on `website`.
      * @maxLength 2048
      * @nullable
      */
@@ -120,7 +123,10 @@ export interface Organization {
   slug: string;
   /** @nullable */
   description: string | null;
-  /** @nullable */
+  /**
+     * Absolute `https` or `http` URL, the only schemes accepted; `null` when there is none.
+     * @nullable
+     */
   website: string | null;
   defaultLanguage: string;
   /** Always `free` until billing exists. */
@@ -376,6 +382,26 @@ export type InvitationAnsweredResponse = Problem;
 export type InvitationClosedResponse = Problem;
 
 /**
+ * `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
+ * emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
+ * what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
+ * when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
+ */
+export type InvitationBatchLimitedResponse = Problem;
+
+/**
+ * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
+ *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
+ * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
+ *   100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
+ *   the oldest email counted leaves the 24 hours.
+ *
+ * `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
+ * emitted.
+ */
+export type InvitationResendLimitedResponse = Problem;
+
+/**
  * `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
  * `refused`) or `invitation.expired` (with `details.expiresAt`).
  */
@@ -512,7 +538,9 @@ const getCreateOrganizationInternalUrl = () => {
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
  * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address.
+ * `invitation.issued.v1` per invited address. These invitations take their emails from the
+ * daily allowance of the new organization (`POST /internal/v1/invitations`), which a
+ * creation, 50 addresses at most, never exceeds.
  *
  * An actor that is not in the user directory yet answers `404 user.not-synchronized` and
  * creates nothing. Internal token: actor `user`, no organization.
@@ -805,6 +833,17 @@ const getInviteMembersInternalUrl = () => {
  * Invites the addresses of the batch with one role, one outcome per distinct address, as
  * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
  * `invited` address. Internal token: actor `user`, organization required.
+ *
+ * **Daily allowance.** organization-service counts the invitation emails of each
+ * organization over a rolling 24 hours: every `invitation.issued.v1`, from this route, from
+ * the creation of the organization or from a resend, takes one, and the organization has
+ * 100. Once the body and the role are accepted, a batch whose addresses that would be
+ * `invited` need more emails than remain is refused as a whole with
+ * `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
+ * `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
+ * allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
+ * seconds until then, rounded up. A batch whose addresses are all members or already invited
+ * needs none and is never refused.
  * @summary Invite people
  */
 const inviteMembersInternal = async (invitationBatch: InvitationBatch, options?: RequestInit): Promise<inviteMembersInternalResponse> => {
@@ -915,6 +954,19 @@ const getResendInvitationInternalUrl = (invitationId: string,) => {
  * `invitation.issued.v1` with the next version; `409 invitation.revoked` or
  * `409 invitation.answered` otherwise. Owner and admins only. Internal token: actor `user`,
  * organization required.
+ *
+ * **Limits.** Once the invitation is found and pending, in this order:
+ *
+ * 1. A resend less than an hour after the last sending of the invitation, its `sentAt`
+ *    (the invitation itself or the previous resend), answers
+ *    `429 invitation.resend-throttled` with `details.resendAvailableAt`, `sentAt` plus one
+ *    hour, and `Retry-After`, the seconds until then, rounded up.
+ * 2. A resend takes one email of the daily allowance of the organization (see
+ *    `POST /internal/v1/invitations`): with none left, it answers
+ *    `429 invitation.daily-limit-reached` with `details.remaining: 0`,
+ *    `details.nextAvailableAt` and `Retry-After`.
+ *
+ * A refused resend changes nothing and emits nothing.
  * @summary Send an invitation again
  */
 const resendInvitationInternal = async (invitationId: string,
@@ -1393,10 +1445,15 @@ export type inviteMembersInternalResponse404 = {
   status: 404
 }
 
+export type inviteMembersInternalResponse429 = {
+  data: InvitationBatchLimitedResponse
+  status: 429
+}
+
 export type inviteMembersInternalResponseSuccess = (inviteMembersInternalResponse200) & {
   headers: Headers;
 };
-export type inviteMembersInternalResponseError = (inviteMembersInternalResponse400 | inviteMembersInternalResponse401 | inviteMembersInternalResponse403 | inviteMembersInternalResponse404) & {
+export type inviteMembersInternalResponseError = (inviteMembersInternalResponse400 | inviteMembersInternalResponse401 | inviteMembersInternalResponse403 | inviteMembersInternalResponse404 | inviteMembersInternalResponse429) & {
   headers: Headers;
 };
 
@@ -1508,10 +1565,15 @@ export type resendInvitationInternalResponse409 = {
   status: 409
 }
 
+export type resendInvitationInternalResponse429 = {
+  data: InvitationResendLimitedResponse
+  status: 429
+}
+
 export type resendInvitationInternalResponseSuccess = (resendInvitationInternalResponse200) & {
   headers: Headers;
 };
-export type resendInvitationInternalResponseError = (resendInvitationInternalResponse400 | resendInvitationInternalResponse401 | resendInvitationInternalResponse403 | resendInvitationInternalResponse404 | resendInvitationInternalResponse409) & {
+export type resendInvitationInternalResponseError = (resendInvitationInternalResponse400 | resendInvitationInternalResponse401 | resendInvitationInternalResponse403 | resendInvitationInternalResponse404 | resendInvitationInternalResponse409 | resendInvitationInternalResponse429) & {
   headers: Headers;
 };
 

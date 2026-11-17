@@ -24,10 +24,7 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import {
-  toQueryInteger,
-  toQueryList,
-} from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
+import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { ChangeMemberRole } from '../../../../application/use-cases/commands/members/change-member-role/change-member-role.use-case.js';
@@ -113,13 +110,12 @@ const MEMBER_ALIASES: Readonly<Record<string, string>> = {
  * Constant LIST_QUERY
  *
  * @description
- * The query of `GET /v1/members` as the contract validates it, with `limit` and `role` read from
- * their text first.
+ * The query of `GET /v1/members` as the contract validates it, with `role` split on its commas
+ * first; the generated validator reads `limit` from its text.
  *
  * @type {z.ZodType<z.output<typeof ListMembersQueryParams>>}
  */
 const LIST_QUERY = ListMembersQueryParams.extend({
-  limit: z.preprocess(toQueryInteger, ListMembersQueryParams.shape.limit),
   role: z.preprocess(toQueryList, ListMembersQueryParams.shape.role),
 });
 

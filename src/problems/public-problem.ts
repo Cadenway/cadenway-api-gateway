@@ -68,6 +68,14 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
     'invitation.expired',
     'Cette invitation a expiré : demandez-en une nouvelle à un administrateur de l’organisation.',
   ],
+  [
+    'invitation.resend-throttled',
+    'Cette invitation vient d’être renvoyée : réessayez dans une heure.',
+  ],
+  [
+    'invitation.daily-limit-reached',
+    'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.',
+  ],
   ['api-token.not-found', 'Jeton introuvable.'],
 ]);
 
