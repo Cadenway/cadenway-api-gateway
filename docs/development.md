@@ -5,8 +5,9 @@
 ## Status
 
 The gateway runs on the shared runtime of `@cadenway/nest-common`, answers the health routes and
-serves the routes of `openapi/public/auth.yaml` through the generated client of identity-service;
-the rate limiter does not exist yet (see the [documentation index](README.md)). The scripts and checks below exist in `package.json` and CI.
+serves the routes of `openapi/public/auth.yaml`, `organizations.yaml`, `members.yaml` and
+`api-tokens.yaml` through the generated clients of identity-service and organization-service, with
+the per-credential rate limit on Redis (see the [documentation index](README.md)). The scripts and checks below exist in `package.json` and CI.
 Run Git, pnpm, build, and test commands with this repository as the working directory, never from
 the parent workspace.
 

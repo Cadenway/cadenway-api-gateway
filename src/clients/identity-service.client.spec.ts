@@ -87,7 +87,7 @@ const ACTIVE_SESSION: Record<string, unknown> = {
   userId: CAMILLE.id,
   organizationId: null,
   role: null,
-  scopes: [],
+  scopes: CAMILLE_SESSION.scopes,
   expiresAt: CAMILLE_SESSION.expiresAt,
 };
 
@@ -459,6 +459,152 @@ describe('IdentityServiceClient', () => {
     it('refuses to read an account outside an organization context', async () => {
       await expect(client.getUser(CAMILLE.id)).rejects.toThrow(/outside an organization context/u);
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('introspectApiToken', () => {
+    const active: Record<string, unknown> = {
+      active: true,
+      tokenType: 'api-token',
+      apiTokenId: '019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90',
+      userId: CAMILLE.id,
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      role: 'owner',
+      scopes: ['members:read'],
+      expiresAt: null,
+    };
+
+    it('posts the token as the actor system and answers the active token', async () => {
+      answer.mockReturnValue(json(200, active));
+
+      await expect(client.introspectApiToken('cw_pat_secret')).resolves.toEqual({
+        apiTokenId: active.apiTokenId,
+        userId: CAMILLE.id,
+        organizationId: active.organizationId,
+        role: 'owner',
+        scopes: ['members:read'],
+        expiresAt: null,
+      });
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: 'http://identity-service.test:3010/internal/v1/api-tokens/introspect',
+        body: { token: 'cw_pat_secret' },
+        principal: { actor: { type: 'system', id: null }, organizationId: null },
+      });
+    });
+
+    it('answers null for an inactive token, and for an active one that is not a personal token', async () => {
+      answer
+        .mockReturnValueOnce(json(200, { active: false }))
+        .mockReturnValueOnce(json(200, { ...active, tokenType: 'session' }));
+
+      await expect(client.introspectApiToken('cw_pat_secret')).resolves.toBeNull();
+      await expect(client.introspectApiToken('cw_pat_secret')).resolves.toBeNull();
+    });
+
+    it('is retried once after a 503, as an idempotent call', async () => {
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValue(json(200, active));
+
+      await expect(client.introspectApiToken('cw_pat_secret')).resolves.not.toBeNull();
+      expect(calls).toHaveLength(2);
+    });
+  });
+
+  describe('the profile, the current organization and the tokens of a signed-in user', () => {
+    const owner: OrganizationContext = {
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      actor: { type: 'user', id: CAMILLE.id },
+      role: 'owner',
+      scopes: ['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage'],
+    };
+    const token: Record<string, unknown> = {
+      id: '019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90',
+      name: 'Synchronisation GitLab',
+      prefix: 'cw_pat_Exam',
+      scopes: ['tasks:read'],
+      organizationId: owner.organizationId,
+      createdAt: '2026-11-08T14:02:00Z',
+      expiresAt: null,
+      lastUsedAt: null,
+    };
+
+    it('changes the profile with If-Match, without retrying a 503', async () => {
+      answer.mockReturnValue(new Response(null, { status: 503 }));
+
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.updateUser(CAMILLE.id, { jobTitle: null }, '"2"'),
+        ),
+      ).rejects.toBeInstanceOf(ProblemException);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({
+        method: 'PATCH',
+        url: `http://identity-service.test:3010/internal/v1/users/${CAMILLE.id}`,
+        body: { jobTitle: null },
+        principal: { actor: { type: 'user', id: CAMILLE.id } },
+      });
+    });
+
+    it('answers the changed account', async () => {
+      answer.mockReturnValue(json(200, { ...CAMILLE, jobTitle: 'Responsable produit' }));
+
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.updateUser(CAMILLE.id, { jobTitle: 'Responsable produit' }, undefined),
+        ),
+      ).resolves.toEqual({ ...CAMILLE, jobTitle: 'Responsable produit' });
+    });
+
+    it('chooses the current organization of a session', async () => {
+      answer.mockReturnValue(json(200, { organizationId: owner.organizationId, role: 'owner' }));
+
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.switchSessionOrganization(CAMILLE_SESSION.sessionId, String(owner.organizationId)),
+        ),
+      ).resolves.toEqual({ organizationId: owner.organizationId, role: 'owner' });
+      expect(calls[0]).toMatchObject({
+        method: 'PUT',
+        url: `http://identity-service.test:3010/internal/v1/sessions/${CAMILLE_SESSION.sessionId}/organization`,
+        body: { organizationId: owner.organizationId },
+      });
+    });
+
+    it('creates, lists and revokes tokens in the organization of the context', async () => {
+      answer
+        .mockReturnValueOnce(
+          json(201, { apiToken: token, secret: 'cw_pat_ExampleOnlyNotARealToken000000000000' }),
+        )
+        .mockReturnValueOnce(json(200, { items: [token], nextCursor: null }))
+        .mockReturnValueOnce(new Response(null, { status: 204 }));
+
+      await runWithOrganizationContext(owner, () =>
+        client.createApiToken({ name: 'Synchronisation GitLab', scopes: ['tasks:read'] }),
+      );
+      await runWithOrganizationContext(owner, () => client.listApiTokens({ limit: 50 }));
+      await runWithOrganizationContext(owner, () => client.revokeApiToken(String(token.id)));
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        'POST http://identity-service.test:3010/internal/v1/api-tokens',
+        'GET http://identity-service.test:3010/internal/v1/api-tokens?limit=50',
+        `DELETE http://identity-service.test:3010/internal/v1/api-tokens/${String(token.id)}`,
+      ]);
+      expect(calls.every((call) => call.principal.organizationId === owner.organizationId)).toBe(
+        true,
+      );
+    });
+
+    it('answers a created token whose secret does not have the format of the contract as 503', async () => {
+      answer.mockReturnValue(json(201, { apiToken: token, secret: 'short' }));
+
+      const failure: unknown = await runWithOrganizationContext(owner, () =>
+        client.createApiToken({ name: 'Synchronisation GitLab', scopes: ['tasks:read'] }),
+      ).catch((error: unknown) => error);
+
+      expect((failure as ProblemException).problem).toMatchObject({ code: 'upstream.failed' });
+      expect(JSON.stringify((failure as ProblemException).problem)).not.toContain('short');
     });
   });
 });

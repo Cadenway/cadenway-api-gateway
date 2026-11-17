@@ -13,5 +13,6 @@ import type { IdentityServiceClient } from '../../../../../clients/identity-serv
 export function createIdentityUsersAdapter(client: IdentityServiceClient): IdentityUsers {
   return {
     getUser: (userId) => client.getUser(userId),
+    updateUser: (userId, changes, ifMatch) => client.updateUser(userId, changes, ifMatch),
   };
 }

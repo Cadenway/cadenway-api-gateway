@@ -1,9 +1,15 @@
 import type {
+  ApiTokenCreated,
+  ApiTokenCreation,
+  ApiTokenPage,
   CodeRequest,
   CodeSent,
   CodeVerification,
+  ListApiTokensInternalParams,
   PasswordSignIn,
+  ProfilePatch,
   SessionIssued,
+  SessionOrganization,
   SignInMethods,
   SignInMethodsRequest,
   SignUpRequest,
@@ -11,26 +17,36 @@ import type {
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import {
+  CreateApiTokenInternalResponse,
   DiscoverSignInMethodsInternalResponse,
   GetUserResponse,
+  IntrospectApiTokenResponse,
   IntrospectTokenResponse,
+  ListApiTokensInternalResponse,
   RequestSignInCodeInternalResponse,
   ResendSignUpCodeInternalResponse,
   SignInWithCodeInternalResponse,
   SignInWithPasswordInternalResponse,
   SignUpInternalResponse,
+  SwitchSessionOrganizationResponse,
+  UpdateUserResponse,
   VerifySignUpInternalResponse,
 } from '@cadenway/contracts/validators/internal/identity-service';
-import {
-  ProblemException,
-  type InternalActorType,
-  type InternalHttpClient,
-  type InternalRequestInit,
-  type InternalTokenClaims,
+import type {
+  InternalActorType,
+  InternalHttpClient,
+  InternalRequestInit,
+  InternalTokenClaims,
 } from '@cadenway/nest-common';
 import { trace } from '@opentelemetry/api';
 import type { z } from 'zod';
 
+import {
+  answered as answeredBy,
+  expectBody as expectBodyOf,
+  expectStatus as expectStatusOf,
+  type GeneratedResponse,
+} from '../problems/upstream-answer.js';
 import { getIdentityServiceInternalRoutes } from './generated/identity-service.js';
 
 /**
@@ -43,6 +59,19 @@ import { getIdentityServiceInternalRoutes } from './generated/identity-service.j
  */
 type IdentitySession = Omit<
   Extract<z.output<typeof IntrospectTokenResponse>, { active: true }>,
+  'active' | 'tokenType'
+>;
+
+/**
+ * Type IdentityApiToken
+ *
+ * @description
+ * Validated fields returned for an active personal API token.
+ *
+ * @type {Omit<Extract<z.output<typeof IntrospectApiTokenResponse>, { active: true }>, "active" | "tokenType">}
+ */
+type IdentityApiToken = Omit<
+  Extract<z.output<typeof IntrospectApiTokenResponse>, { active: true }>,
   'active' | 'tokenType'
 >;
 
@@ -61,12 +90,23 @@ export const IDENTITY_SERVICE: string = 'identity-service';
  * Constant SESSION_TOKEN_TYPE
  *
  * @description
- * `tokenType` of an active session token in the introspection. Any other type (personal API
- * tokens come later) is not a session, and a cookie carrying one is not active.
+ * `tokenType` of an active session token in the introspection of a cookie. Any other type is not
+ * a session, and a cookie carrying one is not active.
  *
  * @type {string}
  */
 const SESSION_TOKEN_TYPE: string = 'session';
+
+/**
+ * Constant API_TOKEN_TYPE
+ *
+ * @description
+ * `tokenType` of an active personal API token in its introspection. Any other type is not a
+ * personal token, and a bearer token carrying one is not active.
+ *
+ * @type {string}
+ */
+const API_TOKEN_TYPE: string = 'api-token';
 
 /**
  * Type IdentityServiceRoutes
@@ -77,39 +117,6 @@ const SESSION_TOKEN_TYPE: string = 'session';
  * @type {ReturnType<typeof getIdentityServiceInternalRoutes>}
  */
 type IdentityServiceRoutes = ReturnType<typeof getIdentityServiceInternalRoutes>;
-
-/**
- * Interface GeneratedResponse
- *
- * @description
- * What a generated function resolves with: the status and the parsed body of a response the
- * internal HTTP client let through (below 400).
- */
-interface GeneratedResponse {
-  // #region Properties
-  /**
-   * Property status
-   *
-   * @description
-   * HTTP status of the response.
-   *
-   * @type {number}
-   * @readonly
-   */
-  readonly status: number;
-
-  /**
-   * Property data
-   *
-   * @description
-   * Parsed JSON body, not validated yet.
-   *
-   * @type {unknown}
-   * @readonly
-   */
-  readonly data: unknown;
-  // #endregion
-}
 
 /**
  * Function callerClaims
@@ -138,32 +145,10 @@ function callerClaims(
 }
 
 /**
- * Function outsideContract
- *
- * @description
- * Builds the problem of a response of identity-service that does not match its contract: a defect
- * of identity-service, answered as `503 upstream.failed`, as the internal HTTP client answers a
- * server error. The cause names the offending members, never their values, which may be secrets.
- *
- * @param {string} operation - `operationId` of the call.
- * @param {string} reason - What did not match.
- * @returns {ProblemException} The problem to throw.
- */
-function outsideContract(operation: string, reason: string): ProblemException {
-  return new ProblemException({
-    status: 503,
-    code: 'upstream.failed',
-    detail: 'A service this request depends on is not available.',
-    details: { service: IDENTITY_SERVICE },
-    cause: new Error(`${IDENTITY_SERVICE} answered ${operation} outside its contract: ${reason}.`),
-  });
-}
-
-/**
  * Function expectStatus
  *
  * @description
- * Checks that a response has the success status of its operation.
+ * Checks that a response of identity-service has the success status of its operation.
  *
  * @param {string} operation - `operationId` of the call.
  * @param {GeneratedResponse} response - Response of the generated function.
@@ -171,18 +156,15 @@ function outsideContract(operation: string, reason: string): ProblemException {
  * @throws {ProblemException} 503 `upstream.failed` for another status.
  */
 function expectStatus(operation: string, response: GeneratedResponse, status: number): void {
-  if (response.status !== status) {
-    throw outsideContract(operation, `status ${String(response.status)}`);
-  }
+  expectStatusOf(IDENTITY_SERVICE, operation, response, status);
 }
 
 /**
  * Function expectBody
  *
  * @description
- * Checks a response against its operation: the success status, then the body against the zod
- * validator of `@cadenway/contracts`. The parsed value keeps the members of the contract only, so
- * an unexpected member of identity-service never travels further.
+ * Checks a response of identity-service against its operation: the success status, then the body
+ * against the zod validator of `@cadenway/contracts`, keeping the members of the contract only.
  *
  * @param {string} operation - `operationId` of the call.
  * @param {GeneratedResponse} response - Response of the generated function.
@@ -197,44 +179,36 @@ function expectBody<TSchema extends z.ZodType>(
   status: number,
   schema: TSchema,
 ): z.output<TSchema> {
-  expectStatus(operation, response, status);
-  const parsed: z.ZodSafeParseResult<z.output<TSchema>> = schema.safeParse(response.data);
-  if (!parsed.success) {
-    const members: string = parsed.error.issues
-      .map((issue: z.core.$ZodIssue) => issue.path.join('.') || '(body)')
-      .join(', ');
-    throw outsideContract(operation, `invalid ${members}`);
-  }
-  return parsed.data;
+  return expectBodyOf(IDENTITY_SERVICE, operation, response, status, schema);
 }
 
 /**
  * Function answered
  *
  * @description
- * Awaits a generated call. The generated code parses a success body with `JSON.parse`, whose
- * `SyntaxError` quotes part of the body, which may hold a session token: a body that is not JSON
- * becomes `503 upstream.failed` without that message, so it reaches neither the browser nor the
- * log line of the request. Every other error, the problems of the internal HTTP client included,
- * is thrown unchanged.
+ * Awaits a generated call of identity-service: a body that is not JSON becomes
+ * `503 upstream.failed` without being quoted, since it may hold a token.
  *
  * @param {string} operation - `operationId` of the call.
  * @param {Promise<TResponse>} call - The generated call.
  * @returns {Promise<TResponse>} What the call resolved with.
  * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON.
  */
-async function answered<TResponse>(
-  operation: string,
-  call: Promise<TResponse>,
-): Promise<TResponse> {
-  try {
-    return await call;
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw outsideContract(operation, 'a body that is not JSON');
-    }
-    throw error;
-  }
+function answered<TResponse>(operation: string, call: Promise<TResponse>): Promise<TResponse> {
+  return answeredBy(IDENTITY_SERVICE, operation, call);
+}
+
+/**
+ * Function ifMatchHeader
+ *
+ * @description
+ * The request options that relay the `If-Match` of the public request unchanged, or none.
+ *
+ * @param {string | undefined} ifMatch - `If-Match` of the public request.
+ * @returns {RequestInit} The options of the generated call.
+ */
+function ifMatchHeader(ifMatch: string | undefined): RequestInit {
+  return ifMatch === undefined ? {} : { headers: { 'If-Match': ifMatch } };
 }
 
 /**
@@ -246,12 +220,13 @@ async function answered<TResponse>(
  * `@cadenway/nest-common`, behind the ports of the session guard and of the routes.
  *
  * - Every call carries an internal token signed by the gateway with `aud: identity-service`: the
- *   actor `anonymous` for the sign-up and sign-in flows, `system` for the introspection, and the
- *   user of the current organization context for the revocation and the reading of the account.
+ *   actor `anonymous` for the sign-up and sign-in flows, `system` for the two introspections, and
+ *   the user of the current organization context for every other call (with the organization of
+ *   that context, which the personal API token routes require).
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
- *   retry after a connection error or a `503` for an idempotent call (the introspection is
- *   declared idempotent by its contract; the flows are not retried), and the circuit breaker of
- *   identity-service. It throws its problems: a relayed client error, or `503 upstream.*`.
+ *   retry after a connection error or a `503` for an idempotent call (both introspections are
+ *   declared idempotent by their contract, as `GET`, `PUT` and `DELETE` are; the flows and the
+ *   other `POST` and `PATCH` calls are not retried), and the circuit breaker of identity-service. It throws its problems: a relayed client error, or `503 upstream.*`.
  * - Every success is checked against the internal contract before it is returned; a mismatch is
  *   `503 upstream.failed`.
  */
@@ -510,6 +485,148 @@ export class IdentityServiceClient {
       await answered('getUser', this.routes.getUser(userId)),
       200,
       GetUserResponse,
+    );
+  }
+
+  /**
+   * Method introspectApiToken
+   *
+   * @description
+   * `POST /internal/v1/api-tokens/introspect` as the actor `system`, retried once on a connection
+   * error or a `503`: the contract makes the call idempotent. An active answer records the last
+   * use of the token at identity-service, at most once a minute.
+   *
+   * @param {string} token - Value of the bearer token. A secret: it travels in the body only.
+   * @returns {Promise<IdentityApiToken | null>} The token, or `null` when it is not an active
+   * personal API token.
+   */
+  public async introspectApiToken(token: string): Promise<IdentityApiToken | null> {
+    const options: InternalRequestInit = { ...callerClaims('system'), idempotent: true };
+    const answer: z.output<typeof IntrospectApiTokenResponse> = expectBody(
+      'introspectApiToken',
+      await answered('introspectApiToken', this.routes.introspectApiToken({ token }, options)),
+      200,
+      IntrospectApiTokenResponse,
+    );
+    if (!answer.active || answer.tokenType !== API_TOKEN_TYPE) {
+      return null;
+    }
+    return {
+      apiTokenId: answer.apiTokenId,
+      userId: answer.userId,
+      organizationId: answer.organizationId,
+      role: answer.role,
+      scopes: answer.scopes,
+      expiresAt: answer.expiresAt,
+    };
+  }
+
+  /**
+   * Method updateUser
+   *
+   * @description
+   * `PATCH /internal/v1/users/{userId}` as the user of the current organization context, with the
+   * `If-Match` of the public request relayed unchanged. Not retried: `PATCH` is not declared
+   * idempotent.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {ProfilePatch} patch - JSON Merge Patch of the profile.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<User>} The account after the change.
+   */
+  public async updateUser(
+    userId: string,
+    patch: ProfilePatch,
+    ifMatch: string | undefined,
+  ): Promise<User> {
+    return expectBody(
+      'updateUser',
+      await answered('updateUser', this.routes.updateUser(userId, patch, ifMatchHeader(ifMatch))),
+      200,
+      UpdateUserResponse,
+    );
+  }
+
+  /**
+   * Method switchSessionOrganization
+   *
+   * @description
+   * `PUT /internal/v1/sessions/{sessionId}/organization` as the user of the current organization
+   * context, retried once on a connection error or a `503` (`PUT` is idempotent: choosing the
+   * same organization again changes nothing).
+   *
+   * @param {string} sessionId - Id of the session (a UUID), as the introspection returned it.
+   * @param {string} organizationId - Organization to act on.
+   * @returns {Promise<SessionOrganization>} The organization and the role of the session.
+   */
+  public async switchSessionOrganization(
+    sessionId: string,
+    organizationId: string,
+  ): Promise<SessionOrganization> {
+    return expectBody(
+      'switchSessionOrganization',
+      await answered(
+        'switchSessionOrganization',
+        this.routes.switchSessionOrganization(sessionId, { organizationId }),
+      ),
+      200,
+      SwitchSessionOrganizationResponse,
+    );
+  }
+
+  /**
+   * Method createApiToken
+   *
+   * @description
+   * `POST /internal/v1/api-tokens` as the user of the current organization context, which carries
+   * the current organization of the session. Not retried. The answer holds the secret of the
+   * token, returned once: never logged.
+   *
+   * @param {ApiTokenCreation} creation - Name, scopes and expiration of the token.
+   * @returns {Promise<ApiTokenCreated>} The token and its secret.
+   */
+  public async createApiToken(creation: ApiTokenCreation): Promise<ApiTokenCreated> {
+    return expectBody(
+      'createApiTokenInternal',
+      await answered('createApiTokenInternal', this.routes.createApiTokenInternal(creation)),
+      201,
+      CreateApiTokenInternalResponse,
+    );
+  }
+
+  /**
+   * Method listApiTokens
+   *
+   * @description
+   * `GET /internal/v1/api-tokens` as the user of the current organization context.
+   *
+   * @param {ListApiTokensInternalParams} page - Cursor and page size.
+   * @returns {Promise<ApiTokenPage>} One page of tokens, never with their secret.
+   */
+  public async listApiTokens(page: ListApiTokensInternalParams): Promise<ApiTokenPage> {
+    return expectBody(
+      'listApiTokensInternal',
+      await answered('listApiTokensInternal', this.routes.listApiTokensInternal(page)),
+      200,
+      ListApiTokensInternalResponse,
+    );
+  }
+
+  /**
+   * Method revokeApiToken
+   *
+   * @description
+   * `DELETE /internal/v1/api-tokens/{apiTokenId}` as the user of the current organization context,
+   * retried once on a connection error or a `503` (`DELETE` is idempotent).
+   *
+   * @param {string} apiTokenId - Id of the token.
+   * @returns {Promise<void>} Resolves once the token is revoked, or was already.
+   */
+  public async revokeApiToken(apiTokenId: string): Promise<void> {
+    expectStatus(
+      'revokeApiTokenInternal',
+      await answered('revokeApiTokenInternal', this.routes.revokeApiTokenInternal(apiTokenId)),
+      204,
     );
   }
   // #endregion

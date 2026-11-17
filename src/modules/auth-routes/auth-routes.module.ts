@@ -2,6 +2,7 @@ import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common
 
 import { AuthModule } from '../auth/auth.module.js';
 import { ClientsModule } from '../../clients/clients.module.js';
+import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import { identityAuthProvider } from './composition/providers/adapters/auth/identity-auth.provider.js';
 
 import { noStore } from '../../presentation/http/middleware/no-store.middleware.js';
@@ -22,10 +23,11 @@ import { signOutProvider } from './composition/providers/use-cases/auth/sign-out
  * @description
  * The routes of `openapi/public/auth.yaml` under `/v1/auth`. Every answer, errors included,
  * carries `Cache-Control: no-store`.
- * The capability owns its Identity port and imports the shared authentication guards.
+ * The capability owns its Identity port and imports the shared authentication and rate-limit
+ * guards.
  */
 @Module({
-  imports: [AuthModule, ClientsModule],
+  imports: [AuthModule, RateLimitModule, ClientsModule],
   providers: [
     identityAuthProvider,
     discoverSignInMethodsProvider,

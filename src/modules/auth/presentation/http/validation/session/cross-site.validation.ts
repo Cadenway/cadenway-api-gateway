@@ -1,3 +1,4 @@
+import type { ProblemException } from '@cadenway/nest-common';
 import type { Request } from 'express';
 
 import { publicProblem } from '../../../../../../problems/public-problem.js';
@@ -79,10 +80,80 @@ export function assertSameSiteRequest(request: Request, allowedOrigins: readonly
     !allowedOrigins.includes(origin) ||
     !isJsonContentType(request.get('Content-Type'))
   ) {
-    throw publicProblem({
-      status: 403,
-      code: 'auth.csrf-rejected',
-      detail: 'Cross-site request refused.',
-    });
+    throw crossSiteRefused();
   }
+}
+
+/**
+ * Function hasBody
+ *
+ * @description
+ * Tells whether a request carries a body, as HTTP/1.1 frames one (RFC 9112): a
+ * `Transfer-Encoding`, or a `Content-Length` other than `0`.
+ *
+ * @param {Request} request - Incoming request.
+ * @returns {boolean} `true` when a body follows the headers.
+ */
+function hasBody(request: Request): boolean {
+  const length: string | undefined = request.get('Content-Length');
+  return (
+    request.get('Transfer-Encoding') !== undefined ||
+    (length !== undefined && length.trim() !== '0')
+  );
+}
+
+/**
+ * Function assertCookieRequestSameSite
+ *
+ * @description
+ * The cross-site check of an unsafe request authenticated by the session cookie. Its `Origin`
+ * must be exactly one of the allowed origins, and:
+ *
+ * - a `DELETE` has no body: a browser sends one cross-site only after a CORS preflight, which
+ *   answers the allowed origins only, so its `Origin` is the check (`openapi/public/members.yaml`,
+ *   `openapi/public/api-tokens.yaml`); one that has a body or declares a media type must declare
+ *   `application/json` all the same;
+ * - every other unsafe request must carry `Content-Type: application/json`, as
+ *   `openapi/public/organizations.yaml` and `openapi/public/auth.yaml` require (each of them has a
+ *   JSON body in the contracts, so `members.yaml` and `api-tokens.yaml` agree).
+ *
+ * A request authenticated by a personal API token carries no ambient credential and never comes
+ * here.
+ *
+ * @param {Request} request - Incoming request.
+ * @param {readonly string[]} allowedOrigins - `ALLOWED_ORIGINS` of the configuration.
+ * @throws {ProblemException} 403 `auth.csrf-rejected` when the request fails the check.
+ */
+export function assertCookieRequestSameSite(
+  request: Request,
+  allowedOrigins: readonly string[],
+): void {
+  if (request.method.toUpperCase() !== 'DELETE') {
+    assertSameSiteRequest(request, allowedOrigins);
+    return;
+  }
+  const origin: string | undefined = request.get('Origin');
+  const contentType: string | undefined = request.get('Content-Type');
+  if (origin === undefined || !allowedOrigins.includes(origin)) {
+    throw crossSiteRefused();
+  }
+  if ((contentType !== undefined || hasBody(request)) && !isJsonContentType(contentType)) {
+    throw crossSiteRefused();
+  }
+}
+
+/**
+ * Function crossSiteRefused
+ *
+ * @description
+ * `403 auth.csrf-rejected`, with the English reason phrase as its title.
+ *
+ * @returns {ProblemException} The problem to throw.
+ */
+function crossSiteRefused(): ProblemException {
+  return publicProblem({
+    status: 403,
+    code: 'auth.csrf-rejected',
+    detail: 'Cross-site request refused.',
+  });
 }

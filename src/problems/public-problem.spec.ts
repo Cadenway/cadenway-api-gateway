@@ -5,17 +5,6 @@ import { problemExamples } from '../../tests/support/public-contract.js';
 import { PROBLEM_TITLES, isProblemStatus, publicProblem } from './public-problem.js';
 
 /**
- * Constant NOT_PRODUCED_YET
- *
- * @description
- * Codes of `openapi/public/auth.yaml` the gateway does not answer yet: its own rate limit comes
- * with phase P2b of the integration plan, and with it the title of `rate-limit.exceeded`.
- *
- * @type {ReadonlySet<string>}
- */
-const NOT_PRODUCED_YET: ReadonlySet<string> = new Set<string>(['rate-limit.exceeded']);
-
-/**
  * Function reasonPhrase
  *
  * @description
@@ -30,10 +19,13 @@ function reasonPhrase(status: number): string {
 
 describe('PROBLEM_TITLES', () => {
   const examples: readonly { pointer: string; value: Readonly<Record<string, unknown>> }[] =
-    problemExamples().filter((example) => !NOT_PRODUCED_YET.has(String(example.value.code)));
+    problemExamples();
 
-  it('reads problem examples from the shipped public contract', () => {
-    expect(examples.length).toBeGreaterThan(10);
+  it('reads problem examples from every shipped public contract', () => {
+    expect(examples.length).toBeGreaterThan(40);
+    for (const spec of ['auth.yaml', 'organizations.yaml', 'members.yaml', 'api-tokens.yaml']) {
+      expect(examples.some((example) => example.pointer.startsWith(`${spec}#`))).toBe(true);
+    }
   });
 
   it.each(examples.map((example) => [example.pointer, example.value] as const))(

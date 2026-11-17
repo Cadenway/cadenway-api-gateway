@@ -14,12 +14,13 @@ import { Body, Controller, HttpCode, Inject, Post, Req, Res, UseGuards } from '@
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
 
+import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { CsrfGuard } from '../../../../../auth/public/session/csrf-guard.js';
+import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import {
   CLEARED_SESSION_COOKIE,
   sessionCookieHeader,
 } from '../../../../../../presentation/http/session/session-cookie.js';
-import { SessionGuard } from '../../../../../auth/public/session/session-guard.js';
 import {
   verifiedSessionOf,
   type RequestSession,
@@ -204,8 +205,10 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  *   `Content-Type: application/json`, signed in or not (the login cross-site decision of
  *   docs/integration.md). Every
  *   answer carries `Cache-Control: no-store` (see `AuthRoutesModule`).
- * - The flows carry no session (`security: []`): they never read the cookie, so a stale one never
- *   makes them fail, and identity-service sees them as the actor `anonymous`.
+ * - The flows carry no session (`security: []`): `CredentialGuard` reads neither the cookie nor a
+ *   bearer token for them, so a stale one never makes them fail, and identity-service sees them as
+ *   the actor `anonymous`. The sign-out reads the cookie only (`security: [sessionCookie, {}]`),
+ *   and its session is counted by `RateLimitGuard`.
  * - The routes that sign in set `__Host-cw_session` from the token identity-service returns once
  *   (`Max-Age` only for a persistent session) and answer the user and the session, never the
  *   token. The browser's address and User-Agent travel in `client`.
@@ -214,7 +217,7 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  *   it; any other answer is `503 upstream.*` (see `relayUpstream`).
  */
 @Controller('v1/auth')
-@UseGuards(CsrfGuard)
+@UseGuards(CsrfGuard, CredentialGuard, RateLimitGuard)
 export class AuthController {
   // #region Properties
   /**
@@ -357,6 +360,11 @@ export class AuthController {
    * @returns {Promise<SignInMethods>} The methods, in the order to show them.
    */
   @Post('sign-in-methods')
+  @CredentialGuard.requires({
+    operationId: 'discoverSignInMethods',
+    security: [],
+    organization: false,
+  })
   @HttpCode(200)
   public async discoverSignInMethods(
     @Body(new ZodValidationPipe(DiscoverSignInMethodsBody))
@@ -381,6 +389,7 @@ export class AuthController {
    * @returns {Promise<CodeSent>} When the code expires and when another can be asked for.
    */
   @Post('sign-up')
+  @CredentialGuard.requires({ operationId: 'signUp', security: [], organization: false })
   @HttpCode(202)
   public async signUp(
     @Body(new ZodValidationPipe(SignUpBody)) body: z.output<typeof SignUpBody>,
@@ -409,6 +418,7 @@ export class AuthController {
    * @returns {Promise<CodeSent>} The same answer whether or not a code was sent.
    */
   @Post('sign-up/code')
+  @CredentialGuard.requires({ operationId: 'resendSignUpCode', security: [], organization: false })
   @HttpCode(202)
   public async resendSignUpCode(
     @Body(new ZodValidationPipe(ResendSignUpCodeBody)) body: z.output<typeof ResendSignUpCodeBody>,
@@ -441,6 +451,7 @@ export class AuthController {
    * @returns {Promise<SignedIn>} The user and the session.
    */
   @Post('sign-up/verification')
+  @CredentialGuard.requires({ operationId: 'verifySignUp', security: [], organization: false })
   @HttpCode(200)
   public async verifySignUp(
     @Body(new ZodValidationPipe(VerifySignUpBody)) body: z.output<typeof VerifySignUpBody>,
@@ -472,6 +483,11 @@ export class AuthController {
    * @returns {Promise<SignedIn>} The user and the session.
    */
   @Post('sign-in')
+  @CredentialGuard.requires({
+    operationId: 'signInWithPassword',
+    security: [],
+    organization: false,
+  })
   @HttpCode(200)
   public async signInWithPassword(
     @Body(new ZodValidationPipe(SignInWithPasswordBody))
@@ -502,6 +518,7 @@ export class AuthController {
    * @returns {Promise<CodeSent>} The same answer whether or not a code was sent.
    */
   @Post('sign-in/code')
+  @CredentialGuard.requires({ operationId: 'requestSignInCode', security: [], organization: false })
   @HttpCode(202)
   public async requestSignInCode(
     @Body(new ZodValidationPipe(RequestSignInCodeBody))
@@ -528,6 +545,7 @@ export class AuthController {
    * @returns {Promise<SignedIn>} The user and the session.
    */
   @Post('sign-in/code/verification')
+  @CredentialGuard.requires({ operationId: 'signInWithCode', security: [], organization: false })
   @HttpCode(200)
   public async signInWithCode(
     @Body(new ZodValidationPipe(SignInWithCodeBody)) body: z.output<typeof SignInWithCodeBody>,
@@ -563,8 +581,11 @@ export class AuthController {
    */
   @Post('sign-out')
   @HttpCode(204)
-  @UseGuards(SessionGuard)
-  @SessionGuard.optional()
+  @CredentialGuard.requires({
+    operationId: 'signOut',
+    security: [{ sessionCookie: [] }, {}],
+    organization: false,
+  })
   public async signOut(
     @Body(new ZodValidationPipe(STRICT_SIGN_OUT_BODY)) _body: z.output<typeof STRICT_SIGN_OUT_BODY>,
     @Req() request: Request,

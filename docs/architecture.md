@@ -4,9 +4,10 @@
 
 ## Status
 
-The checkout contains the runtime wiring below and the first capability, the routes of
-`openapi/public/auth.yaml` with the session guard and the client of identity-service (phase P2a of
-the integration plan). The ownership map that follows governs gateway capabilities as they are
+The checkout contains the runtime wiring below, the credential guard and the rate limit, and the
+routes of `openapi/public/auth.yaml`, `organizations.yaml`, `members.yaml` and `api-tokens.yaml`
+through the clients of identity-service and organization-service (phases P2a and P2b of the
+integration plan). The ownership map that follows governs gateway capabilities as they are
 implemented.
 
 ## Runtime wiring
@@ -18,7 +19,7 @@ implemented.
 | `src/gateway-application.ts` | `createApplication` with the options of a public gateway (the validated configuration provided as `CONFIG`, signer only, no internal token verification, incoming `X-Request-Id` and `X-Request-Timeout-Ms` ignored), then `trust proxy` for one hop, `helmet`, `cookie-parser` and CORS for `ALLOWED_ORIGINS` |
 | `src/app.module.ts`          | The shared Redis module, `HealthModule` with the Redis indicator and the shutdown delay, and the route modules                                                                                                                                                                                                 |
 | `src/config/app-config.ts`   | The zod schema of the environment                                                                                                                                                                                                                                                                              |
-| `src/infrastructure/redis/`  | The Redis connection of the counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown; the limiter comes in phase P2b                                                                                                                                                            |
+| `src/infrastructure/redis/`  | `RedisModule`: the Redis connection of the rate-limit counters, a `ResilientRedisClient` of `@cadenway/nest-common/redis`, closed on shutdown                                                                                                                                                                  |
 
 Start command, in the `Dockerfile` and `pnpm start:dev`:
 
@@ -38,18 +39,23 @@ event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 
 ## Authentication
 
-| File                                     | Holds                                                                                                                                                                    |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/clients/generated/`                 | The client orval generates from `specs/openapi/internal/identity-service.yaml` of the installed `@cadenway/contracts` (`pnpm generate:clients`); committed, never edited |
-| `src/clients/identity-service.client.ts` | The outgoing adapter of identity-service: the generated functions on an `InternalHttpClient`, the actor of each call, every answer checked against the contract          |
-| `src/clients/clients.module.ts`          | One technical client per called service, bound to a separate `InternalHttpClient`                                                                                        |
-| `src/modules/auth/`                      | `SessionGuard` (introspection on every request, organization context), `CsrfGuard` and the cross-site check and the `SessionIntrospector` port                           |
-| `src/problems/`                          | The French titles of the public problems, the translation of internal errors, `Retry-After`                                                                              |
-| `src/modules/auth-routes/`               | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                |
-| `src/modules/me/`                        | `GET /v1/me` and its `IdentityUsers` port                                                                                                                                |
-| `src/presentation/http/`                 | Shared HTTP helpers for current-user mapping, cache policy and session cookies and request identifiers                                                                   |
+| File                            | Holds                                                                                                                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/clients/generated/`        | The clients orval generates from `specs/openapi/internal/identity-service.yaml` and `organization-service.yaml` of the installed `@cadenway/contracts` (`pnpm generate:clients`); committed, never edited                                                    |
+| `src/clients/*.client.ts`       | The outgoing adapters of identity-service and organization-service: the generated functions on an `InternalHttpClient`, the actor of each call, every answer checked against the contract                                                                    |
+| `src/clients/clients.module.ts` | One technical client per called service, bound to a separate `InternalHttpClient`                                                                                                                                                                            |
+| `src/modules/auth/`             | `CredentialGuard` (the session cookie or the personal API token, introspected on every request; the security requirement and organization scope of each operation; the organization context), `CsrfGuard`, the cross-site checks and the introspection ports |
+| `src/modules/rate-limit/`       | `RateLimitGuard`: 600 requests per minute per session or personal API token, counted on Redis with rate-limiter-flexible                                                                                                                                     |
+| `src/problems/`                 | The French titles of the public problems, the translation of internal errors, `Retry-After`, the check of internal answers against their contract                                                                                                            |
+| `src/modules/auth-routes/`      | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                                                                                                    |
+| `src/modules/me/`               | `GET /v1/me`, `PATCH /v1/me` and their `IdentityUsers` port                                                                                                                                                                                                  |
+| `src/modules/organizations/`    | The routes of `openapi/public/organizations.yaml`                                                                                                                                                                                                            |
+| `src/modules/members/`          | The member routes of `openapi/public/members.yaml`                                                                                                                                                                                                           |
+| `src/modules/invitations/`      | The invitation routes of `openapi/public/members.yaml`                                                                                                                                                                                                       |
+| `src/modules/api-tokens/`       | The routes of `openapi/public/api-tokens.yaml`                                                                                                                                                                                                               |
+| `src/presentation/http/`        | Shared HTTP helpers for current-user mapping, query parameters, cache policy, session cookies and the verified credential of a request                                                                                                                       |
 
-The auth capability and each route bind their own port in composition. The outgoing adapters call the technical client exported by `ClientsModule`. Controllers call local use cases, and the session guard uses the verify-session query. Route tests run the real bindings and substitute the technical client methods.
+The auth capability and each route module bind their own ports in composition (`composition/` or the module file). The outgoing adapters call the technical clients exported by `ClientsModule`. Controllers call local use cases; the credential guard uses the verification queries and the rate-limit guard the counting command. Route tests run the real bindings and substitute the technical client methods and the request counters.
 
 ## Purpose and target structure
 
@@ -68,8 +74,9 @@ Public routes without a session: the sign-up and sign-in flows of `openapi/publi
 Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for ports, adapters, dependency direction, naming and test placement.
 
 - Each capability lives at `src/modules/<module>/` with `MODULE.md` and `<module>.module.ts`.
-  The existing owners are `auth`, `auth-routes`, and `me`. Add new owners for aggregated resources,
-  unauthenticated workflows, and rate-limit policy when those capabilities are implemented.
+  The existing owners are `auth`, `auth-routes`, `me`, `rate-limit`, `organizations`,
+  `members`, `invitations` and `api-tokens`. Add new owners for aggregated resources and
+  unauthenticated workflows when those capabilities are implemented.
 - HTTP controllers, guards and DTOs live in `presentation/http/`. Every route delegates to an
   operation in `application/use-cases/{commands,queries}/<area>/<operation>/`. Application uses
   capability-local outbound ports. `infrastructure/adapters/` contains their implementations.
@@ -77,7 +84,8 @@ Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/
   wiring directory for separate files.
 - `ClientsModule` exposes technical clients using `src/clients/generated/`. Shared infrastructure,
   problem mappers and HTTP session, cache and mapping helpers stay outside the capability folders.
-  The current counter connection and readiness integration live under `src/infrastructure/redis/`.
+  The Redis connection of the counters and its readiness integration live under
+  `src/infrastructure/redis/`; the counters themselves belong to `rate-limit`.
 
 ## Boundaries
 

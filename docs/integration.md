@@ -4,9 +4,12 @@
 
 **Status:** This page records the design from repository instructions and skills. The public edge,
 the logs and the telemetry start-up are implemented and covered by `tests/gateway.int-spec.ts`; the
-routes of `openapi/public/auth.yaml`, the session guard and the client of identity-service are
-implemented (see [Authentication routes](#authentication-routes)) and covered by the route tests and
-`tests/auth.int-spec.ts`; API tokens, scopes and the rate limit are not built yet.
+routes of `openapi/public/auth.yaml` and the client of identity-service are implemented (see
+[Authentication routes](#authentication-routes)) and covered by the route tests and
+`tests/auth.int-spec.ts`; personal API tokens, scopes, the organization context, the rate limit and
+the routes of `organizations.yaml`, `members.yaml` and `api-tokens.yaml` are implemented (see
+[Credentials, scopes and rate limit](#credentials-scopes-and-rate-limit)) and covered by the route
+tests and `tests/rate-limit.int-spec.ts`.
 
 ## Public and internal boundaries
 
@@ -14,7 +17,7 @@ The public route contract is owned by `cadenway-api-contracts`; internal service
 
 ## Authentication routes
 
-The nine routes of `openapi/public/auth.yaml` (version 1.0.0, `@cadenway/contracts` 0.4.0), each
+The ten routes of `openapi/public/auth.yaml` (version 1.0.0, `@cadenway/contracts` 0.5.1), each
 mapped to its internal route of `openapi/internal/identity-service.yaml`:
 
 | Public route                              | Guards                         | Internal call, actor                                            |
@@ -28,19 +31,21 @@ mapped to its internal route of `openapi/internal/identity-service.yaml`:
 | `POST /v1/auth/sign-in/code/verification` | Cross-site                     | `POST /internal/v1/auth/sign-in/code/verification`, `anonymous` |
 | `POST /v1/auth/sign-out`                  | Cross-site, session (optional) | `DELETE /internal/v1/sessions/{sessionId}`, `user`              |
 | `GET /v1/me`                              | Session                        | `GET /internal/v1/users/{userId}`, `user`                       |
+| `PATCH /v1/me`                            | Cross-site, session            | `PATCH /internal/v1/users/{userId}`, `user`                     |
 
-- **Session guard** (`src/modules/auth/presentation/http/guards/session/session.guard.ts`): reads `__Host-cw_session` and introspects it with
+- **Credential guard** (`src/modules/auth/presentation/http/guards/credential/credential.guard.ts`, see
+  [Credentials, scopes and rate limit](#credentials-scopes-and-rate-limit)): reads `__Host-cw_session` and introspects it with
   `POST /internal/v1/tokens/introspect` as the actor `system` on every request, without a cache, so
   a revoked session stops at the next request. No cookie answers `401 auth.session-required`; a
   cookie that is not active, or that cannot be a token, `401 auth.session-expired`. An active
   session opens the organization context of the request with `setRequestOrganizationContext`: a
-  user actor, no organization in P2a. A route without a session (`security: []`) has no guard and
-  never reads the cookie, so a stale one is ignored.
+  user actor, and the organization, role and scopes of the introspection. A route without a
+  session (`security: []`) never reads the cookie or a bearer token, so a stale one is ignored.
 - **Cross-site check** (`src/modules/auth/presentation/http/validation/session/cross-site.validation.ts`): every unsafe route needs an `Origin` exactly
   equal to one of `ALLOWED_ORIGINS` and `Content-Type: application/json`, signed in or not
   (see [Decisions](#decisions-of-the-walking-skeleton)), else `403 auth.csrf-rejected` before the
-  route runs. The
-  session guard applies it to every unsafe request it authenticates.
+  route runs. The credential guard applies it to every unsafe request the cookie authenticates, but
+  a `DELETE`, which passes on its exact `Origin` alone when it has no body.
 - **Cookie** (`src/presentation/http/session/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
 SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a persistent session
   only; the sign-out clears it with `Max-Age=0`. The token leaves the gateway in this header only.
@@ -80,6 +85,47 @@ Fixed for phase P2a of the integration plan, and open to revision by the maintai
   browser no longer knows.
 - **Account gone.** `GET /v1/me` answers `404 user.not-found` from identity-service as
   `401 auth.session-expired`: the route declares no `404`, and the session can no longer be used.
+
+## Credentials, scopes and rate limit
+
+Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
+
+- **Security of each operation.** Every handler declares the `security` of its public operation and
+  whether it acts on the current organization (`CredentialGuard.requires`), copied from the
+  contract. `operation-security.validation.spec.ts` checks every handler against the shipped
+  specs: the same routes, `operationId`, `security`, and `organization` when the `403` of the
+  operation declares `organization.not-selected`.
+- **Bearer before cookie.** A request with `Authorization: Bearer` is authenticated with that token
+  alone; its cookie is ignored. A token that does not have the format of the contract answers
+  `401 auth.api-token-invalid` without a call; another is introspected with
+  `POST /internal/v1/api-tokens/introspect` as the actor `system`, on every request, and an
+  inactive one answers `401 auth.api-token-invalid`. Then the operation must accept a token
+  (`403 auth.api-token-not-accepted`) and the token must hold its scopes
+  (`403 auth.scope-missing`, `details.requiredScopes`). The sign-out, whose credential is optional,
+  ignores a bearer token. Another `Authorization` scheme leaves the request to its cookie.
+- **Cross-site check.** It applies to requests the cookie authenticates, after the credential is
+  known and before the introspection: no credential answers `401 auth.session-required`, not
+  `403`. A `POST`, `PUT` or `PATCH` needs an exact `Origin` and `Content-Type: application/json`
+  (`organizations.yaml`, `auth.yaml`); a bodiless `DELETE` passes on its `Origin` alone
+  (`members.yaml`, `api-tokens.yaml`). A bearer token needs no `Origin`.
+- **Organization context.** The organization, role and scopes of a request come from the
+  introspection only, into the internal token of every call. A session holds every scope. An
+  operation on the current organization answers `403 organization.not-selected` before any call
+  when the session has none; a personal token always has its organization.
+- **Rate limit** (`src/modules/rate-limit/`): 600 requests per minute per session or personal API
+  token, counted by `RateLimitGuard` after the credential guard on the key
+  `rate-limit:<session|api-token>:<id>`, never the secret, with rate-limiter-flexible on Redis.
+  Beyond, `429 rate-limit.exceeded` with `Retry-After`; no `RateLimit` header, which the contracts
+  do not declare. While Redis cannot count (unreachable, not ready, or slower than 100
+  milliseconds), the request, and those of the next second, are counted in the memory of the
+  instance with the same quota, logged once per outage: the routes stay available, and a
+  credential is still limited per instance.
+- **Errors.** Each route answers the client errors its operation declares, with the French title
+  of the contract; any other is `503 upstream.failed`. On a route about one member or invitation,
+  `404 organization.not-found` (the caller left the organization) answers the
+  `404 member.not-found` or `404 invitation.not-found` the operation declares. On the choice of
+  organization, `404 session.not-found` answers `401 auth.session-expired`. `ETag` comes from the
+  `version` of the answer; `If-Match` is relayed unchanged.
 
 ## Gateway Patterns
 
@@ -137,7 +183,8 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
 | Internal token     | this gateway, short-lived                          | user, organization, member role, scopes, trace id | calls to services     |
 
 - A session token switches organization only through the explicit organization-selection flow.
-- Scopes are checked per route; a session token has every scope its member role allows.
+- Scopes are checked per route, from the `security` of its public operation; a session holds
+  every scope, a personal API token its own.
 
 ### Session
 
@@ -150,13 +197,19 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
   Known cost: while identity-service is unavailable, so is the API.
 - CSRF: a request with an unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated by the
   session cookie must carry an `Origin` that is exactly one of the allowed origins (the webapp and
-  the website, as for CORS) and `Content-Type: application/json`. It is refused before the
-  controller otherwise.
+  the website, as for CORS) and `Content-Type: application/json`; a bodiless `DELETE` passes on
+  its `Origin` alone. It is refused before the introspection otherwise.
 
 ### Personal API token
 
 - Format: `cw_pat_`, then 30 base62 characters, then 6 characters of CRC32 check.
 - identity-service stores its SHA-256 hash, gives it an expiry and shows it once.
+- Sent as `Authorization: Bearer`; such a request is authenticated with that token alone and its
+  cookie ignored. Every request introspects it with `POST /internal/v1/api-tokens/introspect`, as
+  the actor `system` and without a cache; the introspection returns its user, organization, role
+  and scopes. It needs no `Origin`: it is no ambient credential.
+- A route whose `security` names no `apiToken` answers `403 auth.api-token-not-accepted`; a token
+  without the scopes of the `apiToken` requirement `403 auth.scope-missing`.
 
 ### Internal token
 

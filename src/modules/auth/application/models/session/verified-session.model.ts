@@ -34,8 +34,8 @@ export interface VerifiedSession {
    * Property organizationId
    *
    * @description
-   * Organization of the session. Always `null` in version 1.0.0 of the internal contract: a session
-   * belongs to an organization once the organization selection exists.
+   * Current organization of the session, chosen with `PUT /v1/session/organization`; `null` when
+   * it has none, or when its user no longer belongs to it.
    *
    * @type {string | null}
    * @readonly
@@ -46,7 +46,8 @@ export interface VerifiedSession {
    * Property role
    *
    * @description
-   * Member role in that organization; always `null` in version 1.0.0 of the internal contract.
+   * Role of the user in that organization, from the copy of the memberships of identity-service;
+   * `null` without an organization.
    *
    * @type {string | null}
    * @readonly
@@ -57,7 +58,7 @@ export interface VerifiedSession {
    * Property scopes
    *
    * @description
-   * Scopes the session grants; empty in version 1.0.0 of the internal contract.
+   * Scopes the session grants: every scope, as the introspection lists them.
    *
    * @type {readonly string[]}
    * @readonly
