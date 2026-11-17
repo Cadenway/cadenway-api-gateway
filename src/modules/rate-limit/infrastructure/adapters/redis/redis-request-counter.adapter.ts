@@ -20,6 +20,18 @@ import type { RequestCounter } from '../../../application/ports/outbound/counter
 export interface RequestQuota {
   // #region Properties
   /**
+   * Property limit
+   *
+   * @description
+   * Name of the limit in the log lines of an outage: `credential`, `anonymous` or
+   * `bearer-failures`. Never part of a key.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly limit: string;
+
+  /**
    * Property requests
    *
    * @description
@@ -71,7 +83,9 @@ const REDIS_RETRY_DELAY_MS: number = 1000;
  * Constant KEY_PREFIX
  *
  * @description
- * Prefix of the Redis keys of the counters: `rate-limit:<kind>:<id>`.
+ * Prefix of the Redis keys of the counters: `rate-limit:<kind>:<id>` for a credential,
+ * `rate-limit:anonymous:<pseudonym>` and `rate-limit:bearer-failures:<pseudonym>` for a client
+ * address.
  *
  * @type {string}
  */
@@ -100,15 +114,27 @@ function allowance(refusal?: RateLimiterRes): RequestAllowance {
  * (`RateLimiterRedis`: one atomic Lua script per request, keys that expire with their window), so
  * every instance of the gateway shares the counters.
  *
- * When Redis cannot count (unreachable, not ready, or slower than `storeTimeoutMs`), the request
- * is counted in the memory of this instance with the same quota for one second before Redis is
- * tried again, and a `warn` line says so once per outage; a line says when Redis counts again. The authenticated routes keep working, and a
- * credential is still limited per instance (at most the quota times the number of instances in a
- * window) rather than not at all. Redis answers again on its own: the connection keeps
- * reconnecting, and readiness reports the outage meanwhile.
+ * When Redis cannot count or read a counter (unreachable, not ready, or slower than
+ * `storeTimeoutMs`), the request is counted or read in the memory of this instance with the same
+ * quota for one second before Redis is tried again, and a `warn` line names the limit once per
+ * outage; a line says when Redis counts again. The routes keep working, and a key is still limited
+ * per instance (at most the quota times the number of instances in a window) rather than not at
+ * all. Redis answers again on its own: the connection keeps reconnecting, and readiness reports
+ * the outage meanwhile.
  */
 export class RedisRequestCounter implements RequestCounter {
   // #region Properties
+  /**
+   * Property quota
+   *
+   * @description
+   * The quota this counter enforces.
+   *
+   * @type {RequestQuota}
+   * @readonly
+   */
+  private readonly quota: RequestQuota;
+
   /**
    * Property store
    *
@@ -176,6 +202,7 @@ export class RedisRequestCounter implements RequestCounter {
    * @constructor
    */
   public constructor(redis: Redis, quota: RequestQuota) {
+    this.quota = quota;
     const limiter: RateLimiterRedis = new RateLimiterRedis({
       storeClient: redis,
       keyPrefix: KEY_PREFIX,
@@ -231,12 +258,50 @@ export class RedisRequestCounter implements RequestCounter {
   }
 
   /**
+   * Method peek
+   *
+   * @description
+   * Reads the counter of a key in Redis, or in memory while Redis cannot count, without counting
+   * a request: one more fits while fewer requests than the quota were counted in the window.
+   *
+   * @param {string} key - Key of the counter.
+   * @returns {Promise<RequestAllowance>} Whether one more request fits, and when to retry.
+   */
+  public async peek(key: string): Promise<RequestAllowance> {
+    if (Date.now() >= this.retryRedisAt) {
+      try {
+        const state: RateLimiterRes | null = await this.store.get(key);
+        this.recovered();
+        return this.remainingOf(state);
+      } catch (failure) {
+        this.degrade(failure);
+      }
+    }
+    return this.remainingOf(await this.fallback.get(key));
+  }
+
+  /**
+   * Method remainingOf
+   *
+   * @description
+   * Maps the state of a counter to whether one more request fits in the quota.
+   *
+   * @param {RateLimiterRes | null} state - The counter, `null` when the key has no window yet.
+   * @returns {RequestAllowance} The allowance.
+   */
+  private remainingOf(state: RateLimiterRes | null): RequestAllowance {
+    return state === null || state.consumedPoints < this.quota.requests
+      ? allowance()
+      : allowance(state);
+  }
+
+  /**
    * Method degrade
    *
    * @description
    * Records that Redis could not count: the next requests of the next second are counted in memory.
-   * Logs it once per outage, with the kind of the failure only: neither the key nor the address of
-   * Redis.
+   * Logs it once per outage, with the name of the limit and the kind of the failure only: neither
+   * the key nor the address of Redis.
    *
    * @param {unknown} failure - What the Redis counter threw.
    */
@@ -247,7 +312,10 @@ export class RedisRequestCounter implements RequestCounter {
     }
     this.degraded = true;
     this.logger.warn(
-      { reason: failure instanceof Error ? failure.name : 'unknown error' },
+      {
+        limit: this.quota.limit,
+        reason: failure instanceof Error ? failure.name : 'unknown error',
+      },
       'rate limit counted in memory: redis cannot count',
     );
   }
@@ -263,7 +331,7 @@ export class RedisRequestCounter implements RequestCounter {
       return;
     }
     this.degraded = false;
-    this.logger.log({}, 'rate limit counted in redis again');
+    this.logger.log({ limit: this.quota.limit }, 'rate limit counted in redis again');
   }
   // #endregion
 }

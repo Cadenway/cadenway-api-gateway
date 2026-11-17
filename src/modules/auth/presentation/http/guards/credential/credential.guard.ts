@@ -8,11 +8,12 @@ import {
   type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import {
   apiTokenInvalidProblem,
   apiTokenNotAcceptedProblem,
+  bearerFailureLimitExceededProblem,
   organizationNotSelectedProblem,
   scopeMissingProblem,
 } from '../../../../../../problems/credential-problems.js';
@@ -21,11 +22,13 @@ import {
   sessionRequiredProblem,
 } from '../../../../../../problems/session-problems.js';
 import { toPublicProblem } from '../../../../../../problems/upstream-problem.js';
+import { toClientAddress } from '../../../../../../presentation/http/mappers/client-address.mapper.js';
 import { attachVerifiedCredential } from '../../../../../../presentation/http/session/request-session.js';
 import { readSessionCookie } from '../../../../../../presentation/http/session/session-cookie.js';
 import type { VerifiedApiToken } from '../../../../application/models/api-token/verified-api-token.model.js';
 import type { VerifiedSession } from '../../../../application/models/session/verified-session.model.js';
-import { VerifyApiToken } from '../../../../application/use-cases/queries/api-token/verify-api-token/verify-api-token.use-case.js';
+import type { VerifyApiTokenOutput } from '../../../../application/use-cases/commands/api-token/verify-api-token/verify-api-token.output.js';
+import { VerifyApiToken } from '../../../../application/use-cases/commands/api-token/verify-api-token/verify-api-token.use-case.js';
 import { VerifySession } from '../../../../application/use-cases/queries/session/verify-session/verify-session.use-case.js';
 import {
   readBearerToken,
@@ -59,8 +62,11 @@ import {
  *    token: a stale one never makes it fail.
  * 2. A request that carries a bearer token is authenticated with that token alone, and its cookie
  *    is ignored; an operation whose credential is optional (the sign-out) ignores the bearer token
- *    instead. A token that cannot be a personal API token, or that the introspection does not find
- *    active, answers `401 auth.api-token-invalid`. Then the operation must accept a token
+ *    instead. A client address that failed 10 bearer-token authentications in the current minute
+ *    answers `429 rate-limit.exceeded` with `Retry-After` before any call, whatever its token. A
+ *    token that cannot be a personal API token, or that the introspection does not find active,
+ *    answers `401 auth.api-token-invalid` and counts as a failure of the address. Then the
+ *    operation must accept a token
  *    (`403 auth.api-token-not-accepted`) and the token must hold every scope of its `apiToken`
  *    requirement (`403 auth.scope-missing`). A token needs no `Origin`: it is no ambient
  *    credential.
@@ -178,8 +184,9 @@ export class CredentialGuard implements CanActivate {
    * @returns {Promise<boolean>} `true` when the request may continue.
    * @throws {ProblemException} 401 `auth.session-required`, `auth.session-expired` or
    * `auth.api-token-invalid`; 403 `auth.csrf-rejected`, `auth.api-token-not-accepted`,
-   * `auth.scope-missing` or `organization.not-selected`; or 503 `upstream.*` when identity-service
-   * cannot answer.
+   * `auth.scope-missing` or `organization.not-selected`; 429 `rate-limit.exceeded` after too many
+   * failed bearer tokens from the client address; or 503 `upstream.*` when identity-service cannot
+   * answer.
    * @throws {Error} When the handler declares no `OperationSecurity`: a programming error.
    */
   public async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -198,7 +205,7 @@ export class CredentialGuard implements CanActivate {
     if (!credentialIsOptional(operation)) {
       const bearer: BearerToken = readBearerToken(request);
       if (bearer.kind !== 'absent') {
-        await this.authenticateApiToken(request, bearer, operation);
+        await this.authenticateApiToken(context, bearer, operation);
         return true;
       }
     }
@@ -210,28 +217,38 @@ export class CredentialGuard implements CanActivate {
    * Method authenticateApiToken
    *
    * @description
-   * Authenticates a request by its personal API token, then checks that the operation accepts
-   * the token and that the token holds its scopes.
+   * Authenticates a request by its personal API token, within the limit of the failed bearer
+   * authentications of its client address, then checks that the operation accepts the token and
+   * that the token holds its scopes.
    *
-   * @param {Request} request - Incoming request.
+   * @param {ExecutionContext} context - Execution context of the request, for `Retry-After`.
    * @param {BearerToken} bearer - The bearer token of the request, present.
    * @param {OperationSecurity} operation - Security of the operation.
    * @returns {Promise<void>} Resolves once the request carries its identity.
    */
   private async authenticateApiToken(
-    request: Request,
+    context: ExecutionContext,
     bearer: BearerToken,
     operation: OperationSecurity,
   ): Promise<void> {
-    if (bearer.kind !== 'token') {
-      throw apiTokenInvalidProblem();
-    }
-    const token: VerifiedApiToken | null = await this.introspect(() =>
-      this.apiTokens.execute(bearer.token),
+    const request: Request = context.switchToHttp().getRequest<Request>();
+    const verification: VerifyApiTokenOutput = await this.introspect(() =>
+      this.apiTokens.execute({
+        token: bearer.kind === 'token' ? bearer.token : null,
+        clientAddress: toClientAddress(request),
+      }),
     );
-    if (token === null) {
+    if (verification.outcome === 'throttled') {
+      context
+        .switchToHttp()
+        .getResponse<Response>()
+        .setHeader('Retry-After', String(verification.retryAfterSeconds));
+      throw bearerFailureLimitExceededProblem();
+    }
+    if (verification.outcome === 'invalid') {
       throw apiTokenInvalidProblem();
     }
+    const token: VerifiedApiToken = verification.token;
     const requiredScopes: readonly string[] | undefined = apiTokenScopesOf(operation);
     if (requiredScopes === undefined) {
       throw apiTokenNotAcceptedProblem();
@@ -314,13 +331,11 @@ export class CredentialGuard implements CanActivate {
    * refusing the issuer or the actor) answers `503 upstream.unauthorized` and any other client
    * error `503 upstream.failed`, never the internal problem itself.
    *
-   * @param {() => Promise<TCredential | null>} call - The introspection.
-   * @returns {Promise<TCredential | null>} The credential, or `null` when it is not active.
+   * @param {() => Promise<TResult>} call - The introspection.
+   * @returns {Promise<TResult>} What the introspection answered.
    * @throws {ProblemException} 503 `upstream.*` when identity-service cannot answer.
    */
-  private async introspect<TCredential>(
-    call: () => Promise<TCredential | null>,
-  ): Promise<TCredential | null> {
+  private async introspect<TResult>(call: () => Promise<TResult>): Promise<TResult> {
     try {
       return await call();
     } catch (error) {

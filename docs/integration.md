@@ -102,7 +102,9 @@ Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
   inactive one answers `401 auth.api-token-invalid`. Then the operation must accept a token
   (`403 auth.api-token-not-accepted`) and the token must hold its scopes
   (`403 auth.scope-missing`, `details.requiredScopes`). The sign-out, whose credential is optional,
-  ignores a bearer token. Another `Authorization` scheme leaves the request to its cookie.
+  ignores a bearer token. Another `Authorization` scheme leaves the request to its cookie. A
+  malformed or inactive token counts as a failed bearer authentication of the client address (see
+  the rate limit below).
 - **Cross-site check.** It applies to requests the cookie authenticates, after the credential is
   known and before the introspection: no credential answers `401 auth.session-required`, not
   `403`. A `POST`, `PUT` or `PATCH` needs an exact `Origin` and `Content-Type: application/json`
@@ -120,6 +122,24 @@ Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
   milliseconds), the request, and those of the next second, are counted in the memory of the
   instance with the same quota, logged once per outage: the routes stay available, and a
   credential is still limited per instance.
+- **Limits per client address** (decision 2 of the P2b security follow-ups), with the same `429`,
+  `Retry-After` and Redis fallback; a request with a valid session or token keeps only the limit
+  of its credential:
+  - A request without a credential (the routes of `auth.yaml` with `security: []`, and a sign-out
+    without an active session) is counted by `RateLimitGuard` on its client address: 60 per
+    minute (`rate-limit:anonymous:<pseudonym>`). A malformed body is counted too; a request the
+    cross-site check refuses is not.
+  - Failed bearer authentications (`401 auth.api-token-invalid`, a malformed token included) are
+    limited to 10 per minute per client address (`rate-limit:bearer-failures:<pseudonym>`). The
+    credential guard reads that counter before it looks at a bearer token; past the limit, every
+    bearer token from the address answers `429` without an introspection, a valid one too, until
+    the window ends, while its sessions are unaffected.
+  - The client address is `request.ip` behind one trusted hop, the address Traefik saw, the one
+    identity-service records with a session; an IPv6 address counts with its whole `/64`. A key
+    holds a pseudonym, never the address: 128 bits of an HMAC-SHA-256 under a key derived with
+    HKDF from the private part of `INTERNAL_TOKEN_PRIVATE_JWK`, which every instance holds. An
+    unkeyed hash of an IPv4 address would be reversed by hashing the 2^32 addresses. No log line
+    carries an address or a pseudonym.
 - **Errors.** Each route answers the client errors its operation declares, with the French title
   of the contract; any other is `503 upstream.failed`. On a route about one member or invitation,
   `404 organization.not-found` (the caller left the organization) answers the
@@ -210,6 +230,11 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
   and scopes. It needs no `Origin`: it is no ambient credential.
 - A route whose `security` names no `apiToken` answers `403 auth.api-token-not-accepted`; a token
   without the scopes of the `apiToken` requirement `403 auth.scope-missing`.
+- Failed bearer authentications are limited per client address: once an address has had 10
+  tokens refused (`401 auth.api-token-invalid`, malformed ones included) in the current minute,
+  every bearer token it sends answers `429 rate-limit.exceeded` with `Retry-After` before any
+  introspection, a valid one too, until the window ends. A valid token counts no failure and keeps
+  only its own limit; the sessions of the address are unaffected.
 
 ### Internal token
 
@@ -247,7 +272,9 @@ cookie and the CSRF check; the settings below are inferred from a public API ser
 on another origin than the applications, not prescribed by a rule:
 
 - `trust proxy` is `1`: Express believes the `X-Forwarded-*` headers of one hop, Traefik, and never
-  a header the client wrote itself.
+  a header the client wrote itself. `request.ip` is then the address Traefik saw:
+  `toClientAddress` of `src/presentation/http/mappers/` reads it for the `client` of a sign-in and
+  for the limits per client address.
 - `helmet` with its defaults.
 - `cookie-parser` without a secret: the session token is opaque and verified by introspection, so
   no cookie is signed.

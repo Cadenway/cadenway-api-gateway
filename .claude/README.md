@@ -48,7 +48,7 @@ check that writes files. No agent delegates further.
 | `cw-gw-auth-builder` | Token verification, scopes, organization context. | opus | xhigh | Assigned writes |
 | `cw-gw-public-endpoint-builder` | Routes without a session: forms, contact, webhooks. | sonnet | high | Assigned writes |
 | `cw-gw-client-builder` | Generated internal clients. | sonnet | medium | Assigned writes |
-| `cw-gw-rate-limit-maintainer` | Per-token limits in Redis. | sonnet | medium | Assigned writes |
+| `cw-gw-rate-limit-maintainer` | Per-token and per-address limits in Redis. | sonnet | medium | Assigned writes |
 | `cw-gw-test-writer` | Route, aggregate and contract tests. | sonnet | high | Assigned writes |
 | `cw-gw-deploy-maintainer` | Dockerfile, deploy/compose.yaml, Traefik labels. | sonnet | medium | Assigned writes |
 | `cw-gw-contract-reviewer` | Public and internal contract fidelity. | opus | high | Read-only |

@@ -40,9 +40,11 @@ Read the request, then re-read it against what you are about to do. Everything b
 
 ## Procedure
 
-1. Default: 600 requests per minute per token; stricter limits on public routes.
+1. Default: 600 requests per minute per token; per client address (`request.ip`, one trusted hop), 60 requests
+   per minute without a credential and 10 failed bearer authentications per minute, read before any introspection.
 2. Answer 429 with `Retry-After`; count in the organization's API usage (billing reads it from events).
-3. Fail open only if Redis is down and the route is authenticated; log it.
+3. Key a client address by a keyed hash, never the raw address, and log neither.
+4. While Redis is down, count in the memory of the instance with the same quota; log it once per outage.
 
 ## Checks
 

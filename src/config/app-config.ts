@@ -19,7 +19,9 @@ import { z } from 'zod';
  * the gateway signs the internal token of the calls it makes (`INTERNAL_TOKEN_ISSUER`,
  * `INTERNAL_TOKEN_PRIVATE_JWK`) and verifies none: it authenticates the applications itself.
  * `REDIS_URL` (`redisConfigShape` of `@cadenway/nest-common/redis`) is the Redis that holds the
- * per-token rate-limit counters, and nothing else for the gateway. There is no NATS variable yet:
+ * rate-limit counters, per credential and per client address, and nothing else for the gateway.
+ * The private part of `INTERNAL_TOKEN_PRIVATE_JWK` also keys the hash of the client addresses in
+ * those counters. There is no NATS variable yet:
  * the gateway gets the broker when it publishes its usage event.
  */
 export interface AppConfig extends BaseConfig, InternalTokenSignerConfig, RedisConfig {

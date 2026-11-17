@@ -8,7 +8,7 @@ describe('CountRequest', () => {
     const consume = vi.fn<RequestCounter['consume']>(() =>
       Promise.resolve({ allowed: true, retryAfterSeconds: 0 }),
     );
-    const useCase: CountRequest = new CountRequest({ consume });
+    const useCase: CountRequest = new CountRequest({ consume, peek: vi.fn() });
 
     await useCase.execute({ credentialKind: 'api-token', credentialId: 'token-id' });
     await useCase.execute({ credentialKind: 'session', credentialId: 'token-id' });
@@ -19,6 +19,7 @@ describe('CountRequest', () => {
   it('answers what the counter answers', async () => {
     const useCase: CountRequest = new CountRequest({
       consume: () => Promise.resolve({ allowed: false, retryAfterSeconds: 12 }),
+      peek: vi.fn(),
     });
 
     await expect(

@@ -19,6 +19,7 @@ import {
  * @type {RequestQuota}
  */
 export const TOKEN_REQUEST_QUOTA: RequestQuota = Object.freeze({
+  limit: 'credential',
   requests: 600,
   windowSeconds: 60,
   storeTimeoutMs: 100,

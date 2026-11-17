@@ -11,6 +11,8 @@ import { IdentityServiceClient } from '../../src/clients/identity-service.client
 import { OrganizationServiceClient } from '../../src/clients/organization-service.client.js';
 import { createGatewayApplication } from '../../src/gateway-application.js';
 import type { RequestCounter } from '../../src/modules/rate-limit/application/ports/outbound/counters/requests/request-counter.port.js';
+import { ANONYMOUS_REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/addresses/anonymous-request-counter.token.js';
+import { BEARER_FAILURE_COUNTER } from '../../src/modules/rate-limit/composition/tokens/addresses/bearer-failure-counter.token.js';
 import { REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/requests/request-counter.token.js';
 import type { FakeIdentity } from './fake-identity.js';
 import { createFakeOrganization, type FakeOrganization } from './fake-organization.js';
@@ -24,11 +26,13 @@ import { testConfig } from './test-environment.js';
 class RouteTestModule {}
 
 /**
- * The fake of the request counters: allows every request until a test says otherwise.
+ * The fake of one set of request counters: allows every request until a test says otherwise.
  */
 export interface FakeCounter {
   /** Counts one request of a key. */
   readonly consume: Mock<RequestCounter['consume']>;
+  /** Reads the counter of a key without counting. */
+  readonly peek: Mock<RequestCounter['peek']>;
 }
 
 /**
@@ -43,8 +47,12 @@ export interface RouteApplication {
   readonly logLines: string[];
   /** The fake of organization-service. */
   readonly organization: FakeOrganization;
-  /** The fake of the request counters. */
+  /** The fake of the counters of the sessions and personal API tokens. */
   readonly counter: FakeCounter;
+  /** The fake of the counters of the requests without a credential, per client address. */
+  readonly anonymousCounter: FakeCounter;
+  /** The fake of the counters of the failed bearer-token authentications, per client address. */
+  readonly bearerFailureCounter: FakeCounter;
 }
 
 /**
@@ -55,17 +63,20 @@ export interface RouteApplication {
 export function createFakeCounter(): FakeCounter {
   return {
     consume: vi.fn(() => Promise.resolve({ allowed: true, retryAfterSeconds: 0 })),
+    peek: vi.fn(() => Promise.resolve({ allowed: true, retryAfterSeconds: 0 })),
   };
 }
 
 /**
  * Creates the gateway as `main.ts` does (the same `createGatewayApplication`: error format, trust
  * proxy, cookie-parser, CORS, organization context), with identity-service, organization-service
- * and the Redis counters of the rate limit replaced by fakes.
+ * and the Redis counters of the rate limits replaced by fakes. The pseudonyms of the client
+ * addresses are the real ones.
  *
  * @param fake - The fake of identity-service.
  * @param organization - The fake of organization-service; a fresh one when omitted.
- * @param counter - The fake of the request counters; one that allows everything when omitted.
+ * @param counter - The fake of the counters of the credentials; one that allows everything when
+ * omitted.
  * @returns The application and its log lines.
  */
 export async function createRouteApplication(
@@ -84,10 +95,22 @@ export async function createRouteApplication(
     module: RouteTestModule,
     imports: [...ROUTE_MODULES],
   };
+  const anonymousCounter: FakeCounter = createFakeCounter();
+  const bearerFailureCounter: FakeCounter = createFakeCounter();
   const app: NestExpressApplication = await createGatewayApplication(testConfig(), sink, root);
   Object.assign(app.get(IdentityServiceClient), fake);
   Object.assign(app.get(OrganizationServiceClient), organization);
   Object.assign(app.get<symbol, RequestCounter>(REQUEST_COUNTER), counter);
+  Object.assign(app.get<symbol, RequestCounter>(ANONYMOUS_REQUEST_COUNTER), anonymousCounter);
+  Object.assign(app.get<symbol, RequestCounter>(BEARER_FAILURE_COUNTER), bearerFailureCounter);
   await app.init();
-  return { app, server: app.getHttpServer() as App, logLines, organization, counter };
+  return {
+    app,
+    server: app.getHttpServer() as App,
+    logLines,
+    organization,
+    counter,
+    anonymousCounter,
+    bearerFailureCounter,
+  };
 }
