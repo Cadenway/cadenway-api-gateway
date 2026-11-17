@@ -61,14 +61,6 @@ const BATCH: Record<string, unknown> = {
 };
 
 /**
- * Constant CASES
- *
- * @description
- * The success and every declared error of each invitation route of the current organization.
- *
- * @type {readonly RouteCase[]}
- */
-/**
  * Constant RESEND_AVAILABLE_AT
  *
  * @description
@@ -106,6 +98,14 @@ function expectRetryAfterUntil(response: request.Response, instant: string): voi
   expect(retryAfter).toBeLessThanOrEqual(expected + 5);
 }
 
+/**
+ * Constant CASES
+ *
+ * @description
+ * The success and every declared error of each invitation route of the current organization.
+ *
+ * @type {readonly RouteCase[]}
+ */
 const CASES: readonly RouteCase[] = [
   {
     name: 'POST /v1/invitations answers the outcome of each address',
