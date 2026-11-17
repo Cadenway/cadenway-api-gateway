@@ -49,7 +49,20 @@ export interface SessionIssued {
     readonly displayName?: string | null;
     readonly jobTitle?: string | null;
     readonly timeZone?: string;
+    readonly passwordChangedAt?: string;
     readonly version: number;
   };
+
+  /**
+   * Property deletionCancelled
+   *
+   * @description
+   * `true` when this sign-in cancelled the scheduled deletion of the account; absent or `false`
+   * otherwise.
+   *
+   * @type {boolean | undefined}
+   * @readonly
+   */
+  readonly deletionCancelled?: boolean;
   // #endregion
 }

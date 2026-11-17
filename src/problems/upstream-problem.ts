@@ -2,6 +2,7 @@ import { ProblemException, type Problem, type ProblemStatus } from '@cadenway/ne
 import type { Response } from 'express';
 
 import { isProblemStatus, publicProblem } from './public-problem.js';
+import { sessionExpiredProblem } from './session-problems.js';
 
 /**
  * Type AcceptedProblems
@@ -37,8 +38,9 @@ const INTERNAL_ACCESS_CODES: ReadonlySet<string> = new Set<string>([
  *
  * @description
  * Members of `details` that say when a refused request can succeed, in the order they are read:
- * `lockedUntil` of `auth.account-locked`, `resendAvailableAt` of `auth.code-throttled` and
- * `invitation.resend-throttled`, and `nextAvailableAt` of `invitation.daily-limit-reached`. The
+ * `lockedUntil` of `auth.account-locked`, `resendAvailableAt` of `auth.code-throttled`,
+ * `auth.reset-throttled` and `invitation.resend-throttled`, and `nextAvailableAt` of
+ * `invitation.daily-limit-reached`. The
  * internal HTTP client does not carry the headers of a problem, so `Retry-After` is derived from
  * them.
  *
@@ -207,13 +209,62 @@ export async function relayUpstream<TResult>(
   try {
     return await call();
   } catch (error) {
-    const translated: unknown = toPublicProblem(error, accepted, aliases);
-    if (translated instanceof ProblemException) {
-      const seconds: number | undefined = retryAfterSeconds(translated.problem, new Date());
-      if (seconds !== undefined) {
-        response.setHeader('Retry-After', String(seconds));
-      }
-    }
-    throw translated;
+    throw withRetryAfter(response, toPublicProblem(error, accepted, aliases));
   }
+}
+
+/**
+ * Function relaySessionUpstream
+ *
+ * @description
+ * Runs the internal call of a route about the session of the request or its account, as
+ * `relayUpstream` does, with one more translation: a `404` whose code is in `endedSession`
+ * (`session.not-found` when the session named by the introspection is no longer an open session
+ * of the user, `user.not-found` when its account can no longer be read) means that the session
+ * ended after its introspection, and answers `401 auth.session-expired`. The web application then
+ * signs the person in again; the public operations declare no such `404`.
+ *
+ * @param {Response} response - Response of the public request.
+ * @param {AcceptedProblems} accepted - Client errors the public operation declares.
+ * @param {() => Promise<TResult>} call - The internal call.
+ * @param {readonly string[]} endedSession - Codes of the internal `404` that end the session.
+ * @returns {Promise<TResult>} What the call resolved with.
+ * @throws {unknown} `401 auth.session-expired`, the public problem of `toPublicProblem`, or an
+ * error that is not a problem, unchanged.
+ */
+export async function relaySessionUpstream<TResult>(
+  response: Response,
+  accepted: AcceptedProblems,
+  call: () => Promise<TResult>,
+  endedSession: readonly string[],
+): Promise<TResult> {
+  try {
+    return await call();
+  } catch (error) {
+    if (endedSession.some((code: string) => isUpstreamProblem(error, 404, code))) {
+      throw sessionExpiredProblem(error);
+    }
+    throw withRetryAfter(response, toPublicProblem(error, accepted));
+  }
+}
+
+/**
+ * Function withRetryAfter
+ *
+ * @description
+ * Sets `Retry-After` on the response for a translated `429` problem (see `retryAfterSeconds`): the
+ * error filter of `@cadenway/nest-common` writes the body and keeps the headers already set.
+ *
+ * @param {Response} response - Response of the public request.
+ * @param {unknown} translated - What the route is about to throw.
+ * @returns {unknown} The same error.
+ */
+function withRetryAfter(response: Response, translated: unknown): unknown {
+  if (translated instanceof ProblemException) {
+    const seconds: number | undefined = retryAfterSeconds(translated.problem, new Date());
+    if (seconds !== undefined) {
+      response.setHeader('Retry-After', String(seconds));
+    }
+  }
+  return translated;
 }

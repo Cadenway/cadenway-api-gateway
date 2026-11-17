@@ -7,6 +7,18 @@
 export interface CreateApiTokenInput {
   // #region Properties
   /**
+   * Property sessionId
+   *
+   * @description
+   * Id of the session of the request, as its introspection returned it: identity-service checks
+   * its recent authentication.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly sessionId: string;
+
+  /**
    * Property name
    *
    * @description

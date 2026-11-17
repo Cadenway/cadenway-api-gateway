@@ -24,4 +24,17 @@ describe('toCurrentUser', () => {
     const profile = { displayName: 'camille', jobTitle: 'Designer', timeZone: 'Europe/London' };
     expect(toCurrentUser({ ...account, ...profile })).toEqual({ ...account, ...profile });
   });
+
+  it('passes on when the password was last set, once identity sends it', () => {
+    const user = toCurrentUser({ ...account, passwordChangedAt: '2026-08-12T09:30:00Z' });
+
+    expect(user).toMatchObject({ passwordChangedAt: '2026-08-12T09:30:00Z' });
+    expect(toCurrentUser(account)).not.toHaveProperty('passwordChangedAt');
+  });
+
+  it('never passes on a member the public contract does not declare', () => {
+    const user = toCurrentUser({ ...account, mfaEnabled: true } as typeof account);
+
+    expect(user).not.toHaveProperty('mfaEnabled');
+  });
 });

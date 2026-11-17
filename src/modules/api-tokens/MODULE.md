@@ -28,3 +28,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   `403 organization.not-selected` before any call.
 - The secret of a created token leaves the gateway in the body of the creation only; it is never
   logged, and `Location` names the token by its id.
+- The creation sends identity-service the session the introspection returned (`sessionId`), whose
+  recent authentication identity-service checks: its `403 auth.reauthentication-required` is
+  relayed with `details.methods`, and its `404 session.not-found` answers
+  `401 auth.session-expired`.

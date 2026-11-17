@@ -14,6 +14,7 @@ export function createApiTokenRegistryAdapter(client: IdentityServiceClient): Ap
   return {
     createApiToken: (creation) =>
       client.createApiToken({
+        sessionId: creation.sessionId,
         name: creation.name,
         scopes: [...creation.scopes],
         expiration: creation.expiration,

@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import {
   ALL_SCOPES,
   CAMILLE,
+  CAMILLE_ORGANIZATION_SESSION,
   CAMILLE_TOKEN,
   createFakeIdentity,
   identityProblem,
@@ -459,5 +460,743 @@ describe('the profile and the credentials of /v1/me', () => {
 
     expect(response.headers['retry-after']).toBe('33');
     expect(identity.getUser).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Constant SESSION_ID
+ *
+ * @description
+ * Id of the session of the default credential of the route cases, Camille in Atelier Nord.
+ *
+ * @type {string}
+ */
+const SESSION_ID: string = CAMILLE_ORGANIZATION_SESSION.sessionId;
+
+/**
+ * Constant CURRENT_PASSWORD
+ *
+ * @description
+ * Current password of the account in the tests: it must never reach a log line.
+ *
+ * @type {string}
+ */
+const CURRENT_PASSWORD: string = 'current-secret-password-0001';
+
+/**
+ * Constant NEW_PASSWORD
+ *
+ * @description
+ * New password of the account in the tests: it must never reach a log line.
+ *
+ * @type {string}
+ */
+const NEW_PASSWORD: string = 'brand-new-secret-password-0002';
+
+/**
+ * Constant EMAIL_CODE
+ *
+ * @description
+ * Code of a change of address in the tests: it must never reach a log line.
+ *
+ * @type {string}
+ */
+const EMAIL_CODE: string = '731406';
+
+/**
+ * Constant NEW_EMAIL
+ *
+ * @description
+ * New address of the account in the tests.
+ *
+ * @type {string}
+ */
+const NEW_EMAIL: string = 'camille@ateliernord.fr';
+
+/**
+ * Constant CLEARED_COOKIE
+ *
+ * @description
+ * `Set-Cookie` of a cleared session cookie, as the contract documents it.
+ *
+ * @type {string}
+ */
+const CLEARED_COOKIE: string =
+  '__Host-cw_session=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0';
+
+/**
+ * Function inSeconds
+ *
+ * @description
+ * An instant some seconds from now, as identity-service writes it in `details`.
+ *
+ * @param {number} seconds - Seconds from now.
+ * @returns {string} The ISO 8601 instant.
+ */
+function inSeconds(seconds: number): string {
+  return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+/**
+ * Function expectRetryAfterAtMost
+ *
+ * @description
+ * Checks that `Retry-After` is a whole number of seconds between 1 and a maximum.
+ *
+ * @param {request.Response} response - The response.
+ * @param {number} seconds - The largest value expected.
+ */
+function expectRetryAfterAtMost(response: request.Response, seconds: number): void {
+  const value: number = Number(response.headers['retry-after']);
+  expect(Number.isInteger(value)).toBe(true);
+  expect(value).toBeGreaterThanOrEqual(1);
+  expect(value).toBeLessThanOrEqual(seconds);
+}
+
+/**
+ * Function expectNoCookie
+ *
+ * @description
+ * Checks that a response leaves the session cookie alone.
+ *
+ * @param {request.Response} response - The response.
+ */
+function expectNoCookie(response: request.Response): void {
+  expect(response.headers['set-cookie']).toBeUndefined();
+}
+
+/**
+ * Constant ACCOUNT_AFTER_CHANGE
+ *
+ * @description
+ * The account as identity-service answers it after a change of password.
+ *
+ * @type {typeof CAMILLE & { passwordChangedAt: string }}
+ */
+const ACCOUNT_AFTER_CHANGE: typeof CAMILLE & { passwordChangedAt: string } = {
+  ...CAMILLE,
+  passwordChangedAt: '2026-11-09T13:16:00Z',
+  version: 4,
+};
+
+/**
+ * Constant SECURITY_CASES
+ *
+ * @description
+ * The success and every declared error of the routes about the security of the account: the
+ * password, the address and the deletion.
+ *
+ * @type {readonly RouteCase[]}
+ */
+const SECURITY_CASES: readonly RouteCase[] = [
+  {
+    name: 'PUT /v1/me/password changes the password with the session and the browser, answering passwordChangedAt and ETag',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    headers: { 'User-Agent': 'Firefox', 'X-Forwarded-For': '192.0.2.14' },
+    arrange: ({ identity }) => identity.changePassword.mockResolvedValue(ACCOUNT_AFTER_CHANGE),
+    status: 200,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual(ACCOUNT_AFTER_CHANGE);
+      expect(response.headers.etag).toBe('"4"');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(identity.changePassword).toHaveBeenCalledWith(CAMILLE.id, {
+        sessionId: SESSION_ID,
+        currentPassword: CURRENT_PASSWORD,
+        newPassword: NEW_PASSWORD,
+        client: { ipAddress: '192.0.2.14', userAgent: 'Firefox' },
+      });
+    },
+  },
+  {
+    name: 'PUT /v1/me/password leaves passwordChangedAt out while identity-service does not send it',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) => identity.changePassword.mockResolvedValue({ ...CAMILLE }),
+    status: 200,
+    check: (response) => {
+      expect(response.body).not.toHaveProperty('passwordChangedAt');
+    },
+  },
+  {
+    name: 'PUT /v1/me/password refuses a body without the current password before any call',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { newPassword: NEW_PASSWORD },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { identity }) => {
+      expect(identity.changePassword).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'PUT /v1/me/password answers 401 without a session',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    credential: 'none',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    status: 401,
+    code: 'auth.session-required',
+  },
+  {
+    name: 'PUT /v1/me/password answers 404 session.not-found as 401 auth.session-expired',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(identityProblem(404, 'session.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+    check: (response) => {
+      expect(response.body).toMatchObject({ title: 'Session expirée' });
+    },
+  },
+  {
+    name: 'PUT /v1/me/password answers 404 user.not-found as 401 auth.session-expired',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(identityProblem(404, 'user.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+  },
+  {
+    name: 'PUT /v1/me/password refuses a personal API token',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    credential: 'members-token',
+    origin: null,
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    status: 403,
+    code: 'auth.api-token-not-accepted',
+  },
+  {
+    name: 'PUT /v1/me/password refuses a cookie request from another origin before the introspection',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    origin: 'https://evil.test',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    status: 403,
+    code: 'auth.csrf-rejected',
+    check: (_response, { identity }) => {
+      expect(identity.introspect).not.toHaveBeenCalled();
+    },
+  },
+  ...(
+    [
+      [
+        'auth.password-too-short',
+        { minLength: 12 },
+        'Le mot de passe doit compter 12 caractères minimum.',
+      ],
+      [
+        'auth.password-compromised',
+        {},
+        'Ce mot de passe figure parmi des mots de passe divulgués : choisissez-en un autre.',
+      ],
+      ['auth.password-incorrect', { remainingAttempts: 3 }, 'Mot de passe incorrect.'],
+    ] as const
+  ).map(([code, details, title]): RouteCase => ({
+    name: `PUT /v1/me/password relays 422 ${code} with its French title`,
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(identityProblem(422, code, details)),
+    status: 422,
+    code,
+    check: (response) => {
+      expect(response.body).toMatchObject({ title });
+      if (Object.keys(details).length === 0) {
+        expect(response.body).not.toHaveProperty('details');
+      } else {
+        expect(response.body).toMatchObject({ details });
+      }
+    },
+  })),
+  {
+    name: 'PUT /v1/me/password relays 429 auth.account-locked with Retry-After',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(
+        identityProblem(429, 'auth.account-locked', { lockedUntil: inSeconds(900) }),
+      ),
+    status: 429,
+    code: 'auth.account-locked',
+    check: (response) => {
+      expect(response.body).toMatchObject({ title: 'Trop de tentatives échouées.' });
+      expectRetryAfterAtMost(response, 900);
+    },
+  },
+  {
+    name: 'PUT /v1/me/password answers 429 beyond the quota of the session',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ counter }) =>
+      counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 9 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'PUT /v1/me/password answers an undeclared code of identity-service as 503 upstream.failed',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(identityProblem(422, 'auth.code-invalid')),
+    status: 503,
+    code: 'upstream.failed',
+  },
+  {
+    name: 'POST /v1/me/email-change sends a code to the new address with the session',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockResolvedValue({
+        email: NEW_EMAIL,
+        expiresAt: '2026-11-09T13:35:00Z',
+        resendAvailableAt: '2026-11-09T13:20:30Z',
+      }),
+    status: 202,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual({
+        email: NEW_EMAIL,
+        expiresAt: '2026-11-09T13:35:00Z',
+        resendAvailableAt: '2026-11-09T13:20:30Z',
+      });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(identity.requestEmailChange).toHaveBeenCalledWith(CAMILLE.id, {
+        sessionId: SESSION_ID,
+        email: NEW_EMAIL,
+      });
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change refuses an address that is not one',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: 'camille' },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'POST /v1/me/email-change answers 404 session.not-found as 401 auth.session-expired',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(identityProblem(404, 'session.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+  },
+  {
+    name: 'POST /v1/me/email-change relays 403 auth.reauthentication-required with its methods',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(
+        identityProblem(403, 'auth.reauthentication-required', { methods: ['password'] }),
+      ),
+    status: 403,
+    code: 'auth.reauthentication-required',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Confirmez votre identité pour continuer.',
+        status: 403,
+        code: 'auth.reauthentication-required',
+        details: { methods: ['password'] },
+      });
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change refuses a personal API token',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    credential: 'tasks-token',
+    origin: null,
+    body: { email: NEW_EMAIL },
+    status: 403,
+    code: 'auth.api-token-not-accepted',
+  },
+  {
+    name: 'POST /v1/me/email-change relays 409 auth.email-taken',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(identityProblem(409, 'auth.email-taken')),
+    status: 409,
+    code: 'auth.email-taken',
+    check: (response) => {
+      expect(response.body).toMatchObject({ title: 'Un compte existe déjà avec cette adresse.' });
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change relays 422 auth.email-unchanged',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: CAMILLE.email },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(identityProblem(422, 'auth.email-unchanged')),
+    status: 422,
+    code: 'auth.email-unchanged',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'C’est déjà votre adresse actuelle : saisissez la nouvelle.',
+      });
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change relays 429 auth.code-throttled with Retry-After',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(
+        identityProblem(429, 'auth.code-throttled', { resendAvailableAt: inSeconds(30) }),
+      ),
+    status: 429,
+    code: 'auth.code-throttled',
+    check: (response) => {
+      expectRetryAfterAtMost(response, 30);
+      const body = response.body as { details?: { resendAvailableAt?: unknown } };
+      expect(typeof body.details?.resendAvailableAt).toBe('string');
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change answers 503 when identity-service cannot answer',
+    method: 'post',
+    path: '/v1/me/email-change',
+    url: '/v1/me/email-change',
+    body: { email: NEW_EMAIL },
+    arrange: ({ identity }) =>
+      identity.requestEmailChange.mockRejectedValue(identityUnavailable('timeout')),
+    status: 503,
+    code: 'upstream.timeout',
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation confirms the code with the session and the browser',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    headers: { 'User-Agent': 'Firefox', 'X-Forwarded-For': '192.0.2.14' },
+    arrange: ({ identity }) =>
+      identity.confirmEmailChange.mockResolvedValue({
+        ...ACCOUNT_AFTER_CHANGE,
+        email: NEW_EMAIL,
+        version: 5,
+      }),
+    status: 200,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual({ ...ACCOUNT_AFTER_CHANGE, email: NEW_EMAIL, version: 5 });
+      expect(response.headers.etag).toBe('"5"');
+      expect(identity.confirmEmailChange).toHaveBeenCalledWith(CAMILLE.id, {
+        sessionId: SESSION_ID,
+        code: EMAIL_CODE,
+        client: { ipAddress: '192.0.2.14', userAgent: 'Firefox' },
+      });
+    },
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation refuses a code that is not 6 digits',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: '73140' },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation answers 404 user.not-found as 401 auth.session-expired',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    arrange: ({ identity }) =>
+      identity.confirmEmailChange.mockRejectedValue(identityProblem(404, 'user.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation refuses a cookie request without Content-Type JSON',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ code: EMAIL_CODE }),
+    status: 403,
+    code: 'auth.csrf-rejected',
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation relays 409 auth.email-taken',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    arrange: ({ identity }) =>
+      identity.confirmEmailChange.mockRejectedValue(identityProblem(409, 'auth.email-taken')),
+    status: 409,
+    code: 'auth.email-taken',
+  },
+  ...(['auth.code-invalid', 'auth.code-expired'] as const).map((code): RouteCase => ({
+    name: `POST /v1/me/email-change/confirmation relays 422 ${code}`,
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    arrange: ({ identity }) =>
+      identity.confirmEmailChange.mockRejectedValue(identityProblem(422, code)),
+    status: 422,
+    code,
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'Code incorrect ou expiré : vérifiez le dernier e-mail reçu.',
+      });
+    },
+  })),
+  {
+    name: 'POST /v1/me/email-change/confirmation answers 429 beyond the quota of the session',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    arrange: ({ counter }) =>
+      counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 4 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'POST /v1/me/email-change/confirmation answers 503 when identity-service cannot answer',
+    method: 'post',
+    path: '/v1/me/email-change/confirmation',
+    url: '/v1/me/email-change/confirmation',
+    body: { code: EMAIL_CODE },
+    arrange: ({ identity }) =>
+      identity.confirmEmailChange.mockRejectedValue(identityUnavailable('circuit-open')),
+    status: 503,
+    code: 'upstream.circuit-open',
+  },
+  {
+    name: 'POST /v1/me/deletion schedules the deletion with the session and clears the cookie on its 202',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockResolvedValue({ deleteAt: '2026-12-09T15:30:00Z' }),
+    status: 202,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual({ deleteAt: '2026-12-09T15:30:00Z' });
+      expect(response.headers['set-cookie']).toEqual([CLEARED_COOKIE]);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(identity.scheduleAccountDeletion).toHaveBeenCalledWith(CAMILLE.id, {
+        sessionId: SESSION_ID,
+      });
+    },
+  },
+  {
+    name: 'POST /v1/me/deletion refuses a body with members: the contract allows the empty object only',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: { now: true },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { identity }) => {
+      expectNoCookie(response);
+      expect(identity.scheduleAccountDeletion).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/me/deletion answers 401 without a session',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    credential: 'none',
+    body: {},
+    status: 401,
+    code: 'auth.session-required',
+  },
+  {
+    name: 'POST /v1/me/deletion answers 404 session.not-found as 401 auth.session-expired, leaving the cookie',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockRejectedValue(identityProblem(404, 'session.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+    check: expectNoCookie,
+  },
+  {
+    name: 'POST /v1/me/deletion relays 403 auth.reauthentication-required, leaving the cookie',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockRejectedValue(
+        identityProblem(403, 'auth.reauthentication-required', { methods: ['password'] }),
+      ),
+    status: 403,
+    code: 'auth.reauthentication-required',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'Confirmez votre identité pour continuer.',
+        details: { methods: ['password'] },
+      });
+      expectNoCookie(response);
+    },
+  },
+  {
+    name: 'POST /v1/me/deletion refuses a cookie request from another origin',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    origin: 'https://evil.test',
+    body: {},
+    status: 403,
+    code: 'auth.csrf-rejected',
+  },
+  {
+    name: 'POST /v1/me/deletion relays 409 account.organization-owner with the organizations, leaving the cookie',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockRejectedValue(
+        identityProblem(409, 'account.organization-owner', {
+          organizationIds: ['019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f'],
+        }),
+      ),
+    status: 409,
+    code: 'account.organization-owner',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title:
+          'Chaque organisation dont vous êtes propriétaire doit d’abord avoir un autre propriétaire.',
+        status: 409,
+        code: 'account.organization-owner',
+        details: { organizationIds: ['019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f'] },
+      });
+      expectNoCookie(response);
+    },
+  },
+  {
+    name: 'POST /v1/me/deletion answers 429 beyond the quota of the session',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ counter }) =>
+      counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 2 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'POST /v1/me/deletion answers 503 when identity-service cannot answer, leaving the cookie',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockRejectedValue(identityUnavailable()),
+    status: 503,
+    code: 'upstream.unavailable',
+    check: expectNoCookie,
+  },
+  {
+    name: 'POST /v1/me/deletion answers an internal 400 as 503 upstream.failed, leaving the cookie',
+    method: 'post',
+    path: '/v1/me/deletion',
+    url: '/v1/me/deletion',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.scheduleAccountDeletion.mockRejectedValue(identityProblem(400, 'request.invalid')),
+    status: 503,
+    code: 'upstream.failed',
+    check: expectNoCookie,
+  },
+];
+
+describe('the security of the account under /v1/me', () => {
+  let identity: FakeIdentity;
+  let application: RouteApplication;
+
+  beforeAll(async () => {
+    identity = createFakeIdentity();
+    application = await createRouteApplication(identity);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterAll(async () => {
+    await application.app.close();
+  });
+
+  it('exercises every status each route declares', () => {
+    expectEveryDeclaredStatus(SECURITY_CASES);
+  });
+
+  it.each(SECURITY_CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
+    '%s',
+    async (_name, routeCase) => {
+      await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it('calls identity-service as the user of the session, without an organization it does not need', async () => {
+    let context: OrganizationContext | undefined;
+    identity.scheduleAccountDeletion.mockImplementation(() => {
+      context = getOrganizationContext();
+      return Promise.resolve({ deleteAt: '2026-12-09T15:30:00Z' });
+    });
+
+    await runRouteCase(application, identity, {
+      name: 'deletion',
+      method: 'post',
+      path: '/v1/me/deletion',
+      url: '/v1/me/deletion',
+      credential: 'session-without-organization',
+      body: {},
+      status: 202,
+    });
+
+    expect(context).toMatchObject({ actor: { type: 'user', id: CAMILLE.id } });
   });
 });

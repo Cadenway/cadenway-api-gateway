@@ -26,12 +26,15 @@ export function sessionRequiredProblem(): ProblemException {
  * `401 auth.session-expired`: the cookie names a session that ended (expired, revoked or unknown),
  * or whose account can no longer be read. The web application signs the person in again.
  *
+ * @param {unknown} cause - The internal problem that showed the session ended, kept for the log
+ * line of the request; none when the introspection itself said so.
  * @returns {ProblemException} The problem to throw.
  */
-export function sessionExpiredProblem(): ProblemException {
+export function sessionExpiredProblem(cause?: unknown): ProblemException {
   return publicProblem({
     status: 401,
     code: 'auth.session-expired',
     detail: 'The session of this request has ended.',
+    ...(cause === undefined ? {} : { cause }),
   });
 }

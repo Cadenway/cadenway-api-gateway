@@ -47,8 +47,9 @@ event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 | `src/modules/auth/`             | `CredentialGuard` (the session cookie or the personal API token, introspected on every request; the security requirement and organization scope of each operation; the organization context), `CsrfGuard`, the cross-site checks and the introspection ports                                              |
 | `src/modules/rate-limit/`       | `RateLimitGuard`: 600 requests per minute per session or personal API token, 60 per minute per client address without a credential; the 10 failed bearer authentications per minute per client address the credential guard reads; counted on Redis with rate-limiter-flexible, addresses as keyed hashes |
 | `src/problems/`                 | The French titles of the public problems, the translation of internal errors, `Retry-After`, the check of internal answers against their contract                                                                                                                                                         |
-| `src/modules/auth-routes/`      | The routes under `/v1/auth` and their `IdentityAuth` port                                                                                                                                                                                                                                                 |
-| `src/modules/me/`               | `GET /v1/me`, `PATCH /v1/me` and their `IdentityUsers` port                                                                                                                                                                                                                                               |
+| `src/modules/auth-routes/`      | The routes under `/v1/auth` (sign-up, sign-in, sign-out, password reset, re-authentication) and their `IdentityAuth` port                                                                                                                                                                                 |
+| `src/modules/me/`               | The routes under `/v1/me` (the account, its profile, password, address and deletion) and their `IdentityUsers` port                                                                                                                                                                                       |
+| `src/modules/sessions/`         | The routes under `/v1/sessions` (list, close one, close the others) and their `SessionRegistry` port                                                                                                                                                                                                      |
 | `src/modules/organizations/`    | The routes of `openapi/public/organizations.yaml`                                                                                                                                                                                                                                                         |
 | `src/modules/members/`          | The member routes of `openapi/public/members.yaml`                                                                                                                                                                                                                                                        |
 | `src/modules/invitations/`      | The invitation routes of `openapi/public/members.yaml`                                                                                                                                                                                                                                                    |
@@ -67,15 +68,15 @@ cadenway-api-gateway is the only API the applications and third-party integratio
 | Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
 | Command palette | search-service                                                                                                           |
 
-Public routes without a session: the sign-up and sign-in flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
+Public routes without a session: the sign-up, sign-in and password reset flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, the password reset with the inspection of its link and its confirmation, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
 ## Architectural ownership
 
 Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for ports, adapters, dependency direction, naming and test placement.
 
 - Each capability lives at `src/modules/<module>/` with `MODULE.md` and `<module>.module.ts`.
-  The existing owners are `auth`, `auth-routes`, `me`, `rate-limit`, `organizations`,
-  `members`, `invitations` and `api-tokens`. Add new owners for aggregated resources and
+  The existing owners are `auth`, `auth-routes`, `me`, `sessions`, `rate-limit`,
+  `organizations`, `members`, `invitations` and `api-tokens`. Add new owners for aggregated resources and
   unauthenticated workflows when those capabilities are implemented.
 - HTTP controllers, guards and DTOs live in `presentation/http/`. Every route delegates to an
   operation in `application/use-cases/{commands,queries}/<area>/<operation>/`. Application uses

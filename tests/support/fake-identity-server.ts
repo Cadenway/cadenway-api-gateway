@@ -27,17 +27,30 @@ interface FakeSession {
   readonly userId: string;
   readonly expiresAt: string;
   revoked: boolean;
+  /** When its person last proved who they are in it, in milliseconds; 0 for never. */
+  authenticatedAt: number;
 }
 
 /**
+ * The window of recent authentication of identity-service, in milliseconds.
+ */
+const RECENT_AUTHENTICATION_MS = 10 * 60 * 1000;
+
+/**
  * A fake identity-service over HTTP, from `openapi/internal/identity-service.yaml`: the sign-in by
- * password, the introspection, the revocation and the reading of an account. It verifies the
- * internal token of every call as identity-service does (`aud: identity-service`, issuer
- * `api-gateway` and its public key) and refuses an actor the route does not accept.
+ * password, the introspection, the revocation and the reading of an account, and the security of
+ * the account (password reset, re-authentication, password change, change of address, deletion,
+ * sessions). It verifies the internal token of every call as identity-service does
+ * (`aud: identity-service`, issuer `api-gateway` and its public key), refuses an actor the route
+ * does not accept, and answers `404 session.not-found` for a session that is not an open session
+ * of the actor.
  */
 export class FakeIdentityServer {
   /** Every call received, in order. */
   public readonly calls: IdentityCall[] = [];
+
+  /** Every body received, in order, to check what the gateway sends. */
+  public readonly bodies: Record<string, unknown>[] = [];
 
   /** Every session token issued, to check that none reaches a log line. */
   public readonly issuedTokens: string[] = [];
@@ -48,14 +61,26 @@ export class FakeIdentityServer {
   /** Active personal API tokens, by secret: the answer of their introspection. */
   public readonly apiTokens = new Map<string, Record<string, unknown>>();
 
+  /** The token of the one usable reset link, issued by the last reset request. */
+  public resetToken: string | undefined;
+
+  /** The code of the pending change of address, issued by the last request. */
+  public emailChangeCode: string | undefined;
+
   private readonly sessions = new Map<string, FakeSession>();
   private readonly server: Server;
+  private password: string;
+  private email: string;
+  private pendingEmail: string | undefined;
+  private passwordChangedAt: string | undefined;
 
   private constructor(
     private readonly verifier: InternalTokenVerifier,
     private readonly user: User,
-    private readonly password: string,
+    password: string,
   ) {
+    this.password = password;
+    this.email = user.email;
     this.server = createServer((request: IncomingMessage, response: ServerResponse) => {
       void this.handle(request, response);
     });
@@ -98,6 +123,24 @@ export class FakeIdentityServer {
   }
 
   /**
+   * Ends the window of recent authentication of every session, as 10 minutes would.
+   */
+  public forgetRecentAuthentications(): void {
+    for (const session of this.sessions.values()) {
+      session.authenticatedAt = 0;
+    }
+  }
+
+  /**
+   * Counts the open sessions of the account.
+   *
+   * @returns The count.
+   */
+  public openSessionCount(): number {
+    return [...this.sessions.values()].filter((session) => !session.revoked).length;
+  }
+
+  /**
    * Lists the actor of each call to a route.
    *
    * @param method - Method of the route.
@@ -136,6 +179,7 @@ export class FakeIdentityServer {
       chunks.length === 0
         ? {}
         : (JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
+    this.bodies.push(body);
     let principal: InternalPrincipal;
     try {
       principal = await this.verifier.verify(
@@ -151,7 +195,7 @@ export class FakeIdentityServer {
     if (method === 'POST' && path === '/internal/v1/auth/sign-in') {
       if (actor !== 'anonymous') {
         this.problem(response, 403, 'auth.actor-not-allowed');
-      } else if (body.email !== this.user.email || body.password !== this.password) {
+      } else if (body.email !== this.email || body.password !== this.password) {
         this.problem(response, 422, 'auth.invalid-credentials', { remainingAttempts: 4 });
       } else {
         const token: string = randomBytes(32).toString('base64url');
@@ -160,6 +204,7 @@ export class FakeIdentityServer {
           userId: this.user.id,
           expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
           revoked: false,
+          authenticatedAt: Date.now(),
         };
         this.sessions.set(token, session);
         this.issuedTokens.push(token);
@@ -170,7 +215,7 @@ export class FakeIdentityServer {
             expiresAt: session.expiresAt,
             persistent: body.rememberMe === true,
           },
-          user: this.user,
+          user: this.account(),
         });
       }
       return;
@@ -237,11 +282,283 @@ export class FakeIdentityServer {
       } else if (read[1] !== principal.actor.id || read[1] !== this.user.id) {
         this.problem(response, 404, 'user.not-found');
       } else {
-        this.json(response, 200, this.user);
+        this.json(response, 200, this.account());
       }
       return;
     }
+    if (this.handlePasswordReset(method, path, body, actor, response)) {
+      return;
+    }
+    if (this.handleAccountSecurity(method, path, body, principal, response)) {
+      return;
+    }
     this.problem(response, 404, 'http.not-found');
+  }
+
+  /**
+   * The account as identity-service answers it, with its current address and, once the password
+   * changed, when.
+   *
+   * @returns The account.
+   */
+  private account(): User {
+    return {
+      ...this.user,
+      email: this.email,
+      ...(this.passwordChangedAt === undefined
+        ? {}
+        : { passwordChangedAt: this.passwordChangedAt }),
+    };
+  }
+
+  /**
+   * Finds an open session of the actor.
+   *
+   * @param id - Id of the session.
+   * @param principal - The verified internal token.
+   * @returns The session, or `undefined` when it is not an open session of the actor.
+   */
+  private openSessionOf(id: unknown, principal: InternalPrincipal): FakeSession | undefined {
+    const session: FakeSession | undefined = [...this.sessions.values()].find(
+      (candidate) => candidate.id === id,
+    );
+    return session !== undefined && !session.revoked && session.userId === principal.actor.id
+      ? session
+      : undefined;
+  }
+
+  /**
+   * Serves the password reset, as the actor `anonymous`.
+   *
+   * @param method - Method of the call.
+   * @param path - Path of the call.
+   * @param body - Parsed body.
+   * @param actor - Actor of the internal token.
+   * @param response - Response to write.
+   * @returns `true` when the call was one of the reset routes.
+   */
+  private handlePasswordReset(
+    method: string,
+    path: string,
+    body: Record<string, unknown>,
+    actor: InternalActorType,
+    response: ServerResponse,
+  ): boolean {
+    if (method !== 'POST' || !path.startsWith('/internal/v1/auth/password-reset')) {
+      return false;
+    }
+    if (actor !== 'anonymous') {
+      this.problem(response, 403, 'auth.actor-not-allowed');
+      return true;
+    }
+    const expiresAt: string = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    if (path === '/internal/v1/auth/password-reset') {
+      if (body.email === this.email) {
+        this.resetToken = randomBytes(32).toString('base64url');
+      }
+      this.json(response, 202, {
+        email: body.email,
+        expiresAt,
+        resendAvailableAt: new Date(Date.now() + 45 * 1000).toISOString(),
+      });
+      return true;
+    }
+    if (this.resetToken === undefined || body.token !== this.resetToken) {
+      this.problem(response, 422, 'auth.reset-link-expired');
+      return true;
+    }
+    if (path === '/internal/v1/auth/password-reset/inspection') {
+      this.json(response, 200, {
+        email: this.email,
+        expiresAt,
+        sessionCount: this.openSessionCount(),
+      });
+      return true;
+    }
+    if (path === '/internal/v1/auth/password-reset/confirmation') {
+      this.resetToken = undefined;
+      this.password = String(body.newPassword);
+      this.passwordChangedAt = new Date().toISOString();
+      const closed: number = body.closeOtherSessions === false ? 0 : this.openSessionCount();
+      if (body.closeOtherSessions !== false) {
+        this.revokeAll();
+      }
+      this.json(response, 200, { email: this.email, closedSessionCount: closed });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Serves the routes of the signed-in person about the security of the account, as the actor
+   * `user`, for the session the gateway names (path, body `sessionId` or query
+   * `currentSessionId`).
+   *
+   * @param method - Method of the call.
+   * @param path - Path of the call, with its query.
+   * @param body - Parsed body.
+   * @param principal - The verified internal token.
+   * @param response - Response to write.
+   * @returns `true` when the call was one of these routes.
+   */
+  private handleAccountSecurity(
+    method: string,
+    path: string,
+    body: Record<string, unknown>,
+    principal: InternalPrincipal,
+    response: ServerResponse,
+  ): boolean {
+    const url: URL = new URL(path, 'http://identity-service');
+    const sessionRoute: RegExpExecArray | null =
+      /^\/internal\/v1\/sessions\/([^/]+)\/(reauthentication|revoke-others)$/u.exec(url.pathname);
+    const userRoute: RegExpExecArray | null =
+      /^\/internal\/v1\/users\/([^/]+)\/(password|email-change|email-change\/confirmation|deletion|sessions)$/u.exec(
+        url.pathname,
+      );
+    if (sessionRoute === null && userRoute === null) {
+      return false;
+    }
+    if (principal.actor.type !== 'user') {
+      this.problem(response, 403, 'auth.actor-not-allowed');
+      return true;
+    }
+    if (userRoute !== null && userRoute[1] !== principal.actor.id) {
+      this.problem(response, 404, 'user.not-found');
+      return true;
+    }
+    const sessionId: unknown =
+      sessionRoute?.[1] ??
+      (userRoute?.[2] === 'sessions' ? url.searchParams.get('currentSessionId') : body.sessionId);
+    const session: FakeSession | undefined = this.openSessionOf(sessionId, principal);
+    if (session === undefined) {
+      this.problem(response, 404, 'session.not-found');
+      return true;
+    }
+    const recent: boolean = Date.now() - session.authenticatedAt < RECENT_AUTHENTICATION_MS;
+    const route = `${method} ${sessionRoute?.[2] ?? userRoute?.[2] ?? ''}`;
+    switch (route) {
+      case 'POST reauthentication':
+        return this.reauthenticate(session, body, response);
+      case 'POST revoke-others':
+        return this.revokeOthers(session, response);
+      case 'PUT password':
+        if (body.currentPassword !== this.password) {
+          this.problem(response, 422, 'auth.password-incorrect', { remainingAttempts: 4 });
+          return true;
+        }
+        this.password = String(body.newPassword);
+        this.passwordChangedAt = new Date().toISOString();
+        session.authenticatedAt = Date.now();
+        this.json(response, 200, this.account());
+        return true;
+      case 'POST email-change':
+        if (!recent) {
+          this.problem(response, 403, 'auth.reauthentication-required', { methods: ['password'] });
+          return true;
+        }
+        this.pendingEmail = String(body.email);
+        this.emailChangeCode = '731406';
+        this.json(response, 202, {
+          email: this.pendingEmail,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          resendAvailableAt: new Date(Date.now() + 30 * 1000).toISOString(),
+        });
+        return true;
+      case 'POST email-change/confirmation':
+        if (this.pendingEmail === undefined || body.code !== this.emailChangeCode) {
+          this.problem(response, 422, 'auth.code-invalid');
+          return true;
+        }
+        this.email = this.pendingEmail;
+        this.pendingEmail = undefined;
+        this.json(response, 200, this.account());
+        return true;
+      case 'POST deletion':
+        if (!recent) {
+          this.problem(response, 403, 'auth.reauthentication-required', { methods: ['password'] });
+          return true;
+        }
+        this.revokeAll();
+        this.json(response, 202, {
+          deleteAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+        });
+        return true;
+      case 'GET sessions':
+        this.json(response, 200, { items: this.openSessions(session), nextCursor: null });
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Checks the password in a session and opens its window of recent authentication.
+   *
+   * @param session - The session of the request.
+   * @param body - Parsed body.
+   * @param response - Response to write.
+   * @returns `true`.
+   */
+  private reauthenticate(
+    session: FakeSession,
+    body: Record<string, unknown>,
+    response: ServerResponse,
+  ): boolean {
+    if (body.password !== this.password) {
+      this.problem(response, 422, 'auth.password-incorrect', { remainingAttempts: 4 });
+      return true;
+    }
+    session.authenticatedAt = Date.now();
+    this.json(response, 200, {
+      authenticatedAt: new Date(session.authenticatedAt).toISOString(),
+      expiresAt: new Date(session.authenticatedAt + RECENT_AUTHENTICATION_MS).toISOString(),
+    });
+    return true;
+  }
+
+  /**
+   * Revokes every open session but one.
+   *
+   * @param session - The session kept.
+   * @param response - Response to write.
+   * @returns `true`.
+   */
+  private revokeOthers(session: FakeSession, response: ServerResponse): boolean {
+    let revokedCount = 0;
+    for (const other of this.sessions.values()) {
+      if (other !== session && !other.revoked) {
+        other.revoked = true;
+        revokedCount += 1;
+      }
+    }
+    this.json(response, 200, { revokedCount });
+    return true;
+  }
+
+  /**
+   * Lists the open sessions, as the internal contract describes them.
+   *
+   * @param current - The session of the request.
+   * @returns The sessions.
+   */
+  private openSessions(current: FakeSession): Record<string, unknown>[] {
+    return [...this.sessions.values()]
+      .filter((candidate) => !candidate.revoked)
+      .map((candidate) => ({
+        id: candidate.id,
+        current: candidate === current,
+        device: {
+          type: 'desktop',
+          browser: 'Firefox',
+          browserVersion: '145',
+          os: 'Windows',
+          osVersion: null,
+        },
+        ipAddress: '127.0.0.1',
+        signedInAt: new Date().toISOString(),
+        lastActiveAt: new Date().toISOString(),
+        expiresAt: candidate.expiresAt,
+      }));
   }
 
   private json(response: ServerResponse, status: number, body: unknown): void {

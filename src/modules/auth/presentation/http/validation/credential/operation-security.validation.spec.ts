@@ -249,7 +249,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(29);
+    expect(operations).toHaveLength(40);
   });
 
   it.each(operations.map((operation: ContractOperation) => [operation.key, operation] as const))(

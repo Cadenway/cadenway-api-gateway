@@ -1,6 +1,16 @@
-import type { CodeSent, SignInMethods, SignedIn } from '@cadenway/contracts/types/public/auth';
+import type {
+  CodeSent,
+  PasswordResetCompleted,
+  PasswordResetLink,
+  PasswordResetLinkSent,
+  SignInMethods,
+  SignedIn,
+} from '@cadenway/contracts/types/public/auth';
 import {
+  ConfirmPasswordResetBody,
   DiscoverSignInMethodsBody,
+  InspectPasswordResetLinkBody,
+  RequestPasswordResetBody,
   RequestSignInCodeBody,
   ResendSignUpCodeBody,
   SignInWithCodeBody,
@@ -31,7 +41,7 @@ import {
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
 import { toCurrentUser } from '../../../../../../presentation/http/mappers/current-user.mapper.js';
-import { browserClient } from '../../mappers/auth/browser-client.mapper.js';
+import { browserClient } from '../../../../../../presentation/http/mappers/browser-client.mapper.js';
 import { DiscoverSignInMethods } from '../../../../application/use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.use-case.js';
 import { SignUp } from '../../../../application/use-cases/commands/auth/sign-up/sign-up.use-case.js';
 import { ResendSignUpCode } from '../../../../application/use-cases/commands/auth/resend-sign-up-code/resend-sign-up-code.use-case.js';
@@ -40,9 +50,15 @@ import { SignInWithPassword } from '../../../../application/use-cases/commands/a
 import { RequestSignInCode } from '../../../../application/use-cases/commands/auth/request-sign-in-code/request-sign-in-code.use-case.js';
 import { SignInWithCode } from '../../../../application/use-cases/commands/auth/sign-in-with-code/sign-in-with-code.use-case.js';
 import { SignOut } from '../../../../application/use-cases/commands/auth/sign-out/sign-out.use-case.js';
+import { RequestPasswordReset } from '../../../../application/use-cases/commands/auth/request-password-reset/request-password-reset.use-case.js';
+import { InspectPasswordResetLink } from '../../../../application/use-cases/queries/auth/inspect-password-reset-link/inspect-password-reset-link.use-case.js';
+import { ConfirmPasswordReset } from '../../../../application/use-cases/commands/auth/confirm-password-reset/confirm-password-reset.use-case.js';
 
 import type { CodeSent as InternalCodeSent } from '../../../../application/models/auth/code-sent.model.js';
 import type { SessionIssued } from '../../../../application/models/auth/session-issued.model.js';
+import type { PasswordResetLinkSent as InternalPasswordResetLinkSent } from '../../../../application/models/auth/password-reset-link-sent.model.js';
+import type { PasswordResetLink as InternalPasswordResetLink } from '../../../../application/models/auth/password-reset-link.model.js';
+import type { PasswordResetCompleted as InternalPasswordResetCompleted } from '../../../../application/models/auth/password-reset-completed.model.js';
 
 /**
  * Constant INVALID_REQUEST
@@ -165,6 +181,59 @@ const PASSWORD_SIGN_IN_PROBLEMS: AcceptedProblems = {
 const SIGN_OUT_PROBLEMS: AcceptedProblems = {};
 
 /**
+ * Constant PASSWORD_RESET_REQUEST_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/auth/password-reset` answers as they are: the
+ * throttle of the reset requests of the address (`ResetThrottled`), with `Retry-After` derived
+ * from `details.resendAvailableAt`.
+ *
+ * @type {AcceptedProblems}
+ */
+const PASSWORD_RESET_REQUEST_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  429: ['auth.reset-throttled'],
+};
+
+/**
+ * Constant RESET_LINK_EXPIRED
+ *
+ * @description
+ * The `422` of a link that expired, was used, was replaced or is unknown (`ResetLinkExpired`).
+ *
+ * @type {string}
+ */
+const RESET_LINK_EXPIRED: string = 'auth.reset-link-expired';
+
+/**
+ * Constant PASSWORD_RESET_INSPECTION_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/auth/password-reset/inspection` answers as
+ * they are.
+ *
+ * @type {AcceptedProblems}
+ */
+const PASSWORD_RESET_INSPECTION_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  422: [RESET_LINK_EXPIRED],
+};
+
+/**
+ * Constant PASSWORD_RESET_CONFIRMATION_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/auth/password-reset/confirmation` answers as
+ * they are (`PasswordResetRefused`): the link first, then the rules of the new password.
+ *
+ * @type {AcceptedProblems}
+ */
+const PASSWORD_RESET_CONFIRMATION_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  422: [RESET_LINK_EXPIRED, 'auth.password-too-short', 'auth.password-compromised'],
+};
+
+/**
  * Constant STRICT_SIGN_OUT_BODY
  *
  * @description
@@ -197,21 +266,28 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  *
  * @description
  * The routes of `openapi/public/auth.yaml` under `/v1/auth`: discovery of the sign-in methods,
- * sign-up and its verification, sign-in by password or by email code, and sign-out. Each maps the
- * public request to its internal call of `openapi/internal/identity-service.yaml`, and the internal
- * answer back to the public contract, member by member.
+ * sign-up and its verification, sign-in by password or by email code, sign-out, and password
+ * reset (request, inspection of the link, confirmation). Each maps the public request to its
+ * internal call of `openapi/internal/identity-service.yaml`, and the internal answer back to the
+ * public contract, member by member. The re-authentication, which needs a session, has its own
+ * controller (`ReauthenticationController`).
  *
  * - Every route is `POST` and passes `CsrfGuard` first: an exact allowed `Origin` and
  *   `Content-Type: application/json`, signed in or not (the login cross-site decision of
  *   docs/integration.md). Every
  *   answer carries `Cache-Control: no-store` (see `AuthRoutesModule`).
  * - The flows carry no session (`security: []`): `CredentialGuard` reads neither the cookie nor a
- *   bearer token for them, so a stale one never makes them fail, and identity-service sees them as
- *   the actor `anonymous`. The sign-out reads the cookie only (`security: [sessionCookie, {}]`),
- *   and its session is counted by `RateLimitGuard`.
+ *   bearer token for them, so a stale one never makes them fail, `RateLimitGuard` counts them on
+ *   the client address, and identity-service sees them as the actor `anonymous`. The password
+ *   reset is one of them: it never signs in. The sign-out reads the cookie only
+ *   (`security: [sessionCookie, {}]`), and its session is counted by `RateLimitGuard`.
  * - The routes that sign in set `__Host-cw_session` from the token identity-service returns once
  *   (`Max-Age` only for a persistent session) and answer the user and the session, never the
- *   token. The browser's address and User-Agent travel in `client`.
+ *   token, with `deletionCancelled` when identity-service says the sign-in cancelled a scheduled
+ *   deletion. The browser's address and User-Agent travel in `client`.
+ * - Passwords, codes and reset tokens travel to identity-service in the body only and are never
+ *   logged; the reset token reaches the gateway in the body too, never in a URL (the link keeps it
+ *   in its fragment, which only the browser reads).
  * - A client error of identity-service is answered as the public problem of its code, with the
  *   French title of the gateway and `Retry-After` for a `429`, when the public operation declares
  *   it; any other answer is `503 upstream.*` (see `relayUpstream`).
@@ -307,6 +383,39 @@ export class AuthController {
    * @readonly
    */
   private readonly signOutUseCase: SignOut;
+
+  /**
+   * Property requestPasswordResetUseCase
+   *
+   * @description
+   * Asks Identity for a password reset link.
+   *
+   * @type {RequestPasswordReset}
+   * @readonly
+   */
+  private readonly requestPasswordResetUseCase: RequestPasswordReset;
+
+  /**
+   * Property inspectPasswordResetLinkUseCase
+   *
+   * @description
+   * Reads the account of a password reset link without using it.
+   *
+   * @type {InspectPasswordResetLink}
+   * @readonly
+   */
+  private readonly inspectPasswordResetLinkUseCase: InspectPasswordResetLink;
+
+  /**
+   * Property confirmPasswordResetUseCase
+   *
+   * @description
+   * Sets a new password with a reset link.
+   *
+   * @type {ConfirmPasswordReset}
+   * @readonly
+   */
+  private readonly confirmPasswordResetUseCase: ConfirmPasswordReset;
   // #endregion
 
   // #region Constructor
@@ -324,6 +433,9 @@ export class AuthController {
    * @param {RequestSignInCode} requestSignInCodeUseCase - Requests a one-time sign-in code for the address.
    * @param {SignInWithCode} signInWithCodeUseCase - Opens a session after Identity verifies the sign-in code.
    * @param {SignOut} signOutUseCase - Revokes the current session through Identity.
+   * @param {RequestPasswordReset} requestPasswordResetUseCase - Asks for a password reset link.
+   * @param {InspectPasswordResetLink} inspectPasswordResetLinkUseCase - Reads the account of a link.
+   * @param {ConfirmPasswordReset} confirmPasswordResetUseCase - Sets a new password with a link.
    * @constructor
    */
   public constructor(
@@ -335,6 +447,9 @@ export class AuthController {
     @Inject(RequestSignInCode) requestSignInCodeUseCase: RequestSignInCode,
     @Inject(SignInWithCode) signInWithCodeUseCase: SignInWithCode,
     @Inject(SignOut) signOutUseCase: SignOut,
+    @Inject(RequestPasswordReset) requestPasswordResetUseCase: RequestPasswordReset,
+    @Inject(InspectPasswordResetLink) inspectPasswordResetLinkUseCase: InspectPasswordResetLink,
+    @Inject(ConfirmPasswordReset) confirmPasswordResetUseCase: ConfirmPasswordReset,
   ) {
     this.discoverSignInMethodsUseCase = discoverSignInMethodsUseCase;
     this.signUpUseCase = signUpUseCase;
@@ -344,6 +459,9 @@ export class AuthController {
     this.requestSignInCodeUseCase = requestSignInCodeUseCase;
     this.signInWithCodeUseCase = signInWithCodeUseCase;
     this.signOutUseCase = signOutUseCase;
+    this.requestPasswordResetUseCase = requestPasswordResetUseCase;
+    this.inspectPasswordResetLinkUseCase = inspectPasswordResetLinkUseCase;
+    this.confirmPasswordResetUseCase = confirmPasswordResetUseCase;
   }
   // #endregion
 
@@ -607,11 +725,131 @@ export class AuthController {
   }
 
   /**
+   * Method requestPasswordReset
+   *
+   * @description
+   * `POST /v1/auth/password-reset`: asks for a link to choose a new password. `202` the same way
+   * whether or not an account uses the address; identity-service throttles the requests of the
+   * address (`429 auth.reset-throttled`, with `Retry-After`). No session is read or opened.
+   *
+   * @param {z.output<typeof RequestPasswordResetBody>} body - The address.
+   * @param {Request} request - Request, for the browser's address and User-Agent.
+   * @param {Response} response - Response, for `Retry-After`.
+   * @returns {Promise<PasswordResetLinkSent>} When a link sent now expires and when another can be
+   * asked for.
+   */
+  @Post('password-reset')
+  @CredentialGuard.requires({
+    operationId: 'requestPasswordReset',
+    security: [],
+    organization: false,
+  })
+  @HttpCode(202)
+  public async requestPasswordReset(
+    @Body(new ZodValidationPipe(RequestPasswordResetBody))
+    body: z.output<typeof RequestPasswordResetBody>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<PasswordResetLinkSent> {
+    const sent: InternalPasswordResetLinkSent = await relayUpstream(
+      response,
+      PASSWORD_RESET_REQUEST_PROBLEMS,
+      () =>
+        this.requestPasswordResetUseCase.execute({
+          email: body.email,
+          client: browserClient(request),
+        }),
+    );
+    return {
+      email: sent.email,
+      expiresAt: sent.expiresAt,
+      resendAvailableAt: sent.resendAvailableAt,
+    };
+  }
+
+  /**
+   * Method inspectPasswordResetLink
+   *
+   * @description
+   * `POST /v1/auth/password-reset/inspection`: the account a link is for and the sessions the
+   * reset would close, without using the link. The token comes in the body, never in a URL, and
+   * is never logged. `200`, or `422 auth.reset-link-expired`.
+   *
+   * @param {z.output<typeof InspectPasswordResetLinkBody>} body - The token of the link.
+   * @param {Response} response - Response of the request.
+   * @returns {Promise<PasswordResetLink>} The address of the account, the expiry of the link and
+   * the open sessions of the account.
+   */
+  @Post('password-reset/inspection')
+  @CredentialGuard.requires({
+    operationId: 'inspectPasswordResetLink',
+    security: [],
+    organization: false,
+  })
+  @HttpCode(200)
+  public async inspectPasswordResetLink(
+    @Body(new ZodValidationPipe(InspectPasswordResetLinkBody))
+    body: z.output<typeof InspectPasswordResetLinkBody>,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<PasswordResetLink> {
+    const link: InternalPasswordResetLink = await relayUpstream(
+      response,
+      PASSWORD_RESET_INSPECTION_PROBLEMS,
+      () => this.inspectPasswordResetLinkUseCase.execute({ token: body.token }),
+    );
+    return { email: link.email, expiresAt: link.expiresAt, sessionCount: link.sessionCount };
+  }
+
+  /**
+   * Method confirmPasswordReset
+   *
+   * @description
+   * `POST /v1/auth/password-reset/confirmation`: sets the new password of the account of the link
+   * and uses the link up. Never signs in: no cookie is set or read. `closeOtherSessions` is `true`
+   * unless the browser sends `false`. `200`, or `422 auth.reset-link-expired`,
+   * `auth.password-too-short` or `auth.password-compromised`.
+   *
+   * @param {z.output<typeof ConfirmPasswordResetBody>} body - Token, new password and the choice
+   * about the other sessions.
+   * @param {Request} request - Request, for the browser's address and User-Agent.
+   * @param {Response} response - Response of the request.
+   * @returns {Promise<PasswordResetCompleted>} The address of the account and the sessions closed.
+   */
+  @Post('password-reset/confirmation')
+  @CredentialGuard.requires({
+    operationId: 'confirmPasswordReset',
+    security: [],
+    organization: false,
+  })
+  @HttpCode(200)
+  public async confirmPasswordReset(
+    @Body(new ZodValidationPipe(ConfirmPasswordResetBody))
+    body: z.output<typeof ConfirmPasswordResetBody>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<PasswordResetCompleted> {
+    const completed: InternalPasswordResetCompleted = await relayUpstream(
+      response,
+      PASSWORD_RESET_CONFIRMATION_PROBLEMS,
+      () =>
+        this.confirmPasswordResetUseCase.execute({
+          token: body.token,
+          newPassword: body.newPassword,
+          closeOtherSessions: body.closeOtherSessions,
+          client: browserClient(request),
+        }),
+    );
+    return { email: completed.email, closedSessionCount: completed.closedSessionCount };
+  }
+
+  /**
    * Method signIn
    *
    * @description
    * Completes a route that signs in: sets the session cookie from the token, which leaves the
-   * gateway in this header only, and answers the user and the session (its id and expiry).
+   * gateway in this header only, and answers the user and the session (its id and expiry), with
+   * `deletionCancelled` when identity-service sent it (a sign-in that cancelled a scheduled
+   * deletion of the account).
    *
    * @param {Response} response - Response of the request.
    * @param {SessionIssued} issued - Session opened by identity-service.
@@ -622,6 +860,9 @@ export class AuthController {
     return {
       user: toCurrentUser(issued.user),
       session: { id: issued.session.id, expiresAt: issued.session.expiresAt },
+      ...(issued.deletionCancelled === undefined
+        ? {}
+        : { deletionCancelled: issued.deletionCancelled }),
     };
   }
   // #endregion

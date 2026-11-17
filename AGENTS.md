@@ -27,7 +27,7 @@ cadenway-api-gateway is the only API the applications and third-party integratio
 | Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
 | Command palette | search-service                                                                                                           |
 
-Public routes without a session: the sign-up and sign-in flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
+Public routes without a session: the sign-up, sign-in and password reset flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, the password reset with the inspection of its link and its confirmation, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
 
 ## Language
 
