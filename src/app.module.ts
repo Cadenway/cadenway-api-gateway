@@ -2,9 +2,13 @@ import { HealthModule, redisIndicator, type HealthModuleOptions } from '@cadenwa
 import { ResilientRedisClient } from '@cadenway/nest-common/redis';
 import { Module, type Type } from '@nestjs/common';
 
-import { RateLimitModule } from './infrastructure/redis/rate-limit.module.js';
+import { RedisModule } from './infrastructure/redis/redis.module.js';
+import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
 import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
+import { InvitationsModule } from './modules/invitations/invitations.module.js';
+import { MembersModule } from './modules/members/members.module.js';
 import { MeRoutesModule } from './modules/me/me.module.js';
+import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 
 /**
  * Constant ROUTE_MODULES
@@ -16,7 +20,14 @@ import { MeRoutesModule } from './modules/me/me.module.js';
  *
  * @type {readonly Type[]}
  */
-export const ROUTE_MODULES: readonly Type[] = [AuthRoutesModule, MeRoutesModule];
+export const ROUTE_MODULES: readonly Type[] = [
+  AuthRoutesModule,
+  MeRoutesModule,
+  OrganizationsModule,
+  MembersModule,
+  InvitationsModule,
+  ApiTokensModule,
+];
 
 /**
  * Constant SHUTDOWN_DELAY_MS
@@ -50,9 +61,11 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  *   `main.ts` validated once to `createApplication` (`provideConfig: true`), which provides it
  *   globally. Importing this module reads nothing.
  * - Route capabilities import technical clients and bind their own ports.
- * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule` and `MeRoutesModule`, the routes
- *   of `openapi/public/auth.yaml`.
- * - `RateLimitModule` opens the Redis connection of the rate-limit counters.
+ * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule` and `MeRoutesModule` (the routes
+ *   of `openapi/public/auth.yaml`), `OrganizationsModule` (`organizations.yaml`), `MembersModule`
+ *   and `InvitationsModule` (`members.yaml`) and `ApiTokensModule` (`api-tokens.yaml`). Each
+ *   applies the credential guard of `auth` and the rate limit of `rate-limit`.
+ * - `RedisModule` opens the Redis connection of the rate-limit counters.
  * - `HealthModule` serves `GET /health/live`, which checks nothing, and `GET /health/ready`, which
  *   answers 503 while Redis does not answer `PING` within one second, and from the start of the
  *   stop (see `SHUTDOWN_DELAY_MS`). Both are what the container healthcheck and the deployment
@@ -63,9 +76,9 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  */
 @Module({
   imports: [
-    RateLimitModule,
+    RedisModule,
     HealthModule.forRootAsync({
-      imports: [RateLimitModule],
+      imports: [RedisModule],
       inject: [ResilientRedisClient],
       useFactory: (redis: ResilientRedisClient): HealthModuleOptions => ({
         indicators: [redisIndicator(redis)],

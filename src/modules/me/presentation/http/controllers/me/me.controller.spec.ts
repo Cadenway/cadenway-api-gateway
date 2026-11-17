@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  ALL_SCOPES,
   CAMILLE,
   CAMILLE_TOKEN,
   createFakeIdentity,
@@ -15,6 +16,11 @@ import {
   createRouteApplication,
   type RouteApplication,
 } from '../../../../../../../tests/support/route-application.js';
+import {
+  expectEveryDeclaredStatus,
+  runRouteCase,
+  type RouteCase,
+} from '../../../../../../../tests/support/route-cases.js';
 
 /**
  * Function getMe
@@ -79,7 +85,7 @@ describe('GET /v1/me', () => {
       organizationId: null,
       actor: { type: 'user', id: CAMILLE.id },
       role: null,
-      scopes: [],
+      scopes: ALL_SCOPES,
     });
   });
 
@@ -232,5 +238,226 @@ describe('GET /v1/me', () => {
 
     expect(response.status).toBe(503);
     expect(response.body).toMatchObject({ code: 'upstream.failed' });
+  });
+});
+
+/**
+ * Constant PROFILE_CASES
+ *
+ * @description
+ * The success and every declared error of `PATCH /v1/me`.
+ *
+ * @type {readonly RouteCase[]}
+ */
+const PROFILE_CASES: readonly RouteCase[] = [
+  {
+    name: 'PATCH /v1/me applies the patch to the account of the session, keeping null and relaying If-Match',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    credential: 'session-without-organization',
+    body: { displayName: 'camille', jobTitle: null, timeZone: 'Europe/Lisbon', language: 'en' },
+    headers: { 'If-Match': '"2"' },
+    arrange: ({ identity }) =>
+      identity.updateUser.mockResolvedValue({
+        ...CAMILLE,
+        displayName: 'camille',
+        timeZone: 'Europe/Lisbon',
+        language: 'en',
+        version: 3,
+      }),
+    status: 200,
+    check: (response, { identity }) => {
+      expect(response.body).toMatchObject({ displayName: 'camille', jobTitle: null, version: 3 });
+      expect(response.headers.etag).toBe('"3"');
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(identity.updateUser).toHaveBeenCalledWith(
+        CAMILLE.id,
+        { displayName: 'camille', jobTitle: null, timeZone: 'Europe/Lisbon', language: 'en' },
+        '"2"',
+      );
+    },
+  },
+  {
+    name: 'PATCH /v1/me answers an older identity-service without the profile fields with their defaults',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: {},
+    arrange: ({ identity }) =>
+      identity.updateUser.mockResolvedValue({
+        id: CAMILLE.id,
+        name: CAMILLE.name,
+        email: CAMILLE.email,
+        language: 'fr',
+        version: 2,
+      }),
+    status: 200,
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        displayName: null,
+        jobTitle: null,
+        timeZone: 'Europe/Paris',
+      });
+    },
+  },
+  {
+    name: 'PATCH /v1/me refuses a language the contract does not know before any call',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: { language: 'it' },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'PATCH /v1/me relays 400 request.invalid on an unknown time zone',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: { timeZone: 'Mars/Olympus' },
+    arrange: ({ identity }) =>
+      identity.updateUser.mockRejectedValue(
+        identityProblem(400, 'request.invalid', {
+          issues: [{ in: 'body', path: 'timeZone', code: 'custom', message: 'Unknown time zone' }],
+        }),
+      ),
+    status: 400,
+    code: 'request.invalid',
+    check: (response) => {
+      expect(response.body).toMatchObject({ details: { issues: [{ path: 'timeZone' }] } });
+    },
+  },
+  {
+    name: 'PATCH /v1/me answers 401 auth.session-expired when the account is gone',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: { name: 'Camille M.' },
+    arrange: ({ identity }) =>
+      identity.updateUser.mockRejectedValue(identityProblem(404, 'user.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
+  },
+  {
+    name: 'PATCH /v1/me refuses a personal API token',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    credential: 'members-token',
+    origin: null,
+    body: { name: 'Camille M.' },
+    status: 403,
+    code: 'auth.api-token-not-accepted',
+  },
+  {
+    name: 'PATCH /v1/me relays 412 request.version-mismatch',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: { name: 'Camille M.' },
+    headers: { 'If-Match': '"1"' },
+    arrange: ({ identity }) =>
+      identity.updateUser.mockRejectedValue(
+        identityProblem(412, 'request.version-mismatch', { version: 2 }),
+      ),
+    status: 412,
+    code: 'request.version-mismatch',
+  },
+  {
+    name: 'PATCH /v1/me answers 429 beyond the quota',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: {},
+    arrange: ({ counter }) =>
+      counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 11 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'PATCH /v1/me answers 503 when identity-service cannot answer',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    body: {},
+    arrange: ({ identity }) => identity.updateUser.mockRejectedValue(identityUnavailable()),
+    status: 503,
+    code: 'upstream.unavailable',
+  },
+];
+
+describe('the profile and the credentials of /v1/me', () => {
+  let identity: FakeIdentity;
+  let application: RouteApplication;
+
+  beforeAll(async () => {
+    identity = createFakeIdentity();
+    application = await createRouteApplication(identity);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterAll(async () => {
+    await application.app.close();
+  });
+
+  it('exercises every status PATCH /v1/me declares', () => {
+    expectEveryDeclaredStatus(PROFILE_CASES);
+  });
+
+  it.each(PROFILE_CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
+    '%s',
+    async (_name, routeCase) => {
+      await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it('refuses a personal API token on GET /v1/me, after its introspection', async () => {
+    await runRouteCase(application, identity, {
+      name: 'token on the account',
+      method: 'get',
+      path: '/v1/me',
+      url: '/v1/me',
+      credential: 'tasks-token',
+      status: 403,
+      code: 'auth.api-token-not-accepted',
+    });
+
+    expect(identity.introspectApiToken).toHaveBeenCalledTimes(1);
+    expect(identity.getUser).not.toHaveBeenCalled();
+  });
+
+  it('answers 401 auth.api-token-invalid for an inactive token on GET /v1/me', async () => {
+    identity.introspectApiToken.mockResolvedValueOnce(null);
+
+    await runRouteCase(application, identity, {
+      name: 'inactive token',
+      method: 'get',
+      path: '/v1/me',
+      url: '/v1/me',
+      credential: 'tasks-token',
+      status: 401,
+      code: 'auth.api-token-invalid',
+    });
+  });
+
+  it('answers 429 on GET /v1/me beyond the quota of the session, with Retry-After', async () => {
+    application.counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 33 });
+
+    const response: request.Response = await runRouteCase(application, identity, {
+      name: 'limited session',
+      method: 'get',
+      path: '/v1/me',
+      url: '/v1/me',
+      credential: 'session-without-organization',
+      status: 429,
+      code: 'rate-limit.exceeded',
+    });
+
+    expect(response.headers['retry-after']).toBe('33');
+    expect(identity.getUser).not.toHaveBeenCalled();
   });
 });

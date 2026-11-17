@@ -5,7 +5,8 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  *
  * @description
  * French `title` of the public problems the web application shows to the person as they are,
- * by `code`, taken from the examples of `openapi/public/auth.yaml` of `@cadenway/contracts`
+ * by `code`, taken from the examples of `openapi/public/` (`auth.yaml`, `organizations.yaml`,
+ * `members.yaml`, `api-tokens.yaml`) of `@cadenway/contracts`
  * (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
  * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
  * The text is the same
@@ -39,10 +40,35 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['auth.session-expired', 'Session expirée'],
   ['auth.api-token-invalid', 'Jeton d’API invalide, expiré ou révoqué.'],
   ['auth.api-token-not-accepted', 'Cette requête n’accepte pas de jeton d’API.'],
+  ['auth.scope-missing', 'Ce jeton n’a pas la portée nécessaire pour cette requête.'],
   [
     'request.version-mismatch',
     'Ces informations ont été modifiées entre-temps : rechargez la page.',
   ],
+  ['rate-limit.exceeded', 'Trop de requêtes : réessayez dans un instant.'],
+  ['organization.not-selected', 'Choisissez une organisation pour continuer.'],
+  ['organization.role-forbidden', 'Votre rôle ne permet pas cette action.'],
+  ['organization.not-found', 'Organisation introuvable.'],
+  ['organization.slug-taken', 'Cette adresse est déjà utilisée par une autre organisation.'],
+  ['organization.slug-invalid', 'L’adresse doit compter au moins 2 caractères.'],
+  [
+    'user.not-synchronized',
+    'Votre compte est en cours de préparation : réessayez dans un instant.',
+  ],
+  ['member.not-found', 'Membre introuvable.'],
+  [
+    'member.owner-protected',
+    'Le propriétaire de l’organisation ne peut être ni retiré ni changé de rôle.',
+  ],
+  ['invitation.not-found', 'Invitation introuvable.'],
+  ['invitation.email-mismatch', 'Cette invitation a été envoyée à une autre adresse e-mail.'],
+  ['invitation.revoked', 'Cette invitation a été annulée.'],
+  ['invitation.answered', 'Vous avez déjà répondu à cette invitation.'],
+  [
+    'invitation.expired',
+    'Cette invitation a expiré : demandez-en une nouvelle à un administrateur de l’organisation.',
+  ],
+  ['api-token.not-found', 'Jeton introuvable.'],
 ]);
 
 /**

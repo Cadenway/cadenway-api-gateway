@@ -24,6 +24,11 @@ import {
 const PASSWORD = 'atelier-nord-sprint-14';
 
 /**
+ * Secret of a personal API token the fake identity-service knows.
+ */
+const BEARER = 'cw_pat_BearerTokenOfTheIntegrationTest00000';
+
+/**
  * Reads the session token out of the `Set-Cookie` of a route that signs in.
  *
  * @param response - Response of the route.
@@ -186,6 +191,42 @@ describe('session guard against identity-service over HTTP', () => {
     });
   });
 
+  it('introspects a bearer token as the actor system, ignores the cookie, and refuses the token on a session-only route', async () => {
+    const token: string = sessionTokenOf(await signIn());
+    identity.apiTokens.set(BEARER, {
+      active: true,
+      tokenType: 'api-token',
+      apiTokenId: '019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e90',
+      userId: CAMILLE.id,
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      role: 'owner',
+      scopes: ['members:read'],
+      expiresAt: null,
+    });
+
+    const refused: request.Response = await request(server)
+      .get('/v1/me')
+      .set('Authorization', `Bearer ${BEARER}`)
+      .set('Cookie', `__Host-cw_session=${encodeURIComponent(token)}`);
+    const unknown: request.Response = await request(server)
+      .get('/v1/me')
+      .set('Authorization', `Bearer ${BEARER.slice(0, -1)}1`);
+
+    expectPublicResponse('get', '/v1/me', refused);
+    expectPublicResponse('get', '/v1/me', unknown);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({
+      code: 'auth.api-token-not-accepted',
+      title: 'Cette requête n’accepte pas de jeton d’API.',
+    });
+    expect(unknown.status).toBe(401);
+    expect(unknown.body).toMatchObject({ code: 'auth.api-token-invalid' });
+    expect(identity.actorsOf('POST', '/internal/v1/api-tokens/introspect')).toEqual([
+      'system',
+      'system',
+    ]);
+  });
+
   it('signs every call with an internal token for identity-service, with the actor its route accepts', () => {
     expect(identity.calls.length).toBeGreaterThan(0);
     for (const call of identity.calls) {
@@ -207,6 +248,7 @@ describe('session guard against identity-service over HTTP', () => {
     const logs: string = logLines.join('\n');
 
     expect(logs).not.toContain(PASSWORD);
+    expect(logs).not.toContain(BEARER);
     expect(logs).not.toMatch(/__Host-cw_session=[^;\s"]/u);
     const completions = logLines
       .map((line: string) => JSON.parse(line) as Record<string, unknown>)

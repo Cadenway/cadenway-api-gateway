@@ -45,6 +45,9 @@ export class FakeIdentityServer {
   /** Introspections still to answer with 503 before answering normally. */
   public failingIntrospections = 0;
 
+  /** Active personal API tokens, by secret: the answer of their introspection. */
+  public readonly apiTokens = new Map<string, Record<string, unknown>>();
+
   private readonly sessions = new Map<string, FakeSession>();
   private readonly server: Server;
 
@@ -196,10 +199,20 @@ export class FakeIdentityServer {
               userId: session.userId,
               organizationId: null,
               role: null,
-              scopes: [],
+              scopes: ['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage'],
               expiresAt: session.expiresAt,
             },
       );
+      return;
+    }
+    if (method === 'POST' && path === '/internal/v1/api-tokens/introspect') {
+      if (actor !== 'system') {
+        this.problem(response, 403, 'auth.actor-not-allowed');
+        return;
+      }
+      const token: Record<string, unknown> | undefined =
+        typeof body.token === 'string' ? this.apiTokens.get(body.token) : undefined;
+      this.json(response, 200, token ?? { active: false });
       return;
     }
     const revoke: RegExpExecArray | null = /^\/internal\/v1\/sessions\/([^/]+)$/u.exec(path);

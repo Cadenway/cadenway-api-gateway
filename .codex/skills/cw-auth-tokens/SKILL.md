@@ -12,7 +12,8 @@ description: "The token types the gateway accepts (session, personal API token),
 | Internal token | the caller, short-lived: this gateway for the calls it makes | user, organization, member role, scopes, trace id | calls to services |
 
 - A session token switches organization only through the explicit organization-selection flow.
-- Scopes are checked per route; a session token has every scope its member role allows.
+- Scopes are checked per route, from the `security` of its public operation; a session holds
+  every scope, a personal API token its own.
 
 ## Session
 
@@ -25,13 +26,19 @@ description: "The token types the gateway accepts (session, personal API token),
   Known cost: while identity-service is unavailable, so is the API.
 - CSRF: a request with an unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated by the
   session cookie must carry an `Origin` that is exactly one of the allowed origins (the webapp and
-  the website, as for CORS) and `Content-Type: application/json`. It is refused before the
-  controller otherwise.
+  the website, as for CORS) and `Content-Type: application/json`; a bodiless `DELETE` passes on
+  its `Origin` alone. It is refused before the introspection otherwise.
 
 ## Personal API token
 
 - Format: `cw_pat_`, then 30 base62 characters, then 6 characters of CRC32 check.
 - identity-service stores its SHA-256 hash, gives it an expiry and shows it once.
+- Sent as `Authorization: Bearer`; such a request is authenticated with that token alone and its
+  cookie ignored. Every request introspects it with `POST /internal/v1/api-tokens/introspect`, as
+  the actor `system` and without a cache; the introspection returns its user, organization, role
+  and scopes. It needs no `Origin`: it is no ambient credential.
+- A route whose `security` names no `apiToken` answers `403 auth.api-token-not-accepted`; a token
+  without the scopes of the `apiToken` requirement `403 auth.scope-missing`.
 
 ## Internal token
 

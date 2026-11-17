@@ -16,13 +16,12 @@ import type { AppConfig } from '../../config/app-config.js';
 export const CONNECTION_NAME: string = 'api-gateway';
 
 /**
- * Class RateLimitModule
+ * Class RedisModule
  *
  * @description
- * Owns the Redis connection of the per-token rate-limit counters, provided under the
- * `ResilientRedisClient` class of `@cadenway/nest-common/redis`. Redis holds those counters and
- * nothing else for the gateway. The limiter itself (600 requests per minute per token, 429 with
- * `Retry-After`) is not built yet; it arrives here in phase P2b of the integration plan.
+ * Owns the shared Redis connection of the gateway, provided under the `ResilientRedisClient` class
+ * of `@cadenway/nest-common/redis`. Redis holds the per-token rate-limit counters of the
+ * `rate-limit` capability (`src/modules/rate-limit/`) and nothing else for the gateway.
  *
  * - The connection is opened at start-up from `REDIS_URL` without waiting for it: the application
  *   starts while Redis is still unreachable, and readiness answers 503 until it is ready.
@@ -35,7 +34,8 @@ export const CONNECTION_NAME: string = 'api-gateway';
  *   sends, so a command nobody awaits cannot stop the process.
  * - It is closed when the application stops.
  *
- * Imported by `AppModule` and by the `HealthModule` that builds the readiness indicator from it.
+ * Imported by `AppModule`, by the `HealthModule` that builds the readiness indicator from it, and
+ * by the `rate-limit` capability, which counts requests on it.
  */
 @Module({
   providers: [
@@ -51,7 +51,7 @@ export const CONNECTION_NAME: string = 'api-gateway';
   ],
   exports: [ResilientRedisClient],
 })
-export class RateLimitModule implements OnApplicationShutdown {
+export class RedisModule implements OnApplicationShutdown {
   // #region Properties
   /**
    * Property client

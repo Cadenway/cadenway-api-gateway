@@ -113,22 +113,32 @@ export function isUpstreamProblem(error: unknown, status: ProblemStatus, code: s
  * `404` lists the code in `accepted`, and gets a public `404` that says nothing about another
  * tenant's data.
  *
+ * `aliases` renames an internal code the public operation does not declare to the code it
+ * declares for the same status: an internal `404 organization.not-found` on a member route (the
+ * caller left the organization) is the public `404 member.not-found` of that route.
+ *
  * @param {unknown} error - What the internal client threw.
  * @param {AcceptedProblems} accepted - Client errors the public operation declares.
+ * @param {Readonly<Record<string, string>>} aliases - Public code of an internal code, by code.
  * @returns {unknown} The error to throw.
  */
-export function toPublicProblem(error: unknown, accepted: AcceptedProblems): unknown {
+export function toPublicProblem(
+  error: unknown,
+  accepted: AcceptedProblems,
+  aliases: Readonly<Record<string, string>> = {},
+): unknown {
   if (!(error instanceof ProblemException)) {
     return error;
   }
-  const { status, code, details }: Problem = error.problem;
+  const { status, code: internalCode, details }: Problem = error.problem;
   const { service, ...members }: Readonly<Record<string, unknown>> = details ?? {};
   if (status === 503) {
     return error;
   }
-  if (status === 403 && INTERNAL_ACCESS_CODES.has(code)) {
+  if (status === 403 && INTERNAL_ACCESS_CODES.has(internalCode)) {
     return upstreamProblem('unauthorized', service, error);
   }
+  const code: string = aliases[internalCode] ?? internalCode;
   if (isProblemStatus(status) && accepted[status]?.includes(code) === true) {
     return publicProblem({
       status,
