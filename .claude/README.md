@@ -1,8 +1,7 @@
 # cadenway-api-gateway: Claude Code tooling
 
-This `.claude/` folder ships the Claude Code tooling of cadenway-api-gateway: **14 agents**,
-15 slash commands, 10 rules, 14 skills, 3 hooks, the project
-settings and launch configuration. The application launch requires the planned package scripts.
+This directory contains the repository's Claude Code agents, commands, scoped rules, skills,
+hooks and project settings. The tables below explain when to use them.
 
 Start from [AGENTS.md](../AGENTS.md) (the rules every assistant follows) and [CLAUDE.md](../CLAUDE.md)
 (the Claude entry point).
@@ -85,7 +84,7 @@ check that writes files. No agent delegates further.
 | `aggregates.md` | Aggregates | `src/modules/**/application/use-cases/queries/**` |
 | `auth.md` | Authentication and authorization | `src/modules/auth/**` |
 | `clients.md` | Internal clients | `src/clients/**` |
-| `tests.md` | Tests | `**/*.spec.ts`, `tests/**` |
+| `tests.md` | Tests | `**/*.spec.ts`, `src/**/*.int-spec.ts`, `tests/**` |
 | `deploy.md` | Deployment files | `Dockerfile`, `deploy/**`, `compose.dev.yaml`, `.env.example` |
 | `language.md` | Language | always |
 | `git-and-commits.md` | Git and commits | always |
