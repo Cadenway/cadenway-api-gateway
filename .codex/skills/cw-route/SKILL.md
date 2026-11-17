@@ -3,6 +3,6 @@ name: cw-route
 description: Implement a public route from openapi/public.
 ---
 
-Use the **cw-gw-route-builder** specialist for this task when delegation is available and authorized; otherwise read `.codex/agents/cw-gw-route-builder.toml` and follow its instructions directly: the user-provided arguments
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate the user's arguments to **cw-gw-route-builder** if delegation is available and authorized.
+Otherwise read and follow `.codex/agents/cw-gw-route-builder.toml` directly with those arguments.
+Do not restate its rules or procedure.

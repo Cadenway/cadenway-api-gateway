@@ -5,28 +5,18 @@ paths:
 
 # Authentication and authorization
 
-- The organization and the member come from the verified token only. The guard that verified it
-  gives the request its context with `setRequestOrganizationContext` of `@cadenway/nest-common`,
-  with what the introspection returned, and nothing else sets a request context.
-- API tokens carry scopes (`tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`); each route
-  declares the `security` of its public operation with `CredentialGuard.requires`, checked against
-  the shipped specs by the unit tests. A session holds every scope.
-- A request with `Authorization: Bearer` is authenticated with that token alone, introspected with
-  `POST /internal/v1/api-tokens/introspect` on every request; its cookie is ignored.
-- Failed bearer authentications are limited to 10 per minute per client address: past the limit,
-  a bearer token answers `429 rate-limit.exceeded` before any introspection. Requests without a
-  credential are limited to 60 per minute per client address. The address is `request.ip` (one
-  trusted hop, Traefik) and every counter key holds a keyed hash of it, never the address; a
-  valid session or token keeps only its own limit.
-- Services receive a short-lived internal token, never the user's credential.
-- Verification keys and issuers come from configuration; nothing is hard-coded.
-- A session token is opaque: every request is verified with `POST /internal/v1/tokens/introspect` at
-  identity-service, never from a cache and never by decoding the token here.
-- The session cookie is `__Host-cw_session; HttpOnly; Secure; SameSite=Lax`.
-- CSRF: an unsafe method authenticated by the session cookie requires an `Origin` exactly equal to an
-  allowed origin and `Content-Type: application/json`; a bodiless `DELETE` passes on its `Origin`
-  alone. A bearer token needs no `Origin`. The routes of `openapi/public/auth.yaml` without a
-  session require both, signed in or not.
-- The internal token is a JWT (`alg: Ed25519`, 60 seconds, `aud` = the called service, `kid`).
-- In the V2 layout, keep guards, cookie and CSRF handling in `presentation/http/`. Put
-  verification orchestration and its ports under `application/`.
+- Only the verifying guard sets organization and member context with
+  `setRequestOrganizationContext` from `@cadenway/nest-common`, using the verified introspection result.
+- Use `CredentialGuard.requires` to declare each public operation's `security` as shipped by
+  the contract and checked by the unit tests. Require route-declared scopes for API tokens (`tasks:read`, `tasks:write`, `members:read`,
+  `webhooks:manage`). A session holds every scope. Use configured issuers and verification keys.
+- Limit requests without a credential to 60 per minute per client address and failed bearer
+  authentications to 10 per minute per address. Reject excess bearer requests with
+  `429 rate-limit.exceeded` before introspection. Read `request.ip` with one trusted hop and
+  use a keyed hash for every address counter key. Valid sessions and tokens keep their own limits.
+- Follow [`cw-auth-tokens`](../skills/cw-auth-tokens/SKILL.md) for cookie and CSRF requirements,
+  per-request session introspection, and internal JWT claims and lifetime. Keep the session opaque
+  and uncached. Never decode it. Forward only the short-lived
+  internal token to services.
+- Under V2, keep guards, cookies, and CSRF in `presentation/http/`. Put verification and its
+  ports in `application/`.

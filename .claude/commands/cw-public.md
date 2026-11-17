@@ -3,6 +3,4 @@ description: "Build a route without a session (forms, contact, webhooks)."
 argument-hint: "<route>"
 ---
 
-Delegate to the **cw-gw-public-endpoint-builder** subagent: $ARGUMENTS
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate to subagent **cw-gw-public-endpoint-builder** without restating its rules or procedure: $ARGUMENTS

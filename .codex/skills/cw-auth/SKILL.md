@@ -3,6 +3,6 @@ name: cw-auth
 description: Change token verification, scopes or organization context.
 ---
 
-Use the **cw-gw-auth-builder** specialist for this task when delegation is available and authorized; otherwise read `.codex/agents/cw-gw-auth-builder.toml` and follow its instructions directly: the user-provided arguments
-
-The agent carries its own procedure and rules; do not restate them.
+Delegate the user's arguments to **cw-gw-auth-builder** if delegation is available and authorized.
+Otherwise read and follow `.codex/agents/cw-gw-auth-builder.toml` directly with those arguments.
+Do not restate its rules or procedure.

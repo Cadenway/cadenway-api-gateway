@@ -1,33 +1,22 @@
 # cadenway-api-gateway: agent instructions
 
-These instructions are mandatory for every AI assistant working in this repository, whatever the
-vendor. [CLAUDE.md](CLAUDE.md) imports them for Claude Code. Explicit user instructions take
-precedence over procedures, never over the hard limits below.
-
-This file states the **rules**. See the tooling guides for [Claude Code](.claude/README.md)
-and [Codex](.codex/README.md) for agents, skills, commands and hooks.
+These rules apply to all assistants. [CLAUDE.md](CLAUDE.md) imports them for Claude Code.
+Explicit user instructions take precedence over procedures, never over the hard limits below.
 
 ## First read
 
-- `../cadenway-api-contracts/openapi/public/` for the route you touch, and the internal spec of each service it calls.
-- The [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N), section "cadenway-api-gateway".
-- The owning module under `src/modules/` when the route composes several services.
-- `package.json` for versions and scripts once the repository is bootstrapped. Do not restate
-  versions elsewhere: a copy goes stale.
+- For a route change, read its public OpenAPI spec and each called service's internal spec in
+  `../cadenway-api-contracts`. Read the owning module under `src/modules/` for compositions.
+- Read `package.json` for current versions and scripts. Keep version details there.
+- Consult the [repositories document](https://claude.ai/artifact/BPinmYxoF3mbK8w9BMB43N) for gateway
+  ownership and the applicable local rules or skills for the files in scope.
 
 ## What this repository is
 
-The structure and workflows below describe the bootstrap target. Check the checkout for available files and commands.
-
-cadenway-api-gateway is the only API the applications and third-party integrations see (`api.<domain>` behind Traefik). It verifies session tokens and personal API tokens, sets the current organization, limits throughput, routes to the internal services and aggregates their responses (task detail, home, command palette). Local port 3000.
-
-| Aggregate       | Composed from                                                                                                            |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Task detail     | task-service (task) + integration-service (Git links) + storage-service (attachments) + notification-service (reminders) |
-| Home            | task-service (my priorities, sprint) + notification-service (mentions, activity)                                         |
-| Command palette | search-service                                                                                                           |
-
-Public routes without a session: the sign-up and sign-in flows of `openapi/public/auth.yaml` (sign-in methods, sign-up with its code and its verification, sign-in by password or by email code, and the sign-out, whose session is optional), a list's intake form, newsletter, contact form, GitHub and GitLab webhooks. API token scopes: `tasks:read`, `tasks:write`, `members:read`, `webhooks:manage`.
+The public HTTP edge on `api.<domain>` authenticates sessions and API tokens, scopes requests,
+routes, aggregates, and rate-limits. See the [target architecture](docs/architecture.md#purpose-and-target-structure)
+for local port, aggregate sources, unauthenticated routes, and API token scopes. Check the checkout
+for implemented features and available commands.
 
 ## Language
 
@@ -40,20 +29,18 @@ Public routes without a session: the sign-up and sign-in flows of `openapi/publi
 
 ## Architectural ownership
 
-See the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md) for dependency and test rules.
+Follow the [gateway profile](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md#api-gateway-profile)
+and [local capability map](docs/architecture.md#architectural-ownership). Each capability owns a
+`MODULE.md`, HTTP adapters in `presentation/`, application use cases and ports, and local outgoing
+adapters in `infrastructure/`. Bind ports in `<module>.module.ts` or `composition/`. All routes
+call a use case. Use an application query for aggregation. `ClientsModule` exports technical clients.
+Keep shared transport helpers in `src/presentation/http/` and problem translation in `src/problems/`.
 
-- Capabilities live under `src/modules/<module>/` and declare their boundaries in `MODULE.md`.
-  Authentication and guards belong to `auth`, the public authentication routes to `auth-routes`,
-  and the current account route to `me`. Future aggregations, unauthenticated flows, and rate
-  limiting get separately owned modules.
-- Use the [NestJS architecture guide](https://github.com/Cadenway/cadenway-service-kit/blob/main/docs/hexagonal-architecture.md#api-gateway-profile)
-  for the service-style layering. Keep HTTP entry points under `presentation/`, use cases and
-  ports under `application/`, local outgoing adapters under `infrastructure/`. Bind ports in `<module>.module.ts` or use
-  the optional `composition/` wiring directory. Every route invokes an application use case, including a simple forwarded
-  call. Use a query for aggregations.
-- `ClientsModule` exports shared technical clients. Each capability owns its port, token, adapter,
-  and binding. `src/presentation/http/` holds only shared transport helpers, and `src/problems/`
-  holds problem translation.
+Use the scoped auth, route, client, and aggregate rules for implementation. Take the organization
+from the verified token. Declare every public route in the installed public contract. Give
+aggregate dependencies explicit timeouts and allow partial results only where the contract does.
+Rate-limit at 600 requests per minute per token with Redis and return `429` with `Retry-After`.
+Use strict TypeScript with neither `any` nor non-null assertions.
 
 ## Boundaries (hard rules)
 
@@ -65,45 +52,37 @@ See the [Cadenway NestJS architecture reference](https://github.com/Cadenway/cad
 
 ## GitHub files (`.github/`)
 
-This repository carries everything GitHub reads from it; Cadenway has no organization `.github`
-repository and nothing is inherited.
+Follow the scoped GitHub rule for `.github/` ownership, workflows, community files, and
+matching shared content across repository pull requests. [`.github/README.md`](.github/README.md)
+is the home page. Keep Renovate configuration local and complete without a shared preset.
 
-- [`.github/README.md`](.github/README.md) is the repository home page; `CONTRIBUTING.md`,
-  `CODE_OF_CONDUCT.md`, `SECURITY.md`, `SUPPORT.md`, `PULL_REQUEST_TEMPLATE.md`, `ISSUE_TEMPLATE/` and
-  `CODEOWNERS` sit next to it.
-- `.github/workflows/` holds this repository's complete CI, release and deploy workflows: no reusable
-  workflow from another repository. The Renovate configuration is complete here too, with no shared
-  preset.
-- The parts shared with the other repositories are duplicated on purpose; a change to them is repeated
-  in each repository through its own pull request.
+## Code quality
+
+- Read the affected entry point, its callers, and its relevant tests before editing.
+  Preserve the behavior callers rely on unless the task changes it.
+- Keep the diff focused. Use names that express intent and reuse existing code when
+  it preserves the required behavior. Extract code when it clarifies a responsibility.
+- Keep business decisions with their owning module. Validate external inputs at the
+  boundary and use documented public interfaces across modules and repositories.
+- For writes that can fail, overlap, or be retried, verify the resulting state.
+  Check transaction boundaries, tenant scope, and repeated delivery where relevant.
+- For collections and repeated work, check what grows with input size. Measure or
+  inspect the bottleneck before adding an index, cache, worker, or replica.
+- Run the repository checks that cover the affected behavior. Report the commands
+  and their results, including checks that did not run and tests that selected zero cases.
 
 ## Commands and quality gates
 
-The scripts below are this repository's contract. While the repository is being bootstrapped,
-create them with these exact names; afterwards, use them and never an ad-hoc equivalent. Run the
-narrowest check that covers the change first, then widen:
-
-| Changed                         | Minimum check                                                      |
-| ------------------------------- | ------------------------------------------------------------------ |
-| Routes or aggregates            | `pnpm test src/modules/<module>` , then the contract tests         |
-| Auth or rate limit              | `pnpm test:integration auth` or `pnpm test:integration rate-limit` |
-| Any source                      | `pnpm format:check`, `pnpm lint`, `pnpm typecheck`                 |
-| Build or runtime configuration  | `pnpm build`, `docker compose -f compose.dev.yaml config -q`       |
-| Docs or agent instructions only | Scoped formatting and link review                                  |
-
-Report the commands you actually ran and their results; a check you did not run is reported as not
-run.
+Start with the [minimum checks by change](docs/development.md#minimum-checks-by-change).
+Use its canonical script names, starting with the narrowest relevant check. See the
+[full local quality gate](docs/development.md#full-local-quality-gate) for the ordered suite,
+focused test syntax, and reporting rules shared by Codex and Claude.
 
 ## Git and branch flow
 
-- Trunk-based: work branches come from `main`, named `<type>/<lowercase-kebab-description>` with a
-  type among `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
-  `revert`; put the Cadenway task id first when there is one (`feat/cad-482-sso-screen`). Never an
-  agent name as a prefix. Validate with `git check-ref-format --branch <name>`.
-- Commits and PR titles follow Conventional Commits: `type(scope): subject`, English, imperative,
-  lowercase subject, no trailing period, at most 100 characters; `!` only for a breaking change.
-- Pull requests target `main` and are squash-merged after review and green CI. release-please opens the release pull request; its merge tags, publishes the image and lets the deploy workflow write the version into cadenway-ops.
-- Stage only the files of your task; preserve other people's changes in the working tree.
+Follow [collaboration and release](docs/development.md#collaboration-and-release) and the
+Git and commits rule for branch names, Conventional Commits, squash merges, and CI releases.
+Stage only task files and preserve concurrent edits.
 
 ## Hard limits (never without the user's explicit request in this conversation)
 
@@ -122,26 +101,19 @@ not to find another way around it.
 
 ## Agent tooling
 
-- **Claude Code**: [CLAUDE.md](CLAUDE.md) and [.claude/README.md](.claude/README.md): the
-  `cw-gw-*` agents, the `/cw-*` commands (`/cw-quality` runs the whole local gate),
-  path-scoped rules and hooks.
-- **Codex**: [.codex/README.md](.codex/README.md) covers the specialists, `$cw-*` skills, rules and hooks.
-- **Builders** (assigned writes): `cw-gw-route-builder`, `cw-gw-aggregate-builder`, `cw-gw-auth-builder`, `cw-gw-public-endpoint-builder`, `cw-gw-client-builder`, `cw-gw-rate-limit-maintainer`, `cw-gw-test-writer`, `cw-gw-deploy-maintainer`, `cw-gw-github-maintainer`.
-- **Reviewers** (read-only): `cw-gw-route-explorer`, `cw-gw-contract-reviewer`, `cw-gw-security-auditor`, `cw-gw-performance-reviewer`, `cw-gw-architecture-reviewer`.
-- Specialists are available, not mandatory. Delegate a bounded responsibility with explicit files and
-  checks, assign disjoint files to parallel agents and integrate their results yourself.
+Use the specialist and command inventories in the [Claude guide](.claude/README.md) and
+[Codex guide](.codex/README.md). Builders edit assigned files. Reviewers work read-only.
+Specialists are optional. Delegate bounded work with explicit files and checks, assign disjoint
+files to parallel agents, and integrate their results.
 
 ## Repository hygiene
 
-- Reuse existing commands, tools and test infrastructure before adding files.
-- Prefer inline commands or a task-specific temporary directory for one-off diagnostics; clean up
-  disposable files before delivery.
-- Keep a permanent script only when it provides a reusable capability that existing tooling cannot.
-- Add permanent tests for meaningful behavior or regressions, in the existing test structure.
-- Before delivery, inspect untracked files and remove only the disposable artifacts of the current
-  task. Report every new permanent tooling file and why it needs to stay.
-- Report material failures, skipped checks and limitations, including non-blocking ones. Ask for
-  user input only when a missing decision or authorization blocks the dependent work.
+Reuse existing commands, tooling, and test infrastructure. Prefer inline commands or task
+temporary directories for one-offs. Keep permanent scripts only for reusable gaps and add tests
+for meaningful behavior or regressions in the existing test structure. Review untracked files
+before delivery and clean up only current-task artifacts. Explain each new permanent tooling file.
+Report material failures, skipped checks, and limitations. Ask only when missing information or
+authorization blocks the dependent work.
 
 ## References
 
