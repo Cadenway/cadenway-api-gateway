@@ -20,15 +20,17 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { z } from 'zod';
 
 import {
+  relayUpstream,
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toQueryInteger } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { InviteMembers } from '../../../../application/use-cases/commands/invitations/invite-members/invite-members.use-case.js';
@@ -45,8 +47,7 @@ import {
  * Constant ORGANIZATION_PROBLEMS
  *
  * @description
- * Client errors of organization-service that `POST /v1/invitations` and `GET /v1/invitations`
- * answer as they are.
+ * Client errors of organization-service that `GET /v1/invitations` answers as they are.
  *
  * @type {AcceptedProblems}
  */
@@ -54,6 +55,22 @@ const ORGANIZATION_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   403: ['organization.role-forbidden'],
   404: ['organization.not-found'],
+};
+
+/**
+ * Constant INVITE_PROBLEMS
+ *
+ * @description
+ * Client errors of organization-service that `POST /v1/invitations` answers as they are: those of
+ * `GET /v1/invitations`, and `429 invitation.daily-limit-reached` when the batch needs more
+ * invitation emails than the organization has left of its 100 in any 24 hours, with
+ * `details.remaining`, `details.nextAvailableAt` and `Retry-After`.
+ *
+ * @type {AcceptedProblems}
+ */
+const INVITE_PROBLEMS: AcceptedProblems = {
+  ...ORGANIZATION_PROBLEMS,
+  429: ['invitation.daily-limit-reached'],
 };
 
 /**
@@ -77,7 +94,10 @@ const REVOKE_PROBLEMS: AcceptedProblems = {
  *
  * @description
  * Client errors of organization-service that `POST /v1/invitations/{invitationId}/resend`
- * answers as they are.
+ * answers as they are, the two limits of the invitation emails included:
+ * `429 invitation.resend-throttled` (`details.resendAvailableAt`) and
+ * `429 invitation.daily-limit-reached` (`details.remaining`, `details.nextAvailableAt`), each with
+ * `Retry-After`.
  *
  * @type {AcceptedProblems}
  */
@@ -86,6 +106,7 @@ const RESEND_PROBLEMS: AcceptedProblems = {
   403: ['organization.role-forbidden'],
   404: ['invitation.not-found'],
   409: ['invitation.revoked', 'invitation.answered'],
+  429: ['invitation.resend-throttled', 'invitation.daily-limit-reached'],
 };
 
 /**
@@ -106,14 +127,12 @@ const INVITATION_ALIASES: Readonly<Record<string, string>> = {
  * Constant LIST_QUERY
  *
  * @description
- * The query of `GET /v1/invitations` as the contract validates it, with `limit` read from its
- * text first.
+ * The query of `GET /v1/invitations` as the contract validates it; its generated validator reads
+ * `limit` from its text.
  *
  * @type {z.ZodType<z.output<typeof ListInvitationsQueryParams>>}
  */
-const LIST_QUERY = ListInvitationsQueryParams.extend({
-  limit: z.preprocess(toQueryInteger, ListInvitationsQueryParams.shape.limit),
-});
+const LIST_QUERY = ListInvitationsQueryParams;
 
 /**
  * Constant EMPTY_BODY
@@ -218,9 +237,12 @@ export class InvitationsController {
    *
    * @description
    * `POST /v1/invitations`: invites the addresses with one role, `member` by default. A batch:
-   * `200` with the outcome of each distinct address.
+   * `200` with the outcome of each distinct address. A batch beyond the daily allowance of
+   * invitation emails answers `429 invitation.daily-limit-reached` with `Retry-After`, derived
+   * from `details.nextAvailableAt`.
    *
    * @param {z.output<typeof InviteMembersBody>} body - Addresses and role.
+   * @param {Response} response - Response, for `Retry-After`.
    * @returns {Promise<InvitationBatchResult>} The outcome of each address.
    */
   @Post()
@@ -232,9 +254,10 @@ export class InvitationsController {
   })
   public async inviteMembers(
     @Body(new ZodValidationPipe(InviteMembersBody)) body: z.output<typeof InviteMembersBody>,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<InvitationBatchResult> {
     return toInvitationBatchResult(
-      await this.relay(ORGANIZATION_PROBLEMS, {}, () =>
+      await relayUpstream(response, INVITE_PROBLEMS, () =>
         this.inviting.execute({ emails: body.emails, role: body.role }),
       ),
     );
@@ -299,10 +322,14 @@ export class InvitationsController {
    *
    * @description
    * `POST /v1/invitations/{invitationId}/resend`: sends the email again and starts the 7 days
-   * again. `200` with the invitation and its `ETag`.
+   * again. `200` with the invitation and its `ETag`. Within an hour of the last email, or beyond
+   * the daily allowance of the organization, `429 invitation.resend-throttled` or
+   * `429 invitation.daily-limit-reached` with `Retry-After`, derived from
+   * `details.resendAvailableAt` or `details.nextAvailableAt`.
    *
    * @param {z.output<typeof EMPTY_BODY>} _body - The empty object.
    * @param {z.output<typeof RevokeInvitationParams>} params - The id of the invitation.
+   * @param {Response} response - Response, for `Retry-After`.
    * @returns {Promise<Invitation>} The invitation, with its new expiry.
    */
   @Post(':invitationId/resend')
@@ -316,10 +343,14 @@ export class InvitationsController {
     @Body(new ZodValidationPipe(EMPTY_BODY)) _body: z.output<typeof EMPTY_BODY>,
     @Param(new ZodValidationPipe(RevokeInvitationParams))
     params: z.output<typeof RevokeInvitationParams>,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<Invitation> {
     return toInvitation(
-      await this.relay(RESEND_PROBLEMS, INVITATION_ALIASES, () =>
-        this.resending.execute(params.invitationId),
+      await relayUpstream(
+        response,
+        RESEND_PROBLEMS,
+        () => this.resending.execute(params.invitationId),
+        INVITATION_ALIASES,
       ),
     );
   }

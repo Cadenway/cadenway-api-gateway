@@ -27,7 +27,6 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toQueryInteger } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import {
   verifiedSessionOf,
   type RequestSession,
@@ -74,14 +73,12 @@ const ANSWER_PROBLEMS: AcceptedProblems = {
  * Constant LIST_QUERY
  *
  * @description
- * The query of `GET /v1/me/invitations` as the contract validates it, with `limit` read from its
- * text first.
+ * The query of `GET /v1/me/invitations` as the contract validates it; its generated validator
+ * reads `limit` from its text.
  *
  * @type {z.ZodType<z.output<typeof ListReceivedInvitationsQueryParams>>}
  */
-const LIST_QUERY = ListReceivedInvitationsQueryParams.extend({
-  limit: z.preprocess(toQueryInteger, ListReceivedInvitationsQueryParams.shape.limit),
-});
+const LIST_QUERY = ListReceivedInvitationsQueryParams;
 
 /**
  * Constant EMPTY_BODY

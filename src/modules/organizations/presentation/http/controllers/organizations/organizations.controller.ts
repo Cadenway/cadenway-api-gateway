@@ -35,7 +35,6 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toQueryInteger } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import {
   verifiedSessionOf,
   type RequestSession,
@@ -134,14 +133,12 @@ const SWITCH_PROBLEMS: AcceptedProblems = {
  * Constant LIST_QUERY
  *
  * @description
- * The query of `GET /v1/organizations` as the contract validates it, with `limit` read from its
- * text first.
+ * The query of `GET /v1/organizations` as the contract validates it; its generated validator
+ * reads `limit` from its text.
  *
  * @type {z.ZodType<z.output<typeof ListMyOrganizationsQueryParams>>}
  */
-const LIST_QUERY = ListMyOrganizationsQueryParams.extend({
-  limit: z.preprocess(toQueryInteger, ListMyOrganizationsQueryParams.shape.limit),
-});
+const LIST_QUERY = ListMyOrganizationsQueryParams;
 
 /**
  * Constant ORGANIZATION_LOCATION

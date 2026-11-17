@@ -25,7 +25,6 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toQueryInteger } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { CreateApiToken } from '../../../../application/use-cases/commands/api-tokens/create-api-token/create-api-token.use-case.js';
@@ -62,14 +61,12 @@ const REVOKE_PROBLEMS: AcceptedProblems = {
  * Constant LIST_QUERY
  *
  * @description
- * The query of `GET /v1/api-tokens` as the contract validates it, with `limit` read from its text
- * first.
+ * The query of `GET /v1/api-tokens` as the contract validates it; its generated validator reads
+ * `limit` from its text.
  *
  * @type {z.ZodType<z.output<typeof ListApiTokensQueryParams>>}
  */
-const LIST_QUERY = ListApiTokensQueryParams.extend({
-  limit: z.preprocess(toQueryInteger, ListApiTokensQueryParams.shape.limit),
-});
+const LIST_QUERY = ListApiTokensQueryParams;
 
 /**
  * Class ApiTokensController

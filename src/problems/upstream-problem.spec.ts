@@ -108,6 +108,15 @@ describe('retryAfterSeconds', () => {
     );
   });
 
+  it('derives the seconds until the allowance of invitation emails grows again', () => {
+    expect(
+      retryAfterSeconds(
+        tooManyRequests({ remaining: 0, nextAvailableAt: '2026-11-08T18:07:00Z' }),
+        NOW,
+      ),
+    ).toBe(18_000);
+  });
+
   it('answers at least one second for an instant already past', () => {
     expect(
       retryAfterSeconds(tooManyRequests({ resendAvailableAt: '2026-11-08T13:00:00Z' }), NOW),
@@ -139,6 +148,46 @@ describe('relayUpstream', () => {
       relayUpstream({ setHeader } as unknown as Response, {}, () => Promise.resolve(7)),
     ).resolves.toBe(7);
     expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it('answers the public code of an aliased internal code', async () => {
+    const setHeader: Mock = vi.fn();
+
+    const refusal: unknown = await relayUpstream(
+      { setHeader } as unknown as Response,
+      { 404: ['invitation.not-found'] },
+      () =>
+        Promise.reject(identityProblem(404, 'organization.not-found', {}, 'organization-service')),
+      { 'organization.not-found': 'invitation.not-found' },
+    ).catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(ProblemException);
+    expect((refusal as ProblemException).problem).toMatchObject({
+      status: 404,
+      code: 'invitation.not-found',
+    });
+    expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it('sets Retry-After from the details of a relayed 429', async () => {
+    const setHeader: Mock = vi.fn();
+    const resendAvailableAt: string = new Date(Date.now() + 60_000).toISOString();
+
+    await relayUpstream(
+      { setHeader } as unknown as Response,
+      { 429: ['invitation.resend-throttled'] },
+      () =>
+        Promise.reject(
+          identityProblem(
+            429,
+            'invitation.resend-throttled',
+            { resendAvailableAt },
+            'organization-service',
+          ),
+        ),
+    ).catch(() => undefined);
+
+    expect(setHeader).toHaveBeenCalledWith('Retry-After', expect.stringMatching(/^(?:59|60)$/u));
   });
 });
 

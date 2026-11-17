@@ -61,7 +61,8 @@ SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a pers
 - **Errors** (`src/problems/`): an internal client error is answered with its `code` and its
   `details` (without `service`) when the public operation declares that status and code, under the
   French title the gateway owns for the codes the web application shows as is; a
-  `429` gets `Retry-After` from `details.lockedUntil` or `details.resendAvailableAt`. A refused
+  `429` gets `Retry-After` from `details.lockedUntil`, `details.resendAvailableAt` or
+  `details.nextAvailableAt`. A refused
   internal token (`401`, or `403` refusing the issuer, the actor or the organization) is
   `503 upstream.unauthorized`; any other client error is `503 upstream.failed`, so an internal
   `404` never surfaces as a `403` or reveals another tenant. The sign-out treats
@@ -88,7 +89,7 @@ Fixed for phase P2a of the integration plan, and open to revision by the maintai
 
 ## Credentials, scopes and rate limit
 
-Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
+Phase P2b of the integration plan and its security follow-ups, `@cadenway/contracts` 0.6.0.
 
 - **Security of each operation.** Every handler declares the `security` of its public operation and
   whether it acts on the current organization (`CredentialGuard.requires`), copied from the
@@ -126,6 +127,24 @@ Phase P2b of the integration plan, `@cadenway/contracts` 0.5.1.
   `404 member.not-found` or `404 invitation.not-found` the operation declares. On the choice of
   organization, `404 session.not-found` answers `401 auth.session-expired`. `ETag` comes from the
   `version` of the answer; `If-Match` is relayed unchanged.
+- **Invitation emails.** organization-service limits them; the gateway relays its refusals with
+  their French titles, their `details` and `Retry-After`, the seconds until the instant of the
+  details, rounded up:
+  - `POST /v1/invitations`: `429 invitation.daily-limit-reached` ("Limite d’invitations atteinte
+    pour aujourd’hui : réessayez plus tard."), with `details.remaining` and
+    `details.nextAvailableAt`, when the batch needs more of the 100 invitation emails an
+    organization may cause in any 24 hours than remain;
+  - `POST /v1/invitations/{invitationId}/resend`: `429 invitation.resend-throttled` ("Cette
+    invitation vient d’être renvoyée : réessayez dans une heure."), with
+    `details.resendAvailableAt`, within an hour of the last email of the invitation, and
+    `429 invitation.daily-limit-reached`, with `details.remaining: 0` and
+    `details.nextAvailableAt`.
+
+  A code a route does not declare (`invitation.resend-throttled` on `POST /v1/invitations`) is
+  `503 upstream.failed`.
+
+- **Query parameters.** The validators generated from the contracts read `limit` from its text;
+  the gateway only splits the `role` of `GET /v1/members` on its commas before validation.
 
 ## Gateway Patterns
 
