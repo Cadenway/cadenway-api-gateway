@@ -1,8 +1,31 @@
-import type { CurrentUser } from '@cadenway/contracts/types/public/auth';
-import { UpdateCurrentUserBody } from '@cadenway/contracts/validators/public/auth';
+import type {
+  CurrentUser,
+  DeletionScheduled,
+  EmailChangeCodeSent,
+} from '@cadenway/contracts/types/public/auth';
+import {
+  ChangePasswordBody,
+  ConfirmEmailChangeBody,
+  RequestEmailChangeBody,
+  ScheduleAccountDeletionBody,
+  UpdateCurrentUserBody,
+} from '@cadenway/contracts/validators/public/auth';
 import { ZodValidationPipe } from '@cadenway/nest-common';
-import { Body, Controller, Get, Headers, Inject, Patch, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Inject,
+  Patch,
+  Post,
+  Put,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import type { z } from 'zod';
 
 import { sessionExpiredProblem } from '../../../../../../problems/session-problems.js';
@@ -12,17 +35,36 @@ import {
   verifiedSessionOf,
   type RequestSession,
 } from '../../../../../../presentation/http/session/request-session.js';
+import { CLEARED_SESSION_COOKIE } from '../../../../../../presentation/http/session/session-cookie.js';
 import {
   isUpstreamProblem,
+  relaySessionUpstream,
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { browserClient } from '../../../../../../presentation/http/mappers/browser-client.mapper.js';
 import { toCurrentUser } from '../../../../../../presentation/http/mappers/current-user.mapper.js';
 import { GetCurrentUser } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.use-case.js';
 import { UpdateCurrentUser } from '../../../../application/use-cases/commands/me/update-current-user/update-current-user.use-case.js';
+import { ChangePassword } from '../../../../application/use-cases/commands/me/change-password/change-password.use-case.js';
+import { RequestEmailChange } from '../../../../application/use-cases/commands/me/request-email-change/request-email-change.use-case.js';
+import { ConfirmEmailChange } from '../../../../application/use-cases/commands/me/confirm-email-change/confirm-email-change.use-case.js';
+import { ScheduleAccountDeletion } from '../../../../application/use-cases/commands/me/schedule-account-deletion/schedule-account-deletion.use-case.js';
 
 import type { GetCurrentUserOutput } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.output.js';
 import type { UpdateCurrentUserInput } from '../../../../application/use-cases/commands/me/update-current-user/update-current-user.input.js';
+import type { EmailChangeCodeSent as InternalEmailChangeCodeSent } from '../../../../application/models/me/email-change-code-sent.model.js';
+import type { DeletionScheduled as InternalDeletionScheduled } from '../../../../application/models/me/deletion-scheduled.model.js';
+
+/**
+ * Constant INVALID_REQUEST
+ *
+ * @description
+ * The `400` every route of this controller with a body declares.
+ *
+ * @type {readonly string[]}
+ */
+const INVALID_REQUEST: readonly string[] = ['request.invalid'];
 
 /**
  * Constant UPDATE_PROBLEMS
@@ -34,9 +76,111 @@ import type { UpdateCurrentUserInput } from '../../../../application/use-cases/c
  * @type {AcceptedProblems}
  */
 const UPDATE_PROBLEMS: AcceptedProblems = {
-  400: ['request.invalid'],
+  400: INVALID_REQUEST,
   412: ['request.version-mismatch'],
 };
+
+/**
+ * Constant CHANGE_PASSWORD_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `PUT /v1/me/password` answers as they are
+ * (`PasswordChangeRefused`, `AccountLocked`): the new password first, then the current one, and
+ * the lockout it shares with the sign-in, with `Retry-After` derived from `details.lockedUntil`.
+ *
+ * @type {AcceptedProblems}
+ */
+const CHANGE_PASSWORD_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  422: ['auth.password-too-short', 'auth.password-compromised', 'auth.password-incorrect'],
+  429: ['auth.account-locked'],
+};
+
+/**
+ * Constant REAUTHENTICATION_REQUIRED
+ *
+ * @description
+ * The `403` identity-service answers to a guarded route without a recent authentication of the
+ * session, with `details.methods`; the gateway forwards it with its French title.
+ *
+ * @type {readonly string[]}
+ */
+const REAUTHENTICATION_REQUIRED: readonly string[] = ['auth.reauthentication-required'];
+
+/**
+ * Constant EMAIL_CHANGE_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/me/email-change` answers as they are, in the
+ * order identity-service checks them: recent authentication, current address, address taken,
+ * throttle of the codes of the new address (with `Retry-After` derived from
+ * `details.resendAvailableAt`).
+ *
+ * @type {AcceptedProblems}
+ */
+const EMAIL_CHANGE_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  403: REAUTHENTICATION_REQUIRED,
+  409: ['auth.email-taken'],
+  422: ['auth.email-unchanged'],
+  429: ['auth.code-throttled'],
+};
+
+/**
+ * Constant EMAIL_CHANGE_CONFIRMATION_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/me/email-change/confirmation` answers as they
+ * are: a refused code (`EmailChangeCodeRefused`) and an address taken since the request.
+ *
+ * @type {AcceptedProblems}
+ */
+const EMAIL_CHANGE_CONFIRMATION_PROBLEMS: AcceptedProblems = {
+  400: INVALID_REQUEST,
+  409: ['auth.email-taken'],
+  422: ['auth.code-invalid', 'auth.code-expired'],
+};
+
+/**
+ * Constant DELETION_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/me/deletion` answers as they are: an owned
+ * organization (`details.organizationIds`), checked first, then the recent authentication. The
+ * internal body holds only the introspected session, so an internal `400` is a defect of the
+ * gateway or of identity-service, answered `503 upstream.failed`, never blamed on the browser.
+ *
+ * @type {AcceptedProblems}
+ */
+const DELETION_PROBLEMS: AcceptedProblems = {
+  403: REAUTHENTICATION_REQUIRED,
+  409: ['account.organization-owner'],
+};
+
+/**
+ * Constant ENDED_SESSION
+ *
+ * @description
+ * The internal `404` codes of the routes about the security of the account that end the session
+ * for the applications (`401 auth.session-expired`): the session of the request is no longer an
+ * open session of the user (`session.not-found`), or the account can no longer be read
+ * (`user.not-found`). The public routes declare no `404`.
+ *
+ * @type {readonly string[]}
+ */
+const ENDED_SESSION: readonly string[] = ['session.not-found', 'user.not-found'];
+
+/**
+ * Constant STRICT_DELETION_BODY
+ *
+ * @description
+ * Validator of the body of the deletion: an empty object, with no other member
+ * (`additionalProperties: false` of `EmptyRequest`, which the generated validator does not
+ * enforce).
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const STRICT_DELETION_BODY: z.ZodType<Record<string, never>> = ScheduleAccountDeletionBody.strict();
 
 /**
  * Function sessionOf
@@ -82,13 +226,23 @@ function toProfileChanges(
  * Class MeController
  *
  * @description
- * `GET /v1/me` and `PATCH /v1/me` of `openapi/public/auth.yaml`: the account of the session and
- * its profile. `CredentialGuard` introspects the cookie first (`401 auth.session-required`
- * without one, `401 auth.session-expired` once it ended, `403 auth.api-token-not-accepted` for a
- * personal API token); `RateLimitGuard` counts the session. The account is then read or changed
- * as that user, for the user the introspection returned, never an id the request names.
- * `ETag: "<version>"` comes from the `EtagInterceptor` of `@cadenway/nest-common`, and
- * `Cache-Control: no-store` from `MeRoutesModule`.
+ * The routes of `openapi/public/auth.yaml` under `/v1/me`: the account of the session, its
+ * profile, and the security of the account (password, address, deletion). Session only:
+ * `CredentialGuard` introspects the cookie first (`401 auth.session-required` without one,
+ * `401 auth.session-expired` once it ended, `403 auth.api-token-not-accepted` for a personal API
+ * token, `403 auth.csrf-rejected` for an unsafe request without an allowed `Origin` and
+ * `Content-Type: application/json`); `RateLimitGuard` counts the session. The account is then read
+ * or changed as that user, for the user and the session the introspection returned, never an id
+ * the request names.
+ *
+ * - `ETag: "<version>"` comes from the `EtagInterceptor` of `@cadenway/nest-common` on every
+ *   answer that carries the account, and `Cache-Control: no-store` from `MeRoutesModule`.
+ * - The change of address and the deletion need a recent authentication of the session:
+ *   identity-service answers `403 auth.reauthentication-required`, which the gateway forwards with
+ *   its `details.methods` and its French title.
+ * - A session that ended since its introspection, or an account identity-service no longer finds,
+ *   answers `401 auth.session-expired`.
+ * - Passwords and codes travel in the body only and are never logged.
  */
 @Controller('v1/me')
 @UseGuards(CredentialGuard, RateLimitGuard)
@@ -115,6 +269,50 @@ export class MeController {
    * @readonly
    */
   private readonly profiles: UpdateCurrentUser;
+
+  /**
+   * Property passwords
+   *
+   * @description
+   * Changes the password of the account.
+   *
+   * @type {ChangePassword}
+   * @readonly
+   */
+  private readonly passwords: ChangePassword;
+
+  /**
+   * Property emailChanges
+   *
+   * @description
+   * Asks for a change of address.
+   *
+   * @type {RequestEmailChange}
+   * @readonly
+   */
+  private readonly emailChanges: RequestEmailChange;
+
+  /**
+   * Property emailConfirmations
+   *
+   * @description
+   * Confirms the new address with its code.
+   *
+   * @type {ConfirmEmailChange}
+   * @readonly
+   */
+  private readonly emailConfirmations: ConfirmEmailChange;
+
+  /**
+   * Property deletions
+   *
+   * @description
+   * Schedules the deletion of the account.
+   *
+   * @type {ScheduleAccountDeletion}
+   * @readonly
+   */
+  private readonly deletions: ScheduleAccountDeletion;
   // #endregion
 
   // #region Constructor
@@ -126,14 +324,26 @@ export class MeController {
    *
    * @param {GetCurrentUser} users - Reads the account of identity-service.
    * @param {UpdateCurrentUser} profiles - Changes the profile of the account.
+   * @param {ChangePassword} passwords - Changes the password of the account.
+   * @param {RequestEmailChange} emailChanges - Asks for a change of address.
+   * @param {ConfirmEmailChange} emailConfirmations - Confirms the new address.
+   * @param {ScheduleAccountDeletion} deletions - Schedules the deletion of the account.
    * @constructor
    */
   public constructor(
     @Inject(GetCurrentUser) users: GetCurrentUser,
     @Inject(UpdateCurrentUser) profiles: UpdateCurrentUser,
+    @Inject(ChangePassword) passwords: ChangePassword,
+    @Inject(RequestEmailChange) emailChanges: RequestEmailChange,
+    @Inject(ConfirmEmailChange) emailConfirmations: ConfirmEmailChange,
+    @Inject(ScheduleAccountDeletion) deletions: ScheduleAccountDeletion,
   ) {
     this.users = users;
     this.profiles = profiles;
+    this.passwords = passwords;
+    this.emailChanges = emailChanges;
+    this.emailConfirmations = emailConfirmations;
+    this.deletions = deletions;
   }
   // #endregion
 
@@ -208,6 +418,171 @@ export class MeController {
   }
 
   /**
+   * Method changePassword
+   *
+   * @description
+   * `PUT /v1/me/password`: replaces the password of the account; the other sessions stay open. The
+   * right current password counts as a recent authentication of this session. `200` with the
+   * account, its new `passwordChangedAt` and `ETag`.
+   *
+   * @param {z.output<typeof ChangePasswordBody>} body - Current and new passwords.
+   * @param {Request} request - Request, for its verified session and its browser.
+   * @param {Response} response - Response, for `Retry-After`.
+   * @returns {Promise<CurrentUser>} The account after the change.
+   */
+  @Put('password')
+  @CredentialGuard.requires({
+    operationId: 'changePassword',
+    security: [{ sessionCookie: [] }],
+    organization: false,
+  })
+  public async changePassword(
+    @Body(new ZodValidationPipe(ChangePasswordBody)) body: z.output<typeof ChangePasswordBody>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<CurrentUser> {
+    const session: RequestSession = sessionOf(request);
+    const user: GetCurrentUserOutput = await relaySessionUpstream(
+      response,
+      CHANGE_PASSWORD_PROBLEMS,
+      () =>
+        this.passwords.execute({
+          userId: session.userId,
+          sessionId: session.sessionId,
+          currentPassword: body.currentPassword,
+          newPassword: body.newPassword,
+          client: browserClient(request),
+        }),
+      ENDED_SESSION,
+    );
+    return toCurrentUser(user);
+  }
+
+  /**
+   * Method requestEmailChange
+   *
+   * @description
+   * `POST /v1/me/email-change`: sends a code to the new address; the pending change belongs to
+   * this session. `202`. Needs a recent authentication of the session
+   * (`403 auth.reauthentication-required`).
+   *
+   * @param {z.output<typeof RequestEmailChangeBody>} body - The new address.
+   * @param {Request} request - Request, for its verified session.
+   * @param {Response} response - Response, for `Retry-After`.
+   * @returns {Promise<EmailChangeCodeSent>} When the code expires and when another can be asked
+   * for.
+   */
+  @Post('email-change')
+  @HttpCode(202)
+  @CredentialGuard.requires({
+    operationId: 'requestEmailChange',
+    security: [{ sessionCookie: [] }],
+    organization: false,
+  })
+  public async requestEmailChange(
+    @Body(new ZodValidationPipe(RequestEmailChangeBody))
+    body: z.output<typeof RequestEmailChangeBody>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<EmailChangeCodeSent> {
+    const session: RequestSession = sessionOf(request);
+    const sent: InternalEmailChangeCodeSent = await relaySessionUpstream(
+      response,
+      EMAIL_CHANGE_PROBLEMS,
+      () =>
+        this.emailChanges.execute({
+          userId: session.userId,
+          sessionId: session.sessionId,
+          email: body.email,
+        }),
+      ENDED_SESSION,
+    );
+    return {
+      email: sent.email,
+      expiresAt: sent.expiresAt,
+      resendAvailableAt: sent.resendAvailableAt,
+    };
+  }
+
+  /**
+   * Method confirmEmailChange
+   *
+   * @description
+   * `POST /v1/me/email-change/confirmation`: checks the code sent to the new address and makes it
+   * the address of the account. `200` with the account and `ETag`.
+   *
+   * @param {z.output<typeof ConfirmEmailChangeBody>} body - The code.
+   * @param {Request} request - Request, for its verified session and its browser.
+   * @param {Response} response - Response of the request.
+   * @returns {Promise<CurrentUser>} The account with its new address.
+   */
+  @Post('email-change/confirmation')
+  @HttpCode(200)
+  @CredentialGuard.requires({
+    operationId: 'confirmEmailChange',
+    security: [{ sessionCookie: [] }],
+    organization: false,
+  })
+  public async confirmEmailChange(
+    @Body(new ZodValidationPipe(ConfirmEmailChangeBody))
+    body: z.output<typeof ConfirmEmailChangeBody>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<CurrentUser> {
+    const session: RequestSession = sessionOf(request);
+    const user: GetCurrentUserOutput = await relaySessionUpstream(
+      response,
+      EMAIL_CHANGE_CONFIRMATION_PROBLEMS,
+      () =>
+        this.emailConfirmations.execute({
+          userId: session.userId,
+          sessionId: session.sessionId,
+          code: body.code,
+          client: browserClient(request),
+        }),
+      ENDED_SESSION,
+    );
+    return toCurrentUser(user);
+  }
+
+  /**
+   * Method scheduleAccountDeletion
+   *
+   * @description
+   * `POST /v1/me/deletion`: schedules the deletion of the account in 30 days. identity-service
+   * revokes every session, this one included, and every personal API token at once, so the
+   * gateway clears the session cookie on the `202`. A refusal leaves the cookie: the session is
+   * still open.
+   *
+   * @param {z.output<typeof STRICT_DELETION_BODY>} _body - The empty object.
+   * @param {Request} request - Request, for its verified session.
+   * @param {Response} response - Response, for the cleared cookie.
+   * @returns {Promise<DeletionScheduled>} When the account will be deleted.
+   */
+  @Post('deletion')
+  @HttpCode(202)
+  @CredentialGuard.requires({
+    operationId: 'scheduleAccountDeletion',
+    security: [{ sessionCookie: [] }],
+    organization: false,
+  })
+  public async scheduleAccountDeletion(
+    @Body(new ZodValidationPipe(STRICT_DELETION_BODY)) _body: z.output<typeof STRICT_DELETION_BODY>,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<DeletionScheduled> {
+    const session: RequestSession = sessionOf(request);
+    const scheduled: InternalDeletionScheduled = await relaySessionUpstream(
+      response,
+      DELETION_PROBLEMS,
+      () => this.deletions.execute({ userId: session.userId, sessionId: session.sessionId }),
+      ENDED_SESSION,
+    );
+    response.setHeader('Set-Cookie', CLEARED_SESSION_COOKIE);
+    return { deleteAt: scheduled.deleteAt };
+  }
+
+  /**
    * Method translate
    *
    * @description
@@ -221,7 +596,7 @@ export class MeController {
    */
   private translate(error: unknown, accepted: AcceptedProblems): unknown {
     if (isUpstreamProblem(error, 404, 'user.not-found')) {
-      return sessionExpiredProblem();
+      return sessionExpiredProblem(error);
     }
     return toPublicProblem(error, accepted);
   }

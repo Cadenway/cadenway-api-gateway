@@ -16,14 +16,14 @@ else; the connection belongs to the technical `RedisModule`.
 
 ## Public entry points
 
-| Entry point                              | Consumers                                                              |
-| ---------------------------------------- | ---------------------------------------------------------------------- |
-| rate-limit.module                        | auth, auth-routes, me, organizations, members, invitations, api-tokens |
-| public/requests/rate-limit-guard         | auth-routes, me, organizations, members, invitations, api-tokens       |
-| public/requests/count-request            | auth-routes, me, organizations, members, invitations, api-tokens       |
-| public/addresses/count-anonymous-request | auth-routes, me, organizations, members, invitations, api-tokens       |
-| public/addresses/check-bearer-failures   | auth                                                                   |
-| public/addresses/count-bearer-failure    | auth                                                                   |
+| Entry point                              | Consumers                                                                        |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| rate-limit.module                        | auth, auth-routes, me, sessions, organizations, members, invitations, api-tokens |
+| public/requests/rate-limit-guard         | auth-routes, me, sessions, organizations, members, invitations, api-tokens       |
+| public/requests/count-request            | auth-routes, me, sessions, organizations, members, invitations, api-tokens       |
+| public/addresses/count-anonymous-request | auth-routes, me, sessions, organizations, members, invitations, api-tokens       |
+| public/addresses/check-bearer-failures   | auth                                                                             |
+| public/addresses/count-bearer-failure    | auth                                                                             |
 
 `RateLimitGuard` runs after the credential guard of `auth`, which attaches the verified
 credential; `CountRequest` and `CountAnonymousRequest` are exported because a module that applies
@@ -38,7 +38,8 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
 - **Requests without a credential.** `RateLimitGuard` counts a request that reaches it without a
   verified credential on its client address: the routes of `openapi/public/auth.yaml` with
   `security: []` (sign-in methods, sign-up, its code and its verification, sign-in by password,
-  sign-in code and its verification), and a sign-out without an active session, whose contract
+  sign-in code and its verification, and the password reset: its request, the inspection of its
+  link and its confirmation), and a sign-out without an active session, whose contract
   declares the same `429`. Body validation runs after the guards, so a malformed body is counted
   too; a request `CsrfGuard` refuses before them is not, and costs no upstream call.
 - **Failed bearer tokens.** The credential guard of `auth` reads the failures of the address

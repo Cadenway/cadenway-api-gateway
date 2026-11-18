@@ -15,16 +15,22 @@ import {
   Param,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { z } from 'zod';
 
 import {
+  relaySessionUpstream,
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import {
+  verifiedSessionOf,
+  type RequestSession,
+} from '../../../../../../presentation/http/session/request-session.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { CreateApiToken } from '../../../../application/use-cases/commands/api-tokens/create-api-token/create-api-token.use-case.js';
@@ -37,11 +43,37 @@ import { toApiTokenCreated, toApiTokenPage } from '../../mappers/api-tokens/api-
  * Constant INVALID_REQUEST_ONLY
  *
  * @description
- * Client errors of identity-service that the creation and the list answer as they are.
+ * Client errors of identity-service that the list answers as they are.
  *
  * @type {AcceptedProblems}
  */
 const INVALID_REQUEST_ONLY: AcceptedProblems = { 400: ['request.invalid'] };
+
+/**
+ * Constant CREATE_PROBLEMS
+ *
+ * @description
+ * Client errors of identity-service that `POST /v1/api-tokens` answers as they are: an invalid
+ * request, and `403 auth.reauthentication-required` (with `details.methods`) when the session has
+ * no recent authentication.
+ *
+ * @type {AcceptedProblems}
+ */
+const CREATE_PROBLEMS: AcceptedProblems = {
+  400: ['request.invalid'],
+  403: ['auth.reauthentication-required'],
+};
+
+/**
+ * Constant CREATE_ENDED_SESSION
+ *
+ * @description
+ * The internal `404` code of the creation that ends the session for the applications
+ * (`401 auth.session-expired`): the session of the request is no longer open.
+ *
+ * @type {readonly string[]}
+ */
+const CREATE_ENDED_SESSION: readonly string[] = ['session.not-found'];
 
 /**
  * Constant REVOKE_PROBLEMS
@@ -76,8 +108,9 @@ const LIST_QUERY = ListApiTokensQueryParams;
  * of the caller in the current organization. Session only: a token never manages tokens
  * (`403 auth.api-token-not-accepted`), and a session without a current organization gets
  * `403 organization.not-selected`, both from `CredentialGuard` before any call; `RateLimitGuard`
- * counts the session. The secret of a created token leaves the gateway in the body of the
- * creation only, once; it is never logged.
+ * counts the session. The creation sends the session of the request, whose recent authentication
+ * identity-service checks (`403 auth.reauthentication-required`). The secret of a created token
+ * leaves the gateway in the body of the creation only, once; it is never logged.
  */
 @Controller('v1/api-tokens')
 @UseGuards(CredentialGuard, RateLimitGuard)
@@ -146,9 +179,13 @@ export class ApiTokensController {
    *
    * @description
    * `POST /v1/api-tokens`: a token of the caller in the current organization. `201` with
-   * `Location: /v1/api-tokens/<apiTokenId>`, the URL that revokes it.
+   * `Location: /v1/api-tokens/<apiTokenId>`, the URL that revokes it. The session of the request,
+   * as the introspection returned it, travels as `sessionId`: without a recent authentication of
+   * that session, identity-service answers `403 auth.reauthentication-required`, relayed with its
+   * `details.methods`; a session that ended since its introspection is `401 auth.session-expired`.
    *
    * @param {z.output<typeof CreateApiTokenBody>} body - Name, scopes and expiration.
+   * @param {Request} request - Request, for its verified session.
    * @param {Response} response - Response, for `Location`.
    * @returns {Promise<ApiTokenCreated>} The token and its secret, once.
    */
@@ -161,14 +198,24 @@ export class ApiTokensController {
   })
   public async createApiToken(
     @Body(new ZodValidationPipe(CreateApiTokenBody)) body: z.output<typeof CreateApiTokenBody>,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ApiTokenCreated> {
-    const created: CreateApiTokenOutput = await this.relay(INVALID_REQUEST_ONLY, () =>
-      this.creation.execute({
-        name: body.name,
-        scopes: body.scopes,
-        expiration: body.expiration,
-      }),
+    const session: RequestSession | undefined = verifiedSessionOf(request);
+    if (session === undefined) {
+      throw new Error('POST /v1/api-tokens ran without a verified session.');
+    }
+    const created: CreateApiTokenOutput = await relaySessionUpstream(
+      response,
+      CREATE_PROBLEMS,
+      () =>
+        this.creation.execute({
+          sessionId: session.sessionId,
+          name: body.name,
+          scopes: body.scopes,
+          expiration: body.expiration,
+        }),
+      CREATE_ENDED_SESSION,
     );
     response.setHeader('Location', `/v1/api-tokens/${created.apiToken.id}`);
     return toApiTokenCreated(created);

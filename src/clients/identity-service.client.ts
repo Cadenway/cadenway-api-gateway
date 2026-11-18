@@ -5,9 +5,26 @@ import type {
   CodeRequest,
   CodeSent,
   CodeVerification,
+  DeletionRequest,
+  DeletionScheduled,
+  EmailChangeCodeSent,
+  EmailChangeConfirmation,
+  EmailChangeRequest,
   ListApiTokensInternalParams,
+  ListUserSessionsInternalParams,
+  OpenSessionPage,
+  PasswordChange,
+  PasswordResetCompleted,
+  PasswordResetConfirmation,
+  PasswordResetLink,
+  PasswordResetLinkSent,
+  PasswordResetRequest,
+  PasswordResetToken,
   PasswordSignIn,
   ProfilePatch,
+  ReauthenticationRequest,
+  RecentAuthentication,
+  RevokedSessions,
   SessionIssued,
   SessionOrganization,
   SignInMethods,
@@ -17,14 +34,24 @@ import type {
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import {
+  ChangePasswordInternalResponse,
+  ConfirmEmailChangeInternalResponse,
+  ConfirmPasswordResetInternalResponse,
   CreateApiTokenInternalResponse,
   DiscoverSignInMethodsInternalResponse,
   GetUserResponse,
+  InspectPasswordResetLinkInternalResponse,
   IntrospectApiTokenResponse,
   IntrospectTokenResponse,
   ListApiTokensInternalResponse,
+  ListUserSessionsInternalResponse,
+  ReauthenticateInternalResponse,
+  RequestEmailChangeInternalResponse,
+  RequestPasswordResetInternalResponse,
   RequestSignInCodeInternalResponse,
   ResendSignUpCodeInternalResponse,
+  RevokeOtherSessionsInternalResponse,
+  ScheduleAccountDeletionInternalResponse,
   SignInWithCodeInternalResponse,
   SignInWithPasswordInternalResponse,
   SignUpInternalResponse,
@@ -107,6 +134,17 @@ const SESSION_TOKEN_TYPE: string = 'session';
  * @type {string}
  */
 const API_TOKEN_TYPE: string = 'api-token';
+
+/**
+ * Constant NOT_RETRIED
+ *
+ * @description
+ * Options of a call the internal HTTP client must not retry although its method is idempotent:
+ * the claims stay those of the current organization context.
+ *
+ * @type {InternalRequestInit}
+ */
+const NOT_RETRIED: InternalRequestInit = { idempotent: false };
 
 /**
  * Type IdentityServiceRoutes
@@ -220,13 +258,17 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
  * `@cadenway/nest-common`, behind the ports of the session guard and of the routes.
  *
  * - Every call carries an internal token signed by the gateway with `aud: identity-service`: the
- *   actor `anonymous` for the sign-up and sign-in flows, `system` for the two introspections, and
- *   the user of the current organization context for every other call (with the organization of
- *   that context, which the personal API token routes require).
+ *   actor `anonymous` for the sign-up, sign-in and password reset flows, `system` for the two
+ *   introspections, and the user of the current organization context for every other call (with
+ *   the organization of that context, which the personal API token routes require).
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call (both introspections are
- *   declared idempotent by their contract, as `GET`, `PUT` and `DELETE` are; the flows and the
- *   other `POST` and `PATCH` calls are not retried), and the circuit breaker of identity-service. It throws its problems: a relayed client error, or `503 upstream.*`.
+ *   declared idempotent by their contract, as `GET`, `PUT` and `DELETE` are, but the password
+ *   change; the flows and the other `POST` and `PATCH` calls are not retried), and the circuit
+ *   breaker of identity-service. It throws its problems: a relayed client error, or
+ *   `503 upstream.*`.
+ * - Passwords, reset tokens and codes travel in the bodies only, never in a path, a query or a
+ *   log line.
  * - Every success is checked against the internal contract before it is returned; a mismatch is
  *   `503 upstream.failed`.
  */
@@ -456,9 +498,13 @@ export class IdentityServiceClient {
    *
    * @description
    * `DELETE /internal/v1/sessions/{sessionId}` as the user of the current organization context,
-   * retried once on a connection error or a `503` (`DELETE` is idempotent).
+   * retried once on a connection error or a `503` (`DELETE` is idempotent). identity-service
+   * revokes only a session of that user: another one, or an unknown id, answers
+   * `404 session.not-found`.
    *
-   * @param {string} sessionId - Id of the session (a UUID), as the introspection returned it.
+   * @param {string} sessionId - Id of the session (a UUID): the one the introspection returned for
+   * the sign-out, or the one of the public path, checked as a UUID, for
+   * `DELETE /v1/sessions/{sessionId}`.
    * @returns {Promise<void>} Resolves once the session is revoked, or had already ended.
    */
   public async revokeSession(sessionId: string): Promise<void> {
@@ -582,7 +628,8 @@ export class IdentityServiceClient {
    * the current organization of the session. Not retried. The answer holds the secret of the
    * token, returned once: never logged.
    *
-   * @param {ApiTokenCreation} creation - Name, scopes and expiration of the token.
+   * @param {ApiTokenCreation} creation - Session of the request, whose recent authentication
+   * identity-service checks, name, scopes and expiration of the token.
    * @returns {Promise<ApiTokenCreated>} The token and its secret.
    */
   public async createApiToken(creation: ApiTokenCreation): Promise<ApiTokenCreated> {
@@ -627,6 +674,255 @@ export class IdentityServiceClient {
       'revokeApiTokenInternal',
       await answered('revokeApiTokenInternal', this.routes.revokeApiTokenInternal(apiTokenId)),
       204,
+    );
+  }
+
+  /**
+   * Method requestPasswordReset
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset` as the actor `anonymous`. Not retried.
+   *
+   * @param {PasswordResetRequest} request - Address and browser that asks for the link.
+   * @returns {Promise<PasswordResetLinkSent>} The same answer whether or not a link was issued.
+   */
+  public async requestPasswordReset(request: PasswordResetRequest): Promise<PasswordResetLinkSent> {
+    return expectBody(
+      'requestPasswordResetInternal',
+      await answered(
+        'requestPasswordResetInternal',
+        this.routes.requestPasswordResetInternal(request, callerClaims('anonymous')),
+      ),
+      202,
+      RequestPasswordResetInternalResponse,
+    );
+  }
+
+  /**
+   * Method inspectPasswordResetLink
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset/inspection` as the actor `anonymous`. The token is a
+   * secret: it travels in the body only. Not retried.
+   *
+   * @param {PasswordResetToken} request - The token of the link.
+   * @returns {Promise<PasswordResetLink>} The address of the account of the link, its expiry and
+   * the open sessions of the account.
+   */
+  public async inspectPasswordResetLink(request: PasswordResetToken): Promise<PasswordResetLink> {
+    return expectBody(
+      'inspectPasswordResetLinkInternal',
+      await answered(
+        'inspectPasswordResetLinkInternal',
+        this.routes.inspectPasswordResetLinkInternal(request, callerClaims('anonymous')),
+      ),
+      200,
+      InspectPasswordResetLinkInternalResponse,
+    );
+  }
+
+  /**
+   * Method confirmPasswordReset
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset/confirmation` as the actor `anonymous`. The token and
+   * the new password travel in the body only. Not retried: the link works once.
+   *
+   * @param {PasswordResetConfirmation} request - Token, new password, whether to close the other
+   * sessions, and the browser.
+   * @returns {Promise<PasswordResetCompleted>} The address of the account and the sessions closed.
+   */
+  public async confirmPasswordReset(
+    request: PasswordResetConfirmation,
+  ): Promise<PasswordResetCompleted> {
+    return expectBody(
+      'confirmPasswordResetInternal',
+      await answered(
+        'confirmPasswordResetInternal',
+        this.routes.confirmPasswordResetInternal(request, callerClaims('anonymous')),
+      ),
+      200,
+      ConfirmPasswordResetInternalResponse,
+    );
+  }
+
+  /**
+   * Method reauthenticate
+   *
+   * @description
+   * `POST /internal/v1/sessions/{sessionId}/reauthentication` as the user of the current
+   * organization context. The password travels in the body only. Not retried: a failed password
+   * counts towards the lockout.
+   *
+   * @param {string} sessionId - Id of the session (a UUID), as the introspection returned it.
+   * @param {ReauthenticationRequest} request - The password of the account.
+   * @returns {Promise<RecentAuthentication>} The window of recent authentication of the session.
+   */
+  public async reauthenticate(
+    sessionId: string,
+    request: ReauthenticationRequest,
+  ): Promise<RecentAuthentication> {
+    return expectBody(
+      'reauthenticateInternal',
+      await answered(
+        'reauthenticateInternal',
+        this.routes.reauthenticateInternal(sessionId, request),
+      ),
+      200,
+      ReauthenticateInternalResponse,
+    );
+  }
+
+  /**
+   * Method changePassword
+   *
+   * @description
+   * `PUT /internal/v1/users/{userId}/password` as the user of the current organization context.
+   * Not retried, although it is a `PUT`: a change identity-service applied before the connection
+   * failed would be repeated with a current password that no longer works, which would count a
+   * failed password towards the lockout of the address.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {PasswordChange} change - Session of the request, current and new passwords, browser.
+   * @returns {Promise<User>} The account after the change.
+   */
+  public async changePassword(userId: string, change: PasswordChange): Promise<User> {
+    return expectBody(
+      'changePasswordInternal',
+      await answered(
+        'changePasswordInternal',
+        this.routes.changePasswordInternal(userId, change, NOT_RETRIED),
+      ),
+      200,
+      ChangePasswordInternalResponse,
+    );
+  }
+
+  /**
+   * Method requestEmailChange
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/email-change` as the user of the current organization
+   * context. Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {EmailChangeRequest} request - Session of the request and new address.
+   * @returns {Promise<EmailChangeCodeSent>} When the code expires and when another can be asked
+   * for.
+   */
+  public async requestEmailChange(
+    userId: string,
+    request: EmailChangeRequest,
+  ): Promise<EmailChangeCodeSent> {
+    return expectBody(
+      'requestEmailChangeInternal',
+      await answered(
+        'requestEmailChangeInternal',
+        this.routes.requestEmailChangeInternal(userId, request),
+      ),
+      202,
+      RequestEmailChangeInternalResponse,
+    );
+  }
+
+  /**
+   * Method confirmEmailChange
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/email-change/confirmation` as the user of the current
+   * organization context. The code travels in the body only. Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {EmailChangeConfirmation} confirmation - Session of the request, code and browser.
+   * @returns {Promise<User>} The account with its new address.
+   */
+  public async confirmEmailChange(
+    userId: string,
+    confirmation: EmailChangeConfirmation,
+  ): Promise<User> {
+    return expectBody(
+      'confirmEmailChangeInternal',
+      await answered(
+        'confirmEmailChangeInternal',
+        this.routes.confirmEmailChangeInternal(userId, confirmation),
+      ),
+      200,
+      ConfirmEmailChangeInternalResponse,
+    );
+  }
+
+  /**
+   * Method scheduleAccountDeletion
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/deletion` as the user of the current organization context.
+   * Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {DeletionRequest} request - Session of the request.
+   * @returns {Promise<DeletionScheduled>} When the account will be deleted.
+   */
+  public async scheduleAccountDeletion(
+    userId: string,
+    request: DeletionRequest,
+  ): Promise<DeletionScheduled> {
+    return expectBody(
+      'scheduleAccountDeletionInternal',
+      await answered(
+        'scheduleAccountDeletionInternal',
+        this.routes.scheduleAccountDeletionInternal(userId, request),
+      ),
+      202,
+      ScheduleAccountDeletionInternalResponse,
+    );
+  }
+
+  /**
+   * Method listUserSessions
+   *
+   * @description
+   * `GET /internal/v1/users/{userId}/sessions` as the user of the current organization context,
+   * retried once on a connection error or a `503` (`GET` is idempotent).
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {ListUserSessionsInternalParams} params - Session of the request, cursor and page size.
+   * @returns {Promise<OpenSessionPage>} One page of the open sessions.
+   */
+  public async listUserSessions(
+    userId: string,
+    params: ListUserSessionsInternalParams,
+  ): Promise<OpenSessionPage> {
+    return expectBody(
+      'listUserSessionsInternal',
+      await answered(
+        'listUserSessionsInternal',
+        this.routes.listUserSessionsInternal(userId, params),
+      ),
+      200,
+      ListUserSessionsInternalResponse,
+    );
+  }
+
+  /**
+   * Method revokeOtherSessions
+   *
+   * @description
+   * `POST /internal/v1/sessions/{sessionId}/revoke-others` as the user of the current
+   * organization context. Not retried.
+   *
+   * @param {string} sessionId - Id of the session to keep (a UUID), as the introspection returned
+   * it.
+   * @returns {Promise<RevokedSessions>} How many sessions were revoked.
+   */
+  public async revokeOtherSessions(sessionId: string): Promise<RevokedSessions> {
+    return expectBody(
+      'revokeOtherSessionsInternal',
+      await answered(
+        'revokeOtherSessionsInternal',
+        this.routes.revokeOtherSessionsInternal(sessionId),
+      ),
+      200,
+      RevokeOtherSessionsInternalResponse,
     );
   }
   // #endregion

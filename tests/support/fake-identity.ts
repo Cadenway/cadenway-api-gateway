@@ -175,6 +175,16 @@ export function createFakeIdentity(): FakeIdentity {
     createApiToken: vi.fn(unexpected),
     listApiTokens: vi.fn(unexpected),
     revokeApiToken: vi.fn(unexpected),
+    requestPasswordReset: vi.fn(unexpected),
+    inspectPasswordResetLink: vi.fn(unexpected),
+    confirmPasswordReset: vi.fn(unexpected),
+    reauthenticate: vi.fn(unexpected),
+    changePassword: vi.fn(unexpected),
+    requestEmailChange: vi.fn(unexpected),
+    confirmEmailChange: vi.fn(unexpected),
+    scheduleAccountDeletion: vi.fn(unexpected),
+    listUserSessions: vi.fn(unexpected),
+    revokeOtherSessions: vi.fn(unexpected),
   };
 }
 

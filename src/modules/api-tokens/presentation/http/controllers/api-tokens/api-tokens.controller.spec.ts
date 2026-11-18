@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import {
   ATELIER_NORD_ID,
   CAMILLE,
+  CAMILLE_ORGANIZATION_SESSION,
   createFakeIdentity,
   identityProblem,
   identityUnavailable,
@@ -93,6 +94,7 @@ const CASES: readonly RouteCase[] = [
       expect(response.headers.location).toBe(`/v1/api-tokens/${TOKEN.id}`);
       expect(response.headers['cache-control']).toBe('no-store');
       expect(identity.createApiToken).toHaveBeenCalledWith({
+        sessionId: CAMILLE_ORGANIZATION_SESSION.sessionId,
         name: 'Synchronisation GitLab',
         scopes: ['tasks:read'],
         expiration: '30-days',
@@ -128,6 +130,40 @@ const CASES: readonly RouteCase[] = [
     body: CREATION,
     status: 403,
     code: 'auth.api-token-not-accepted',
+  },
+  {
+    name: 'POST /v1/api-tokens relays 403 auth.reauthentication-required with its methods, creating nothing',
+    method: 'post',
+    path: '/v1/api-tokens',
+    url: '/v1/api-tokens',
+    body: CREATION,
+    arrange: ({ identity }) =>
+      identity.createApiToken.mockRejectedValue(
+        identityProblem(403, 'auth.reauthentication-required', { methods: ['password'] }),
+      ),
+    status: 403,
+    code: 'auth.reauthentication-required',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Confirmez votre identité pour continuer.',
+        status: 403,
+        code: 'auth.reauthentication-required',
+        details: { methods: ['password'] },
+      });
+      expect(response.headers.location).toBeUndefined();
+    },
+  },
+  {
+    name: 'POST /v1/api-tokens answers 404 session.not-found as 401 auth.session-expired',
+    method: 'post',
+    path: '/v1/api-tokens',
+    url: '/v1/api-tokens',
+    body: CREATION,
+    arrange: ({ identity }) =>
+      identity.createApiToken.mockRejectedValue(identityProblem(404, 'session.not-found')),
+    status: 401,
+    code: 'auth.session-expired',
   },
   {
     name: 'POST /v1/api-tokens answers 429 beyond the quota',

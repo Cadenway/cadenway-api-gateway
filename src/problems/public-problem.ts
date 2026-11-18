@@ -6,7 +6,8 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  * @description
  * French `title` of the public problems the web application shows to the person as they are,
  * by `code`, taken from the examples of `openapi/public/` (`auth.yaml`, `organizations.yaml`,
- * `members.yaml`, `api-tokens.yaml`) of `@cadenway/contracts`
+ * `members.yaml`, `api-tokens.yaml`) of `@cadenway/contracts`, the account security codes of
+ * 0.7.0 included
  * (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
  * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
  * The text is the same
@@ -77,6 +78,19 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
     'Limite d’invitations atteinte pour aujourd’hui : réessayez plus tard.',
   ],
   ['api-token.not-found', 'Jeton introuvable.'],
+  [
+    'auth.reset-throttled',
+    'Un lien vient d’être envoyé : patientez avant d’en demander un nouveau.',
+  ],
+  ['auth.reset-link-expired', 'Ce lien a expiré'],
+  ['auth.password-incorrect', 'Mot de passe incorrect.'],
+  ['auth.reauthentication-required', 'Confirmez votre identité pour continuer.'],
+  ['auth.email-unchanged', 'C’est déjà votre adresse actuelle : saisissez la nouvelle.'],
+  [
+    'account.organization-owner',
+    'Chaque organisation dont vous êtes propriétaire doit d’abord avoir un autre propriétaire.',
+  ],
+  ['session.not-found', 'Session introuvable.'],
 ]);
 
 /**

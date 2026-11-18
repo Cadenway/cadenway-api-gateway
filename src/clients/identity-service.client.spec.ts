@@ -442,13 +442,15 @@ describe('IdentityServiceClient', () => {
     });
 
     it('reads the account as the user of the context, keeping the members of the contract only', async () => {
-      answer.mockReturnValue(json(200, { ...CAMILLE, passwordChangedAt: '2026-01-01T00:00:00Z' }));
+      answer.mockReturnValue(
+        json(200, { ...CAMILLE, passwordChangedAt: '2026-01-01T00:00:00Z', mfaEnabled: true }),
+      );
 
       const read: unknown = await runWithOrganizationContext(user, () =>
         client.getUser(CAMILLE.id),
       );
 
-      expect(read).toEqual(CAMILLE);
+      expect(read).toEqual({ ...CAMILLE, passwordChangedAt: '2026-01-01T00:00:00Z' });
       expect(calls[0]).toMatchObject({
         method: 'GET',
         url: `http://identity-service.test:3010/internal/v1/users/${CAMILLE.id}`,
@@ -605,6 +607,282 @@ describe('IdentityServiceClient', () => {
 
       expect((failure as ProblemException).problem).toMatchObject({ code: 'upstream.failed' });
       expect(JSON.stringify((failure as ProblemException).problem)).not.toContain('short');
+    });
+
+    it('creates a token with the session of the request in the body', async () => {
+      answer.mockReturnValue(
+        json(201, { apiToken: token, secret: 'cw_pat_ExampleOnlyNotARealToken000000000000' }),
+      );
+
+      await runWithOrganizationContext(owner, () =>
+        client.createApiToken({
+          sessionId: CAMILLE_SESSION.sessionId,
+          name: 'Synchronisation GitLab',
+          scopes: ['tasks:read'],
+        }),
+      );
+
+      expect(calls[0]?.body).toEqual({
+        sessionId: CAMILLE_SESSION.sessionId,
+        name: 'Synchronisation GitLab',
+        scopes: ['tasks:read'],
+      });
+    });
+  });
+
+  describe('the security of the account', () => {
+    const user: OrganizationContext = {
+      organizationId: null,
+      actor: { type: 'user', id: CAMILLE.id },
+      role: null,
+      scopes: [],
+    };
+    const browser: { ipAddress: string; userAgent: string | null } = {
+      ipAddress: '192.0.2.14',
+      userAgent: 'Firefox',
+    };
+    const base = 'http://identity-service.test:3010/internal/v1';
+
+    it('runs the password reset as the actor anonymous, secrets in the bodies only, never retried', async () => {
+      answer
+        .mockReturnValueOnce(
+          json(202, {
+            email: CAMILLE.email,
+            expiresAt: '2026-11-09T13:40:00Z',
+            resendAvailableAt: '2026-11-09T13:10:45Z',
+          }),
+        )
+        .mockReturnValueOnce(
+          json(200, { email: CAMILLE.email, expiresAt: '2026-11-09T13:40:00Z', sessionCount: 3 }),
+        )
+        .mockReturnValueOnce(new Response(null, { status: 503 }));
+
+      await expect(
+        client.requestPasswordReset({ email: CAMILLE.email, client: browser }),
+      ).resolves.toMatchObject({ email: CAMILLE.email });
+      await expect(client.inspectPasswordResetLink({ token: 'reset-token' })).resolves.toEqual({
+        email: CAMILLE.email,
+        expiresAt: '2026-11-09T13:40:00Z',
+        sessionCount: 3,
+      });
+      await expect(
+        client.confirmPasswordReset({
+          token: 'reset-token',
+          newPassword: 'nord-atelier-sprint-15',
+          closeOtherSessions: false,
+          client: browser,
+        }),
+      ).rejects.toMatchObject({ problem: { status: 503 } });
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        `POST ${base}/auth/password-reset`,
+        `POST ${base}/auth/password-reset/inspection`,
+        `POST ${base}/auth/password-reset/confirmation`,
+      ]);
+      expect(calls.map((call) => call.body)).toEqual([
+        { email: CAMILLE.email, client: browser },
+        { token: 'reset-token' },
+        {
+          token: 'reset-token',
+          newPassword: 'nord-atelier-sprint-15',
+          closeOtherSessions: false,
+          client: browser,
+        },
+      ]);
+      expect(calls.every((call) => call.principal.actor.type === 'anonymous')).toBe(true);
+      expect(calls.some((call) => call.url.includes('reset-token'))).toBe(false);
+    });
+
+    it('confirms the password in the session of the path, as its user', async () => {
+      answer.mockReturnValue(
+        json(200, { authenticatedAt: '2026-11-09T13:12:00Z', expiresAt: '2026-11-09T13:22:00Z' }),
+      );
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.reauthenticate(CAMILLE_SESSION.sessionId, { password: 'atelier-nord-sprint-14' }),
+        ),
+      ).resolves.toEqual({
+        authenticatedAt: '2026-11-09T13:12:00Z',
+        expiresAt: '2026-11-09T13:22:00Z',
+      });
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: `${base}/sessions/${CAMILLE_SESSION.sessionId}/reauthentication`,
+        body: { password: 'atelier-nord-sprint-14' },
+        principal: { actor: { type: 'user', id: CAMILLE.id } },
+      });
+    });
+
+    it('changes the password with the session in the body, without retrying the PUT after a 503', async () => {
+      answer.mockReturnValue(new Response(null, { status: 503 }));
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.changePassword(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+            currentPassword: 'atelier-nord-sprint-14',
+            newPassword: 'nord-atelier-sprint-15',
+            client: browser,
+          }),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503 } });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({
+        method: 'PUT',
+        url: `${base}/users/${CAMILLE.id}/password`,
+        body: { sessionId: CAMILLE_SESSION.sessionId, client: browser },
+      });
+    });
+
+    it('answers the account after a change of password, with when it was set', async () => {
+      answer.mockReturnValue(
+        json(200, { ...CAMILLE, passwordChangedAt: '2026-11-09T13:16:00Z', version: 3 }),
+      );
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.changePassword(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+            currentPassword: 'atelier-nord-sprint-14',
+            newPassword: 'nord-atelier-sprint-15',
+            client: browser,
+          }),
+        ),
+      ).resolves.toEqual({ ...CAMILLE, passwordChangedAt: '2026-11-09T13:16:00Z', version: 3 });
+    });
+
+    it('changes the address and schedules the deletion with the session in the body', async () => {
+      answer
+        .mockReturnValueOnce(
+          json(202, {
+            email: 'camille@ateliernord.fr',
+            expiresAt: '2026-11-09T13:35:00Z',
+            resendAvailableAt: '2026-11-09T13:20:30Z',
+          }),
+        )
+        .mockReturnValueOnce(json(200, { ...CAMILLE, email: 'camille@ateliernord.fr' }))
+        .mockReturnValueOnce(json(202, { deleteAt: '2026-12-09T15:30:00Z' }));
+
+      await runWithOrganizationContext(user, () =>
+        client.requestEmailChange(CAMILLE.id, {
+          sessionId: CAMILLE_SESSION.sessionId,
+          email: 'camille@ateliernord.fr',
+        }),
+      );
+      await runWithOrganizationContext(user, () =>
+        client.confirmEmailChange(CAMILLE.id, {
+          sessionId: CAMILLE_SESSION.sessionId,
+          code: '731406',
+          client: browser,
+        }),
+      );
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.scheduleAccountDeletion(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+        ),
+      ).resolves.toEqual({ deleteAt: '2026-12-09T15:30:00Z' });
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        `POST ${base}/users/${CAMILLE.id}/email-change`,
+        `POST ${base}/users/${CAMILLE.id}/email-change/confirmation`,
+        `POST ${base}/users/${CAMILLE.id}/deletion`,
+      ]);
+      expect(calls.map((call) => call.body)).toEqual([
+        { sessionId: CAMILLE_SESSION.sessionId, email: 'camille@ateliernord.fr' },
+        { sessionId: CAMILLE_SESSION.sessionId, code: '731406', client: browser },
+        { sessionId: CAMILLE_SESSION.sessionId },
+      ]);
+    });
+
+    it('answers a success status the deletion does not declare as 503 upstream.failed', async () => {
+      answer.mockReturnValue(json(200, { deleteAt: '2026-12-09T15:30:00Z' }));
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.scheduleAccountDeletion(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    });
+
+    it('lists the sessions with the session of the request as currentSessionId, retrying a 503 once', async () => {
+      const page: Record<string, unknown> = {
+        items: [
+          {
+            id: CAMILLE_SESSION.sessionId,
+            current: true,
+            device: {
+              type: 'desktop',
+              browser: 'Firefox',
+              browserVersion: '132',
+              os: 'Windows',
+              osVersion: null,
+            },
+            ipAddress: '192.0.2.14',
+            signedInAt: '2026-11-09T07:58:00Z',
+            lastActiveAt: '2026-11-09T13:24:00Z',
+            expiresAt: '2026-12-09T07:58:00Z',
+          },
+        ],
+        nextCursor: null,
+      };
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(json(200, page));
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.listUserSessions(CAMILLE.id, {
+            currentSessionId: CAMILLE_SESSION.sessionId,
+            limit: 50,
+          }),
+        ),
+      ).resolves.toEqual(page);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.url).toBe(
+        `${base}/users/${CAMILLE.id}/sessions?currentSessionId=${CAMILLE_SESSION.sessionId}&limit=50`,
+      );
+    });
+
+    it('closes the other sessions of the session of the path', async () => {
+      answer.mockReturnValue(json(200, { revokedCount: 2 }));
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.revokeOtherSessions(CAMILLE_SESSION.sessionId),
+        ),
+      ).resolves.toEqual({ revokedCount: 2 });
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: `${base}/sessions/${CAMILLE_SESSION.sessionId}/revoke-others`,
+        principal: { actor: { type: 'user', id: CAMILLE.id } },
+      });
+    });
+
+    it('relays the refusal of a recent authentication with its code and details', async () => {
+      answer.mockReturnValue(
+        json(
+          403,
+          {
+            type: 'about:blank',
+            title: 'Forbidden',
+            status: 403,
+            code: 'auth.reauthentication-required',
+            details: { methods: ['password'] },
+          },
+          'application/problem+json',
+        ),
+      );
+
+      const failure: unknown = await runWithOrganizationContext(user, () =>
+        client.scheduleAccountDeletion(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+      ).catch((error: unknown) => error);
+
+      expect((failure as ProblemException).problem).toMatchObject({
+        status: 403,
+        code: 'auth.reauthentication-required',
+        details: { methods: ['password'], service: IDENTITY_SERVICE },
+      });
     });
   });
 });

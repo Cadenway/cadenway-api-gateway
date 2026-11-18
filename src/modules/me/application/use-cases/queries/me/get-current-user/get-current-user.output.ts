@@ -60,6 +60,18 @@ export interface GetCurrentUserOutput {
   readonly timeZone?: string;
 
   /**
+   * Property passwordChangedAt
+   *
+   * @description
+   * When the password was last set; absent until identity-service runs `@cadenway/contracts`
+   * 0.7.0.
+   *
+   * @type {string | undefined}
+   * @readonly
+   */
+  readonly passwordChangedAt?: string;
+
+  /**
    * Property version
    *
    * @description

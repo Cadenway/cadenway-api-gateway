@@ -21,9 +21,11 @@ export interface ApiTokenRegistry {
    * Method createApiToken
    *
    * @description
-   * `POST /internal/v1/api-tokens`.
+   * `POST /internal/v1/api-tokens`, with the session of the request. Rejects with
+   * `403 auth.reauthentication-required` without a recent authentication of that session, and
+   * `404 session.not-found` when it is no longer an open session of the user.
    *
-   * @param {CreateApiTokenInput} creation - Name, scopes and expiration.
+   * @param {CreateApiTokenInput} creation - Session, name, scopes and expiration.
    * @returns {Promise<CreateApiTokenOutput>} The token and its secret, once.
    */
   createApiToken(creation: CreateApiTokenInput): Promise<CreateApiTokenOutput>;

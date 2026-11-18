@@ -9,7 +9,9 @@ routes of `openapi/public/auth.yaml` and the client of identity-service are impl
 `tests/auth.int-spec.ts`; personal API tokens, scopes, the organization context, the rate limit and
 the routes of `organizations.yaml`, `members.yaml` and `api-tokens.yaml` are implemented (see
 [Credentials, scopes and rate limit](#credentials-scopes-and-rate-limit)) and covered by the route
-tests and `tests/rate-limit.int-spec.ts`.
+tests and `tests/rate-limit.int-spec.ts`; the account security routes of `auth.yaml` are
+implemented (see [Account security routes](#account-security-routes)) and covered by the route
+tests and `tests/account-security.int-spec.ts`.
 
 ## Public and internal boundaries
 
@@ -69,6 +71,65 @@ SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a pers
   `404 session.not-found` as an ended session, and `GET /v1/me` answers `404 user.not-found` as
   `401 auth.session-expired`. When identity-service cannot answer, the sign-out answers `503` and
   keeps the cookie, so it can be retried.
+
+### Account security routes
+
+Phase P2c-1 of the integration plan, `@cadenway/contracts` 0.7.0: the password reset, the recent
+re-authentication, the password, the address, the deletion and the open sessions.
+
+| Public route                                | Guards                         | Internal call, actor                                                                    |
+| ------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------- |
+| `POST /v1/auth/password-reset`              | Cross-site                     | `POST /internal/v1/auth/password-reset`, `anonymous`                                    |
+| `POST /v1/auth/password-reset/inspection`   | Cross-site                     | `POST /internal/v1/auth/password-reset/inspection`, `anonymous`                         |
+| `POST /v1/auth/password-reset/confirmation` | Cross-site                     | `POST /internal/v1/auth/password-reset/confirmation`, `anonymous`                       |
+| `POST /v1/auth/reauthentication`            | Cross-site, session            | `POST /internal/v1/sessions/{sessionId}/reauthentication`, `user`                       |
+| `PUT /v1/me/password`                       | Cross-site, session            | `PUT /internal/v1/users/{userId}/password` (body `sessionId`), `user`                   |
+| `POST /v1/me/email-change`                  | Cross-site, session            | `POST /internal/v1/users/{userId}/email-change` (body `sessionId`), `user`              |
+| `POST /v1/me/email-change/confirmation`     | Cross-site, session            | `POST /internal/v1/users/{userId}/email-change/confirmation` (body `sessionId`), `user` |
+| `POST /v1/me/deletion`                      | Cross-site, session            | `POST /internal/v1/users/{userId}/deletion` (body `sessionId`), `user`                  |
+| `GET /v1/sessions`                          | Session                        | `GET /internal/v1/users/{userId}/sessions?currentSessionId=`, `user`                    |
+| `DELETE /v1/sessions/{sessionId}`           | Cross-site (`Origin`), session | `DELETE /internal/v1/sessions/{sessionId}` with the id of the path, `user`              |
+| `POST /v1/sessions/revoke-others`           | Cross-site, session            | `POST /internal/v1/sessions/{sessionId}/revoke-others`, `user`                          |
+
+- **Password reset.** The three routes carry no session (`security: []`): the credential guard
+  reads neither the cookie nor a bearer token, the rate limit counts them on the client address
+  (60 per minute), and none signs in. The reset token arrives in the body, never in a URL: the
+  link keeps it in its fragment (`#token=`), which only the browser reads. identity-service
+  throttles the requests of an address (`429 auth.reset-throttled`, `Retry-After` from
+  `details.resendAvailableAt`).
+- **Session of the request.** The routes of the signed-in person send identity-service the session
+  the introspection returned, never one the request names: in the path, in the body
+  (`sessionId`) or in the query (`currentSessionId`). identity-service answers
+  `404 session.not-found` when it is no longer an open session of the user, which the gateway
+  answers `401 auth.session-expired`, as `404 user.not-found`; only
+  `DELETE /v1/sessions/{sessionId}`, whose id comes from the public path, relays
+  `404 session.not-found` as is. The creation of a personal API token sends the session too
+  (`sessionId`).
+- **Recent authentication.** identity-service decides it: the change of address, the deletion and
+  the creation of a personal API token relay its `403 auth.reauthentication-required` with
+  `details.methods` and the French title of the contract.
+- **Deletion.** The `202` clears the session cookie (`Max-Age=0`): identity-service has revoked
+  every session and token of the account. A refused deletion leaves the cookie.
+- **Answers.** `passwordChangedAt` is passed on in `CurrentUser` when identity-service sends it,
+  and the routes that sign in pass `deletionCancelled` on. Every answer of the tags `auth`,
+  `account` and `sessions` carries `Cache-Control: no-store`; the answers carrying the account
+  carry its `ETag`.
+- **Retries.** The password change is not retried after a connection error or a `503`, although
+  it is a `PUT`: a change identity-service already applied would be repeated with a current
+  password that no longer works, counting a failure towards the lockout. The list of sessions is
+  retried once, as any `GET`, and the revocation of one session once, as any `DELETE`; the other
+  new calls are `POST` and are not retried.
+- **Re-authentication guards.** `POST /v1/auth/reauthentication` needs a session, so it is served
+  by its own controller with the guards of the session routes rather than behind `CsrfGuard`: a
+  request without a cookie answers `401 auth.session-required`, a cookie request without an
+  allowed `Origin` `403 auth.csrf-rejected`, and a personal API token, which needs no `Origin`,
+  `403 auth.api-token-not-accepted`.
+- **Internal `400`.** A route whose internal request the gateway builds from the introspection
+  alone (the deletion, the closing of the other sessions, and the revocation of a session, whose
+  id is checked as a UUID) answers an internal `400` as `503 upstream.failed`, as the sign-out
+  does: it is a defect, not something the browser sent.
+- **Secrets.** Passwords, reset tokens and codes travel in request bodies only and are never
+  logged (`tests/account-security.int-spec.ts` checks the log lines).
 
 ### Decisions of the walking skeleton
 

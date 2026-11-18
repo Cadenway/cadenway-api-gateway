@@ -17,6 +17,11 @@ import {
   type RouteApplication,
 } from '../../../../../../../tests/support/route-application.js';
 import {
+  expectEveryDeclaredStatus,
+  runRouteCase,
+  type RouteCase,
+} from '../../../../../../../tests/support/route-cases.js';
+import {
   ALLOWED_ORIGIN,
   WEBSITE_ORIGIN,
 } from '../../../../../../../tests/support/test-environment.js';
@@ -136,6 +141,12 @@ const ROUTES: readonly Route[] = [
   },
   { path: '/v1/auth/sign-in/code', body: { email: CAMILLE.email } },
   { path: '/v1/auth/sign-in/code/verification', body: { email: CAMILLE.email, code: '482913' } },
+  { path: '/v1/auth/password-reset', body: { email: CAMILLE.email } },
+  { path: '/v1/auth/password-reset/inspection', body: { token: 'reset-token-of-the-link' } },
+  {
+    path: '/v1/auth/password-reset/confirmation',
+    body: { token: 'reset-token-of-the-link', newPassword: 'nord-atelier-sprint-15' },
+  },
   { path: '/v1/auth/sign-out', body: {} },
 ];
 
@@ -1157,5 +1168,539 @@ describe('routes of /v1/auth', () => {
       expect(response.headers['retry-after']).toBe('8');
       expect(response.headers['set-cookie']).toBeUndefined();
     });
+  });
+});
+
+/**
+ * Constant RESET_TOKEN
+ *
+ * @description
+ * Token of a password reset link in the tests: a secret that must never reach a log line.
+ *
+ * @type {string}
+ */
+const RESET_TOKEN: string = 'reset-token-0123456789abcdefghijklmnopqrstu';
+
+/**
+ * Constant NEW_PASSWORD
+ *
+ * @description
+ * New password chosen with the link: a secret that must never reach a log line.
+ *
+ * @type {string}
+ */
+const NEW_PASSWORD: string = 'nord-atelier-sprint-15-secret';
+
+/**
+ * Constant PASSWORD
+ *
+ * @description
+ * Password of the sign-ins of these tests: a secret that must never reach a log line.
+ *
+ * @type {string}
+ */
+const PASSWORD: string = 'atelier-nord-sprint-14-secret';
+
+/**
+ * Constant BROWSER_CLIENT
+ *
+ * @description
+ * The `client` the gateway sends for a request from the address Traefik saw with the test
+ * User-Agent.
+ *
+ * @type {{ ipAddress: string; userAgent: string }}
+ */
+const BROWSER_CLIENT: { ipAddress: string; userAgent: string } = {
+  ipAddress: '86.247.12.30',
+  userAgent: BROWSER,
+};
+
+/**
+ * Constant BROWSER_HEADERS
+ *
+ * @description
+ * Headers of a request from the browser of the tests, one proxy hop away.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+const BROWSER_HEADERS: Readonly<Record<string, string>> = {
+  'User-Agent': BROWSER,
+  'X-Forwarded-For': BROWSER_CLIENT.ipAddress,
+};
+
+/**
+ * Function inSeconds
+ *
+ * @description
+ * An instant some seconds from now, as identity-service writes it in `details`.
+ *
+ * @param {number} seconds - Seconds from now.
+ * @returns {string} The ISO 8601 instant.
+ */
+function inSeconds(seconds: number): string {
+  return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
+/**
+ * Function expectRetryAfterAtMost
+ *
+ * @description
+ * Checks that `Retry-After` is a whole number of seconds between 1 and a maximum.
+ *
+ * @param {request.Response} response - The response.
+ * @param {number} seconds - The largest value expected.
+ */
+function expectRetryAfterAtMost(response: request.Response, seconds: number): void {
+  const value: number = Number(response.headers['retry-after']);
+  expect(Number.isInteger(value)).toBe(true);
+  expect(value).toBeGreaterThanOrEqual(1);
+  expect(value).toBeLessThanOrEqual(seconds);
+}
+
+/**
+ * Constant LINK
+ *
+ * @description
+ * Answer of identity-service to the inspection of a usable link.
+ *
+ * @type {{ email: string; expiresAt: string; sessionCount: number }}
+ */
+const LINK: { email: string; expiresAt: string; sessionCount: number } = {
+  email: CAMILLE.email,
+  expiresAt: '2026-11-09T13:40:00Z',
+  sessionCount: 3,
+};
+
+/**
+ * Constant RECOVERY_CASES
+ *
+ * @description
+ * The success and every declared error of the password reset.
+ *
+ * @type {readonly RouteCase[]}
+ */
+const RECOVERY_CASES: readonly RouteCase[] = [
+  {
+    name: 'POST /v1/auth/password-reset asks for a link as nobody, with the browser, answering 202',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    body: { email: CAMILLE.email },
+    headers: BROWSER_HEADERS,
+    arrange: ({ identity }) =>
+      identity.requestPasswordReset.mockResolvedValue({
+        email: CAMILLE.email,
+        expiresAt: '2026-11-09T13:40:00Z',
+        resendAvailableAt: '2026-11-09T13:10:45Z',
+      }),
+    status: 202,
+    check: (response, { identity, anonymousCounter }) => {
+      expect(response.body).toEqual({
+        email: CAMILLE.email,
+        expiresAt: '2026-11-09T13:40:00Z',
+        resendAvailableAt: '2026-11-09T13:10:45Z',
+      });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(identity.requestPasswordReset).toHaveBeenCalledWith({
+        email: CAMILLE.email,
+        client: BROWSER_CLIENT,
+      });
+      expect(anonymousCounter.consume).toHaveBeenCalledTimes(1);
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset ignores a stale session cookie: the route carries no session',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: { cookie: 'stale' },
+    body: { email: CAMILLE.email },
+    arrange: ({ identity }) =>
+      identity.requestPasswordReset.mockResolvedValue({
+        email: CAMILLE.email,
+        expiresAt: '2026-11-09T13:40:00Z',
+        resendAvailableAt: '2026-11-09T13:10:45Z',
+      }),
+    status: 202,
+    check: (_response, { identity }) => {
+      expect(identity.introspect).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset refuses an address that is not one',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    body: { email: 'camille' },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'POST /v1/auth/password-reset refuses another origin',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    origin: 'https://evil.test',
+    body: { email: CAMILLE.email },
+    status: 403,
+    code: 'auth.csrf-rejected',
+  },
+  {
+    name: 'POST /v1/auth/password-reset relays 429 auth.reset-throttled with Retry-After',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    body: { email: CAMILLE.email },
+    arrange: ({ identity }) =>
+      identity.requestPasswordReset.mockRejectedValue(
+        identityProblem(429, 'auth.reset-throttled', { resendAvailableAt: inSeconds(45) }),
+      ),
+    status: 429,
+    code: 'auth.reset-throttled',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'Un lien vient d’être envoyé : patientez avant d’en demander un nouveau.',
+      });
+      const body = response.body as { details?: { resendAvailableAt?: unknown } };
+      expect(typeof body.details?.resendAvailableAt).toBe('string');
+      expectRetryAfterAtMost(response, 45);
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset answers 429 beyond the quota of the address',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    body: { email: CAMILLE.email },
+    arrange: ({ anonymousCounter }) =>
+      anonymousCounter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 12 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+    check: (response, { identity }) => {
+      expect(response.headers['retry-after']).toBe('12');
+      expect(identity.requestPasswordReset).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset answers 503 when identity-service cannot answer',
+    method: 'post',
+    path: '/v1/auth/password-reset',
+    url: '/v1/auth/password-reset',
+    credential: 'none',
+    body: { email: CAMILLE.email },
+    arrange: ({ identity }) =>
+      identity.requestPasswordReset.mockRejectedValue(identityUnavailable()),
+    status: 503,
+    code: 'upstream.unavailable',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection reads the account of the link with the token of the body',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    body: { token: RESET_TOKEN },
+    arrange: ({ identity }) => identity.inspectPasswordResetLink.mockResolvedValue({ ...LINK }),
+    status: 200,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual(LINK);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(identity.inspectPasswordResetLink).toHaveBeenCalledWith({ token: RESET_TOKEN });
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection refuses an empty token',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    body: { token: '' },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection refuses a form post',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `token=${RESET_TOKEN}`,
+    status: 403,
+    code: 'auth.csrf-rejected',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection relays 422 auth.reset-link-expired',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    body: { token: RESET_TOKEN },
+    arrange: ({ identity }) =>
+      identity.inspectPasswordResetLink.mockRejectedValue(
+        identityProblem(422, 'auth.reset-link-expired'),
+      ),
+    status: 422,
+    code: 'auth.reset-link-expired',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Ce lien a expiré',
+        status: 422,
+        code: 'auth.reset-link-expired',
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection answers 429 beyond the quota of the address',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    body: { token: RESET_TOKEN },
+    arrange: ({ anonymousCounter }) =>
+      anonymousCounter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 12 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/inspection answers 503 when identity-service cannot answer',
+    method: 'post',
+    path: '/v1/auth/password-reset/inspection',
+    url: '/v1/auth/password-reset/inspection',
+    credential: 'none',
+    body: { token: RESET_TOKEN },
+    arrange: ({ identity }) =>
+      identity.inspectPasswordResetLink.mockRejectedValue(identityUnavailable('timeout')),
+    status: 503,
+    code: 'upstream.timeout',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation sets the password, closing the other sessions by default, without signing in',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    headers: BROWSER_HEADERS,
+    arrange: ({ identity }) =>
+      identity.confirmPasswordReset.mockResolvedValue({
+        email: CAMILLE.email,
+        closedSessionCount: 3,
+      }),
+    status: 200,
+    check: (response, { identity }) => {
+      expect(response.body).toEqual({ email: CAMILLE.email, closedSessionCount: 3 });
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(identity.confirmPasswordReset).toHaveBeenCalledWith({
+        token: RESET_TOKEN,
+        newPassword: NEW_PASSWORD,
+        closeOtherSessions: true,
+        client: BROWSER_CLIENT,
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation keeps the other sessions when asked to',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD, closeOtherSessions: false },
+    arrange: ({ identity }) =>
+      identity.confirmPasswordReset.mockResolvedValue({
+        email: CAMILLE.email,
+        closedSessionCount: 0,
+      }),
+    status: 200,
+    check: (_response, { identity }) => {
+      expect(identity.confirmPasswordReset).toHaveBeenCalledWith(
+        expect.objectContaining({ closeOtherSessions: false }),
+      );
+    },
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation refuses a body without the new password',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN },
+    status: 400,
+    code: 'request.invalid',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation refuses a request without Origin',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    origin: null,
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    status: 403,
+    code: 'auth.csrf-rejected',
+  },
+  ...(
+    [
+      ['auth.reset-link-expired', {}, 'Ce lien a expiré'],
+      [
+        'auth.password-too-short',
+        { minLength: 12 },
+        'Le mot de passe doit compter 12 caractères minimum.',
+      ],
+      [
+        'auth.password-compromised',
+        {},
+        'Ce mot de passe figure parmi des mots de passe divulgués : choisissez-en un autre.',
+      ],
+    ] as const
+  ).map(([code, details, title]): RouteCase => ({
+    name: `POST /v1/auth/password-reset/confirmation relays 422 ${code}`,
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.confirmPasswordReset.mockRejectedValue(identityProblem(422, code, details)),
+    status: 422,
+    code,
+    check: (response) => {
+      expect(response.body).toMatchObject({ title });
+    },
+  })),
+  {
+    name: 'POST /v1/auth/password-reset/confirmation answers a code it does not declare as 503 upstream.failed',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.confirmPasswordReset.mockRejectedValue(identityProblem(422, 'auth.code-invalid')),
+    status: 503,
+    code: 'upstream.failed',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation answers 429 beyond the quota of the address',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    arrange: ({ anonymousCounter }) =>
+      anonymousCounter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 12 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'POST /v1/auth/password-reset/confirmation answers 503 when identity-service cannot answer',
+    method: 'post',
+    path: '/v1/auth/password-reset/confirmation',
+    url: '/v1/auth/password-reset/confirmation',
+    credential: 'none',
+    body: { token: RESET_TOKEN, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.confirmPasswordReset.mockRejectedValue(identityUnavailable('deadline-exceeded')),
+    status: 503,
+    code: 'upstream.deadline-exceeded',
+  },
+];
+
+describe('password reset and the cancellation of a deletion', () => {
+  let identity: FakeIdentity;
+  let application: RouteApplication;
+
+  beforeAll(async () => {
+    identity = createFakeIdentity();
+    application = await createRouteApplication(identity);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterAll(async () => {
+    await application.app.close();
+  });
+
+  it('exercises every status each route declares', () => {
+    expectEveryDeclaredStatus(RECOVERY_CASES);
+  });
+
+  it.each(RECOVERY_CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
+    '%s',
+    async (_name, routeCase) => {
+      await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it.each([
+    ['/v1/auth/sign-in', { email: CAMILLE.email, password: PASSWORD }, 'signInWithPassword'],
+    [
+      '/v1/auth/sign-in/code/verification',
+      { email: CAMILLE.email, code: '482913' },
+      'signInWithCode',
+    ],
+  ] as const)(
+    'passes deletionCancelled and passwordChangedAt on in the answer of %s',
+    async (path, body, method) => {
+      identity[method].mockResolvedValue({
+        token: 'new-session-token-0123456789',
+        session: {
+          id: CAMILLE_SESSION.sessionId,
+          expiresAt: '2026-12-08T13:07:00Z',
+          persistent: false,
+        },
+        user: { ...CAMILLE, passwordChangedAt: '2026-08-12T09:30:00Z' },
+        deletionCancelled: true,
+      });
+
+      const response: request.Response = await runRouteCase(application, identity, {
+        name: path,
+        method: 'post',
+        path,
+        url: path,
+        credential: 'none',
+        body,
+        status: 200,
+      });
+
+      expect(response.body).toMatchObject({
+        user: { passwordChangedAt: '2026-08-12T09:30:00Z' },
+        deletionCancelled: true,
+      });
+    },
+  );
+
+  it('leaves deletionCancelled out of a sign-in when identity-service does not send it', async () => {
+    identity.signInWithPassword.mockResolvedValue({
+      token: 'new-session-token-0123456789',
+      session: {
+        id: CAMILLE_SESSION.sessionId,
+        expiresAt: '2026-12-08T13:07:00Z',
+        persistent: false,
+      },
+      user: { ...CAMILLE },
+    });
+
+    const response: request.Response = await runRouteCase(application, identity, {
+      name: 'sign-in',
+      method: 'post',
+      path: '/v1/auth/sign-in',
+      url: '/v1/auth/sign-in',
+      credential: 'none',
+      body: { email: CAMILLE.email, password: PASSWORD },
+      status: 200,
+    });
+
+    expect(response.body).not.toHaveProperty('deletionCancelled');
+    expect((response.body as { user: unknown }).user).not.toHaveProperty('passwordChangedAt');
   });
 });

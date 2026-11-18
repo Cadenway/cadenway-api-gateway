@@ -7,14 +7,23 @@ import type { VerifySignUpInput } from '../../../../use-cases/commands/auth/veri
 import type { SignInWithCodeInput } from '../../../../use-cases/commands/auth/sign-in-with-code/sign-in-with-code.input.js';
 import type { SignInWithPasswordInput } from '../../../../use-cases/commands/auth/sign-in-with-password/sign-in-with-password.input.js';
 import type { SessionIssued } from '../../../../models/auth/session-issued.model.js';
+import type { RequestPasswordResetInput } from '../../../../use-cases/commands/auth/request-password-reset/request-password-reset.input.js';
+import type { PasswordResetLinkSent } from '../../../../models/auth/password-reset-link-sent.model.js';
+import type { InspectPasswordResetLinkInput } from '../../../../use-cases/queries/auth/inspect-password-reset-link/inspect-password-reset-link.input.js';
+import type { PasswordResetLink } from '../../../../models/auth/password-reset-link.model.js';
+import type { ConfirmPasswordResetInput } from '../../../../use-cases/commands/auth/confirm-password-reset/confirm-password-reset.input.js';
+import type { PasswordResetCompleted } from '../../../../models/auth/password-reset-completed.model.js';
+import type { RecentAuthentication } from '../../../../models/auth/recent-authentication.model.js';
 
 /**
  * Interface IdentityAuth
  *
  * @description
- * Outgoing port of the routes of `openapi/public/auth.yaml`: the internal routes of
- * `openapi/internal/identity-service.yaml` they call. The local adapter delegates to the shared client, which signs the flows as
- * the actor `anonymous` and the revocation as the user of the current organization context.
+ * Outgoing port of the routes of `openapi/public/auth.yaml` under `/v1/auth`: the internal routes
+ * of `openapi/internal/identity-service.yaml` they call. The local adapter delegates to the shared
+ * client, which signs the flows before a session (sign-up, sign-in, password reset) as the actor
+ * `anonymous`, and the revocation and the re-authentication as the user of the current
+ * organization context.
  *
  * Every method resolves with a response that matched the internal contract, and rejects with a
  * `ProblemException`: the client error of identity-service with its `code` and `details`, or
@@ -112,5 +121,54 @@ export interface IdentityAuth {
    * @returns {Promise<void>} Resolves once the session is revoked, or had already ended.
    */
   revokeSession(sessionId: string): Promise<void>;
+
+  /**
+   * Method requestPasswordReset
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset`. Rejects with `429 auth.reset-throttled`.
+   *
+   * @param {RequestPasswordResetInput} request - Address and browser that asks for the link.
+   * @returns {Promise<PasswordResetLinkSent>} The same answer whether or not a link was issued.
+   */
+  requestPasswordReset(request: RequestPasswordResetInput): Promise<PasswordResetLinkSent>;
+
+  /**
+   * Method inspectPasswordResetLink
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset/inspection`. Rejects with
+   * `422 auth.reset-link-expired`.
+   *
+   * @param {InspectPasswordResetLinkInput} request - The token of the link.
+   * @returns {Promise<PasswordResetLink>} The account of the link.
+   */
+  inspectPasswordResetLink(request: InspectPasswordResetLinkInput): Promise<PasswordResetLink>;
+
+  /**
+   * Method confirmPasswordReset
+   *
+   * @description
+   * `POST /internal/v1/auth/password-reset/confirmation`. Rejects with
+   * `422 auth.reset-link-expired`, `auth.password-too-short` or `auth.password-compromised`.
+   *
+   * @param {ConfirmPasswordResetInput} request - Token, new password, sessions choice, browser.
+   * @returns {Promise<PasswordResetCompleted>} The address of the account and the sessions closed.
+   */
+  confirmPasswordReset(request: ConfirmPasswordResetInput): Promise<PasswordResetCompleted>;
+
+  /**
+   * Method reauthenticate
+   *
+   * @description
+   * `POST /internal/v1/sessions/{sessionId}/reauthentication`, for the user of the current
+   * organization context. Rejects with `422 auth.password-incorrect`, `429 auth.account-locked`,
+   * or `404 session.not-found` when the session is no longer an open session of the user.
+   *
+   * @param {string} sessionId - Id of the session, as the introspection returned it.
+   * @param {string} password - The password of the account.
+   * @returns {Promise<RecentAuthentication>} The window of recent authentication.
+   */
+  reauthenticate(sessionId: string, password: string): Promise<RecentAuthentication>;
   // #endregion
 }

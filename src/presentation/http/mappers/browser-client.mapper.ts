@@ -1,26 +1,59 @@
 import { signInWithPasswordInternalBodyClientUserAgentMax } from '@cadenway/contracts/validators/internal/identity-service';
 import type { Request } from 'express';
 
-import { toClientAddress } from '../../../../../../presentation/http/mappers/client-address.mapper.js';
-import type { Client } from '../../../../application/models/auth/client.model.js';
+import { toClientAddress } from './client-address.mapper.js';
 
 /**
  * Constant MAX_USER_AGENT_LENGTH
  *
  * @description
  * Longest `User-Agent` the internal contract accepts (`Client.userAgent`), in code points. A longer
- * header is cut there rather than failing the sign-in: the value only describes the device.
+ * header is cut there rather than failing the request: the value only describes the device.
  *
  * @type {number}
  */
 const MAX_USER_AGENT_LENGTH: number = signInWithPasswordInternalBodyClientUserAgentMax;
 
 /**
+ * Interface BrowserClient
+ *
+ * @description
+ * The browser a request came from, as the internal contract of identity-service describes it
+ * (`Client`): stored with a session it opens, and shown in the security email of the request.
+ */
+export interface BrowserClient {
+  // #region Properties
+  /**
+   * Property ipAddress
+   *
+   * @description
+   * Address supplied by the trusted HTTP edge.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly ipAddress: string;
+
+  /**
+   * Property userAgent
+   *
+   * @description
+   * User agent supplied by the browser, `null` without one.
+   *
+   * @type {string | null}
+   * @readonly
+   */
+  readonly userAgent: string | null;
+  // #endregion
+}
+
+/**
  * Function browserClient
  *
  * @description
- * Describes the browser a session is opened for, as the internal contract asks the gateway to
- * (`client`): identity-service never reads the headers of the internal call.
+ * Describes the browser of a request, as the internal contract asks the gateway to (`client`):
+ * identity-service never reads the headers of the internal call. The sign-ins, the password reset,
+ * the password change and the confirmation of a new address send it.
  *
  * - `ipAddress` is the client address of `toClientAddress`: `request.ip`, which Express derives
  *   from `X-Forwarded-For` with `trust proxy` set to one hop, so the address Traefik saw and never
@@ -30,10 +63,10 @@ const MAX_USER_AGENT_LENGTH: number = signInWithPasswordInternalBodyClientUserAg
  *   points.
  *
  * @param {Request} request - Incoming request.
- * @returns {Client} The `client` member of the internal request.
+ * @returns {BrowserClient} The `client` member of the internal request.
  * @throws {Error} When the request has no peer address, which a live connection always has.
  */
-export function browserClient(request: Request): Client {
+export function browserClient(request: Request): BrowserClient {
   const userAgent: string | undefined = request.get('User-Agent');
   return {
     ipAddress: toClientAddress(request),
