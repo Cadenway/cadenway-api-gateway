@@ -130,13 +130,13 @@ const ETAG: RegExp = /^"(\d{1,15})"$/u;
  * Constant CHECKLIST_ITEM_LOCATION
  *
  * @description
- * The `Location` of a created checklist item, `/internal/v1/tasks/<key>/checklist-items/<id>`,
- * whose last segment is the id of the item.
+ * The `Location` of a created checklist item, `/internal/v1/tasks/<key>/checklist-items/<id>`:
+ * the key of the task, then the id of the item (a UUID, of either case).
  *
  * @type {RegExp}
  */
 const CHECKLIST_ITEM_LOCATION: RegExp =
-  /^\/internal\/v1\/tasks\/[A-Z]{2,5}-[1-9]\d{0,8}\/checklist-items\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/u;
+  /^\/internal\/v1\/tasks\/([A-Z]{2,5}-[1-9]\d{0,8})\/checklist-items\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/u;
 
 /**
  * Function call
@@ -766,7 +766,7 @@ export class TaskServiceClient {
    * @param {string | undefined} idempotencyKey - `Idempotency-Key` of the public request.
    * @returns {Promise<{ task: z.output<typeof AddChecklistItemInternalResponse>; checklistItemId: string }>}
    * The task and the id of the item.
-   * @throws {ProblemException} 503 `upstream.failed` when `Location` does not name an item.
+   * @throws {ProblemException} 503 `upstream.failed` when `Location` does not name an item of the task.
    */
   public async addChecklistItem(
     taskKey: string,
@@ -790,11 +790,17 @@ export class TaskServiceClient {
       201,
       AddChecklistItemInternalResponse,
     );
-    const checklistItemId: string | undefined = CHECKLIST_ITEM_LOCATION.exec(
+    const location: RegExpExecArray | null = CHECKLIST_ITEM_LOCATION.exec(
       answer.headers.get('Location') ?? '',
-    )?.[1];
+    );
+    const checklistItemId: string | undefined =
+      location?.[1] === task.key ? location[2] : undefined;
     if (checklistItemId === undefined) {
-      throw outsideContract(TASK_SERVICE, operation, 'a Location that names no checklist item');
+      throw outsideContract(
+        TASK_SERVICE,
+        operation,
+        'a Location that names no checklist item of the task',
+      );
     }
     return { task, checklistItemId };
   }

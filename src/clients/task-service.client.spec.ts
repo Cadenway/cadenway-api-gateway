@@ -283,6 +283,24 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
   });
 
+  it('accepts the id of a checklist item in upper case, and refuses a Location of another task', async () => {
+    const id = '019A7C00-1A2B-7C3D-8E4F-5A6B7C8D9E99';
+    let location = `/internal/v1/tasks/CAD-482/checklist-items/${id}`;
+    answer('post', '/internal/v1/tasks/CAD-482/checklist-items', () =>
+      json(responseExample('post', '/v1/tasks/{taskKey}/checklist-items', 201), 201, {
+        Location: location,
+      }),
+    );
+
+    await expect(
+      asCamille(() => client.addChecklistItem('CAD-482', { text: 'Relire' }, undefined)),
+    ).resolves.toMatchObject({ checklistItemId: id });
+    location = `/internal/v1/tasks/CAD-999/checklist-items/${id}`;
+    await expect(
+      asCamille(() => client.addChecklistItem('CAD-482', { text: 'Relire' }, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
   it('reads the core of the detail, checked against the internal contract', async () => {
     answer('get', '/internal/v1/tasks/CAD-483/detail', () => json(taskDetailCore()));
 
