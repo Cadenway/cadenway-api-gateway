@@ -194,7 +194,7 @@ describe('the task core routes against task-service over HTTP', () => {
       sink,
     );
     await app.init();
-    server = app.getHttpServer() as App;
+    server = app.getHttpServer();
   });
 
   afterEach(() => {
