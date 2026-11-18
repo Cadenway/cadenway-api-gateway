@@ -11,7 +11,10 @@ the routes of `organizations.yaml`, `members.yaml` and `api-tokens.yaml` are imp
 [Credentials, scopes and rate limit](#credentials-scopes-and-rate-limit)) and covered by the route
 tests and `tests/rate-limit.int-spec.ts`; the account security routes of `auth.yaml` are
 implemented (see [Account security routes](#account-security-routes)) and covered by the route
-tests and `tests/account-security.int-spec.ts`.
+tests and `tests/account-security.int-spec.ts`; the task core routes of `spaces.yaml`, `lists.yaml`
+and `tasks.yaml` and the client of task-service are implemented (see
+[Task core routes](#task-core-routes)) and covered by the route tests, the client tests and
+`tests/tasks.int-spec.ts`.
 
 ## Public and internal boundaries
 
@@ -320,6 +323,25 @@ Source: `cw-gateway-patterns` ([Claude](../.claude/skills/cw-gateway-patterns/SK
 request → auth guard (token) → scope guard → organization context → rate limit
         → controller → internal client(s) → mapping to openapi/public → response
 ```
+
+### Task core routes
+
+- The 29 routes of `openapi/public/spaces.yaml`, `lists.yaml` and `tasks.yaml` call
+  task-service through the client generated from `openapi/internal/task-service.yaml`
+  (`TASK_SERVICE_URL`), with the user and organization of the verified credential in the
+  internal token. Reads need `tasks:read` and writes `tasks:write` for a personal API token,
+  spaces and lists included; every route acts on the current organization.
+- The gateway reads no member of a task-service body: the client checks each query and body
+  against the internal contract before the call and each answer after it, and the route maps the
+  answer to the public contract through its public validator.
+- Each route relays only the client errors its public operation declares, with their French
+  titles; any other is `503 upstream.failed`. `If-Match`, `Idempotency-Key`, `today` and every
+  query parameter are relayed as declared; `ETag` and `Location` are answered as the public
+  operation declares them.
+- `GET /v1/tasks/{taskKey}/detail` is an aggregate: the core of task-service is its main part,
+  and each later secondary part (attachments, development links, comments) is read in parallel
+  within 800 ms and named in `partial` when it cannot be read. None exists yet: `partial` is
+  `[]`.
 
 ### An aggregate
 
