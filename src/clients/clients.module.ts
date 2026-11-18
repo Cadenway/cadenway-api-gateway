@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import type { AppConfig } from '../config/app-config.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
+import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
 
 /**
  * Class ClientsModule
@@ -38,7 +39,19 @@ import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-
           }),
         ),
     },
+    {
+      provide: TaskServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): TaskServiceClient =>
+        new TaskServiceClient(
+          new InternalHttpClient({
+            service: TASK_SERVICE,
+            baseUrl: config.TASK_SERVICE_URL,
+            signer,
+          }),
+        ),
+    },
   ],
-  exports: [IdentityServiceClient, OrganizationServiceClient],
+  exports: [IdentityServiceClient, OrganizationServiceClient, TaskServiceClient],
 })
 export class ClientsModule {}

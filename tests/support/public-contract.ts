@@ -24,6 +24,9 @@ export const PUBLIC_SPEC_NAMES: readonly string[] = [
   'organizations.yaml',
   'members.yaml',
   'api-tokens.yaml',
+  'spaces.yaml',
+  'lists.yaml',
+  'tasks.yaml',
 ];
 
 /**

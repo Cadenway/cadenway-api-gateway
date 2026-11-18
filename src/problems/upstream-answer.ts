@@ -108,7 +108,33 @@ export function expectBody<TSchema extends z.ZodType>(
   schema: TSchema,
 ): z.output<TSchema> {
   expectStatus(service, operation, response, status);
-  const parsed: z.ZodSafeParseResult<z.output<TSchema>> = schema.safeParse(response.data);
+  return conformBody(service, operation, schema, response.data);
+}
+
+/**
+ * Function conformBody
+ *
+ * @description
+ * Checks a body against a zod validator of `@cadenway/contracts`: the answer of an internal
+ * service against its internal contract, or that answer against the public contract of the route
+ * that relays it. The parsed value keeps the members of the contract only, so a member the
+ * called service adds later never reaches the applications before the public contract declares
+ * it.
+ *
+ * @param {string} service - Name of the called service.
+ * @param {string} operation - `operationId` of the call or of the public route.
+ * @param {TSchema} schema - Validator of the body.
+ * @param {unknown} body - The body.
+ * @returns {z.output<TSchema>} The validated body.
+ * @throws {ProblemException} 503 `upstream.failed` when the body does not match.
+ */
+export function conformBody<TSchema extends z.ZodType>(
+  service: string,
+  operation: string,
+  schema: TSchema,
+  body: unknown,
+): z.output<TSchema> {
+  const parsed: z.ZodSafeParseResult<z.output<TSchema>> = schema.safeParse(body);
   if (!parsed.success) {
     const members: string = parsed.error.issues
       .map((issue: z.core.$ZodIssue) => issue.path.join('.') || '(body)')
