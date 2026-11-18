@@ -51,5 +51,18 @@ export interface SignInWithCodeInput {
    * @readonly
    */
   readonly client: Client;
+
+  /**
+   * Property trustedDeviceToken
+   *
+   * @description
+   * The device token of the cookie `__Host-cw_trusted_device` of the browser, when it sent one of
+   * 1 to 256 characters: identity-service skips the two-step challenge for a device the account
+   * trusts. A secret: never logged.
+   *
+   * @type {string | undefined}
+   * @readonly
+   */
+  readonly trustedDeviceToken?: string;
   // #endregion
 }

@@ -64,5 +64,18 @@ export interface SessionIssued {
    * @readonly
    */
   readonly deletionCancelled?: boolean;
+
+  /**
+   * Property trustedDevice
+   *
+   * @description
+   * The device an answer of a two-step challenge with `trustDevice` made trusted: its opaque
+   * token, returned once and written into the device cookie only, and when it expires. Absent
+   * otherwise.
+   *
+   * @type {{ readonly token: string; readonly expiresAt: string } | undefined}
+   * @readonly
+   */
+  readonly trustedDevice?: { readonly token: string; readonly expiresAt: string };
   // #endregion
 }

@@ -35,3 +35,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   introspection and a path id checked as a UUID: an internal `400` is a defect, answered
   `503 upstream.failed`. The list relays it, since its cursor comes from the browser.
 - Every answer carries `Cache-Control: no-store`.
+- `inactivityTimeoutMinutes` of each session, the inactivity of the policy of its current
+  organization, is passed on when identity-service sends it.

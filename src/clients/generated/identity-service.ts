@@ -100,6 +100,17 @@ export interface SignUpVerification {
   client: Client;
 }
 
+/**
+ * Value of the cookie `__Host-cw_trusted_device` of the request, which the gateway forwards
+ * when the browser sent one of 1 to 256 characters, and leaves out otherwise. A secret, never
+ * logged; identity-service compares its SHA-256 hash with the trusted devices of the
+ * account. Unknown, expired, forgotten, of another account or malformed: ignored, the
+ * sign-in answers its challenge.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type TrustedDeviceToken = string;
+
 export interface CodeVerification {
   email: Email;
   /**
@@ -109,6 +120,7 @@ export interface CodeVerification {
   code: string;
   rememberMe?: boolean;
   client: Client;
+  trustedDeviceToken?: TrustedDeviceToken;
 }
 
 export interface PasswordSignIn {
@@ -121,6 +133,7 @@ export interface PasswordSignIn {
   password: string;
   rememberMe?: boolean;
   client: Client;
+  trustedDeviceToken?: TrustedDeviceToken;
 }
 
 export interface Session {
@@ -162,11 +175,28 @@ export interface User {
      */
   passwordChangedAt?: string;
   /**
-     * Version of the account. A change of the profile, of the password, of the address or of
-     * the scheduled deletion makes it the next one.
+     * Version of the account. A change of the profile, of the password, of the address, of
+     * the two-step verification or of the scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
+}
+
+/**
+ * The device the answer of a challenge with `trustDevice` made trusted. The gateway writes
+ * `token` into `__Host-cw_trusted_device` (`Path=/; Secure; HttpOnly; SameSite=Strict;
+ * Max-Age=2592000`, 30 days, which is `expiresAt`), and passes nothing of it on in the public
+ * body.
+ */
+export interface TrustedDevice {
+  /**
+     * Opaque device token (256 random bits, base64url), returned once. A secret, never logged.
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /** 30 days after the answer. */
+  expiresAt: string;
 }
 
 export interface SessionIssued {
@@ -184,6 +214,7 @@ export interface SessionIssued {
      * passes it on in the public answer. Absent or `false` otherwise.
      */
   deletionCancelled?: boolean;
+  trustedDevice?: TrustedDevice;
 }
 
 export interface IntrospectionRequest {
@@ -193,6 +224,18 @@ export interface IntrospectionRequest {
      * @maxLength 256
      */
   token: string;
+}
+
+/**
+ * The organization a session or a token would act on, withheld because its authentication
+ * policy requires two-step verification for the role of the person, who has none. The
+ * gateway answers `403` with `code` and `details.organizationId` on the routes that need an
+ * organization. Absent when nothing is withheld.
+ */
+export interface WithheldOrganization {
+  organizationId: string;
+  /** The code the gateway answers, `organization.mfa-required` today (`x-extensible-enum`). */
+  code: string;
 }
 
 export interface ActiveToken {
@@ -207,8 +250,10 @@ export interface ActiveToken {
   userId: string;
   /**
      * Current organization of the session (`PUT /internal/v1/sessions/{sessionId}/organization`);
-     * `null` when it has none, or when the membership it was chosen through was removed
-     * (`member.removed.v1`). A session whose organization was emptied by a removal stays
+     * `null` when it has none, when the membership it was chosen through was removed
+     * (`member.removed.v1`), or while it is withheld for want of two-step verification, which
+     * `withheldOrganization` then names: the gateway never builds an organization context
+     * from an answer that carries `withheldOrganization`. A session whose organization was emptied by a removal stays
      * without one, even after the person joins the organization again with a new membership,
      * until an organization is chosen again; a new session starts in the last organization
      * the person chose, if they are a member of it.
@@ -217,8 +262,9 @@ export interface ActiveToken {
   organizationId: string | null;
   /**
      * Role of the user in that organization, from the copy of the memberships: `owner`,
-     * `admin`, `member` or `guest`; `null` without an organization. The gateway carries it
-     * in the internal token; organization-service decides from its own members.
+     * `admin`, `member` or `guest`; `null` without an organization, also while it is
+     * withheld. The gateway carries it in the internal token; organization-service decides
+     * from its own members.
      * @nullable
      */
   role: string | null;
@@ -229,6 +275,7 @@ export interface ActiveToken {
   scopes: string[];
   /** When the session ends at the latest. */
   expiresAt: string;
+  withheldOrganization?: WithheldOrganization;
 }
 
 export const InactiveTokenValue = {
@@ -410,17 +457,26 @@ export interface ActiveApiToken {
   /** Id of the token; the gateway counts its rate limit on it. */
   apiTokenId: string;
   userId: string;
-  /** Organization the token acts in, the one it was created in. */
+  /**
+     * Organization the token acts in, the one it was created in; still set while it is
+     * withheld (`withheldOrganization`), when the token acts on nothing.
+     */
   organizationId: string;
-  /** Role of the user in it, from the copy of the memberships. */
+  /** Role of the user in it, from the copy of the memberships; still set while withheld. */
   role: Role;
-  /** Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a scope it lacks. */
+  /**
+     * Scopes of the token; the gateway refuses a route whose `apiToken` requirement names a
+     * scope it lacks. Empty while the organization is withheld (`withheldOrganization`), so
+     * that a gateway that does not read `withheldOrganization` refuses every route too; the
+     * gateway never builds an organization context from such an answer.
+     */
   scopes: string[];
   /**
      * When the token stops working; `null` for a token without expiry.
      * @nullable
      */
   expiresAt: string | null;
+  withheldOrganization?: WithheldOrganization;
 }
 
 export type ApiTokenIntrospection = ActiveApiToken | InactiveToken;
@@ -485,7 +541,16 @@ export interface PasswordResetCompleted {
 }
 
 /**
- * Later versions add a two-step code; `password` then becomes optional beside it.
+ * The 6 digits of the authenticator app. A time step already accepted is refused. Never logged.
+ * @pattern ^[0-9]{6}$
+ */
+export type TwoStepCode = string;
+
+/**
+ * `password` for an account without two-step verification, `code` for an account with it.
+ * Both or neither answer `400 request.invalid`, `password` for an account with two-step
+ * verification `403 auth.reauthentication-required`, and `code` without an authenticator
+ * app `409 auth.two-step-not-enabled`, checked here.
  */
 export interface ReauthenticationRequest {
   /**
@@ -493,7 +558,8 @@ export interface ReauthenticationRequest {
      * @minLength 1
      * @maxLength 256
      */
-  password: string;
+  password?: string;
+  code?: TwoStepCode;
 }
 
 export interface RecentAuthentication {
@@ -593,6 +659,13 @@ export interface OpenSession {
   /** Last active introspection, recorded at most once a minute. */
   lastActiveAt: string;
   expiresAt: string;
+  /**
+     * Minutes of inactivity after which the session closes, from the policy of its current
+     * organization, 720 without one. Always sent from this version on; optional so that the
+     * gateway can move to this version first.
+     * @minimum 1
+     */
+  inactivityTimeoutMinutes?: number;
 }
 
 export interface OpenSessionPage {
@@ -606,6 +679,435 @@ export interface RevokedSessions {
      * @minimum 0
      */
   revokedCount: number;
+}
+
+/**
+ * The token of a two-step challenge, as the public request carried it. A secret, never
+ * logged; identity-service keeps only its SHA-256 hash.
+ * @minLength 1
+ * @maxLength 256
+ */
+export type ChallengeToken = string;
+
+export interface ChallengeTokenRequest {
+  token: ChallengeToken;
+}
+
+/**
+ * `authenticator-app`, `security-key` or `backup-code` today; more later (`x-extensible-enum`).
+ */
+export type TwoStepMethod = string;
+
+export type SignInChallengeSecurityKeysItem = {
+  name: string;
+};
+
+/**
+ * A two-step challenge, the `202` of the sign-ins and the `200` of its inspection, which the
+ * gateway answers as is.
+ */
+export interface SignInChallenge {
+  /**
+     * The secret of the challenge (256 random bits, base64url). Never logged.
+     * @minLength 32
+     * @maxLength 256
+     */
+  token: string;
+  /** 10 minutes after the sign-in that issued it. */
+  expiresAt: string;
+  email: Email;
+  name: string;
+  primaryMethod: TwoStepMethod;
+  /**
+     * `authenticator-app`, then `security-key` with a key, then `backup-code` while one is
+     * left. No upper bound: later versions may add methods, which the gateway passes on.
+     * @minItems 1
+     */
+  methods: TwoStepMethod[];
+  /** @maxItems 10 */
+  securityKeys: SignInChallengeSecurityKeysItem[];
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  backupCodesRemaining: number;
+  /**
+     * End of the lockout of the two-step answers of the account, `null` without one.
+     * @nullable
+     */
+  lockedUntil: string | null;
+}
+
+/**
+ * Make the browser a trusted device of the account for 30 days (`trustedDevice` in the answer).
+ */
+export type TrustDevice = boolean;
+
+export interface AuthenticatorAppAnswer {
+  token: ChallengeToken;
+  code: TwoStepCode;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+export interface BackupCodeAnswer {
+  token: ChallengeToken;
+  /**
+     * A backup code, compared upper-cased and without its dash. Never logged.
+     * @pattern ^[0-9A-Za-z]{4}-?[0-9A-Za-z]{4}$
+     */
+  code: string;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+export type SecurityKeyAssertionResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 16384 */
+  authenticatorData: string;
+  /** @maxLength 16384 */
+  signature: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  userHandle?: string | null;
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAssertionClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * `AuthenticationResponseJSON`, as the public request carried it; members not listed here are kept.
+ */
+export interface SecurityKeyAssertion {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAssertionResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAssertionClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAnswer {
+  token: ChallengeToken;
+  credential: SecurityKeyAssertion;
+  trustDevice?: TrustDevice;
+  /** The browser the session opens for. */
+  client: Client;
+}
+
+/**
+ * `PublicKeyCredentialDescriptorJSON`; members not listed here are kept.
+ */
+export interface WebAuthnCredentialDescriptor {
+  id: string;
+  type: string;
+  transports?: string[];
+  [key: string]: unknown;
+ }
+
+/**
+ * `PublicKeyCredentialRequestOptionsJSON`, as `@simplewebauthn/server` generates it; members
+ * not listed here are kept, and the gateway passes the whole object on.
+ */
+export interface WebAuthnRequestOptions {
+  challenge: string;
+  rpId?: string;
+  /** @minimum 1 */
+  timeout?: number;
+  userVerification?: string;
+  /** @maxItems 10 */
+  allowCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type WebAuthnCreationOptionsRp = {
+  id?: string;
+  name: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsUser = {
+  /** Opaque WebAuthn handle of the account; not its id nor its address. */
+  id: string;
+  name: string;
+  displayName: string;
+  [key: string]: unknown;
+ };
+
+export type WebAuthnCreationOptionsPubKeyCredParamsItem = {
+  type: string;
+  alg: number;
+  [key: string]: unknown;
+ };
+
+/**
+ * `PublicKeyCredentialCreationOptionsJSON`, as `@simplewebauthn/server` generates it; members
+ * not listed here are kept, and the gateway passes the whole object on.
+ */
+export interface WebAuthnCreationOptions {
+  challenge: string;
+  rp: WebAuthnCreationOptionsRp;
+  user: WebAuthnCreationOptionsUser;
+  /** @minItems 1 */
+  pubKeyCredParams: WebAuthnCreationOptionsPubKeyCredParamsItem[];
+  /** @minimum 1 */
+  timeout?: number;
+  /** @maxItems 10 */
+  excludeCredentials?: WebAuthnCredentialDescriptor[];
+  [key: string]: unknown;
+ }
+
+export type SecurityKeyAttestationResponse = {
+  /** @maxLength 16384 */
+  clientDataJSON: string;
+  /** @maxLength 65536 */
+  attestationObject: string;
+  /** @maxItems 10 */
+  transports?: string[];
+  [key: string]: unknown;
+ };
+
+export type SecurityKeyAttestationClientExtensionResults = { [key: string]: unknown };
+
+/**
+ * `RegistrationResponseJSON`, as the public request carried it; members not listed here are kept.
+ */
+export interface SecurityKeyAttestation {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  rawId: string;
+  type: string;
+  response: SecurityKeyAttestationResponse;
+  /** @nullable */
+  authenticatorAttachment?: string | null;
+  clientExtensionResults?: SecurityKeyAttestationClientExtensionResults;
+  [key: string]: unknown;
+ }
+
+export interface SecurityKeyAssertionOptions {
+  options: WebAuthnRequestOptions;
+  /** 5 minutes after they were issued. */
+  expiresAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type TwoStepVerificationAuthenticatorApp = {
+  configuredAt: string;
+} | null;
+
+/**
+ * @nullable
+ */
+export type TwoStepVerificationBackupCodes = {
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  remaining: number;
+  /** @minimum 1 */
+  total: number;
+  generatedAt: string;
+} | null;
+
+export interface SecurityKey {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** @nullable */
+  lastUsedAt: string | null;
+}
+
+export interface TwoStepRequirement {
+  organizationId: string;
+  /** `admins` (owner and admins) or `everyone` today (`x-extensible-enum`). */
+  requiredFor: string;
+}
+
+/**
+ * The two-step verification of an account, without any secret.
+ */
+export interface TwoStepVerification {
+  /** On while the account has an authenticator app. */
+  enabled: boolean;
+  /** `authenticator-app` today; `null` while off. */
+  primaryMethod: TwoStepMethod | null;
+  /**
+     * The configured methods, `authenticator-app` and `security-key` today, never
+     * `backup-code`; empty while off. No upper bound: later versions may add methods.
+     */
+  methods: TwoStepMethod[];
+  /** @nullable */
+  authenticatorApp: TwoStepVerificationAuthenticatorApp;
+  /**
+     * The oldest first.
+     * @maxItems 10
+     */
+  securityKeys: SecurityKey[];
+  /** @nullable */
+  backupCodes: TwoStepVerificationBackupCodes;
+  /**
+     * The organizations of the copy of the memberships whose policy requires two-step
+     * verification for the role of the person in them.
+     */
+  requiredBy: TwoStepRequirement[];
+}
+
+export interface SessionReference {
+  /** The session of the public request, whose recent authentication is checked and which the pending setup belongs to. */
+  sessionId: string;
+}
+
+export interface TwoStepChange {
+  /** The session of the public request, whose recent authentication is checked. */
+  sessionId: string;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+export interface AuthenticatorAppSetup {
+  /**
+     * The TOTP secret (160 bits, base32 without padding), returned once. Never logged.
+     * @pattern ^[A-Z2-7]{32}$
+     */
+  secret: string;
+  /**
+     * The `otpauth://totp/…` URI of the secret, issuer `Cadenway`. Never logged.
+     * @maxLength 2048
+     */
+  otpauthUri: string;
+  /** 15 minutes after the start. */
+  expiresAt: string;
+}
+
+export interface AuthenticatorAppConfirmation {
+  /** The session of the public request, whose pending setup is confirmed. */
+  sessionId: string;
+  code: TwoStepCode;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+export interface BackupCodes {
+  /**
+     * 10 codes `XXXX-XXXX`, returned once; identity-service keeps only their HMAC-SHA-256
+     * under a key derived from the pepper, outside the database, as for the one-time codes.
+     * Never logged.
+     * @minItems 10
+     * @maxItems 10
+     * @items.pattern ^[0-9A-Z]{4}-[0-9A-Z]{4}$
+     */
+  codes: string[];
+  generatedAt: string;
+}
+
+export interface AuthenticatorAppConfigured {
+  twoStepVerification: TwoStepVerification;
+  /** The 10 backup codes when two-step verification turned on, returned once; `null` for a reconfiguration. */
+  backupCodes: BackupCodes | null;
+}
+
+export interface SecurityKeyRegistration {
+  options: WebAuthnCreationOptions;
+  /** 5 minutes after the start. */
+  expiresAt: string;
+}
+
+export interface SecurityKeyAddition {
+  /** The session of the public request, whose pending registration is answered. */
+  sessionId: string;
+  /**
+     * Trimmed here; a name made only of spaces answers `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+  credential: SecurityKeyAttestation;
+  /** The browser of the change, shown in the security email. */
+  client: Client;
+}
+
+/**
+ * Members of the copy of the memberships whose account has no two-step verification.
+ */
+export type AuthenticationPolicyMembersWithoutTwoStepVerification = {
+  /**
+     * The owner and the admins among them.
+     * @minimum 0
+     */
+  admins: number;
+  /**
+     * All of them, guests included.
+     * @minimum 0
+     */
+  everyone: number;
+};
+
+export interface AuthenticationPolicy {
+  /** `nobody` (default), `admins` or `everyone` today (`x-extensible-enum`). */
+  twoStepVerificationRequiredFor: string;
+  /**
+     * `60`, `720` (default), `10080` or `43200` today (`x-extensible-enum`).
+     * @minimum 1
+     */
+  sessionInactivityTimeoutMinutes: number;
+  /** Members of the copy of the memberships whose account has no two-step verification. */
+  membersWithoutTwoStepVerification: AuthenticationPolicyMembersWithoutTwoStepVerification;
+  /**
+     * Version of the policy, also sent as `ETag`; 1 for the default policy.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export type AuthenticationPolicyPatchTwoStepVerificationRequiredFor = typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor[keyof typeof AuthenticationPolicyPatchTwoStepVerificationRequiredFor];
+
+
+export const AuthenticationPolicyPatchTwoStepVerificationRequiredFor = {
+  nobody: 'nobody',
+  admins: 'admins',
+  everyone: 'everyone',
+} as const;
+
+export type AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes[keyof typeof AuthenticationPolicyPatchSessionInactivityTimeoutMinutes];
+
+
+export const AuthenticationPolicyPatchSessionInactivityTimeoutMinutes = {
+  NUMBER_60: 60,
+  NUMBER_720: 720,
+  NUMBER_10080: 10080,
+  NUMBER_43200: 43200,
+} as const;
+
+/**
+ * JSON Merge Patch of the policy, as the public request carried it.
+ */
+export interface AuthenticationPolicyPatch {
+  twoStepVerificationRequiredFor?: AuthenticationPolicyPatchTwoStepVerificationRequiredFor;
+  sessionInactivityTimeoutMinutes?: AuthenticationPolicyPatchSessionInactivityTimeoutMinutes;
 }
 
 /**
@@ -632,6 +1134,117 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * The account has two-step verification: no session, no token. The body is the challenge, the
+ * schema `POST /internal/v1/auth/sign-in/challenge/inspection` answers; `token` is a secret.
+ */
+export type ChallengeIssuedResponse = SignInChallenge;
+
+/**
+ * A session is open, as for `SessionIssued`; with `trustDevice`, `trustedDevice` holds the
+ * device token, returned once, that the gateway writes into `__Host-cw_trusted_device`.
+ */
+export type ChallengeAnsweredResponse = SessionIssued;
+
+/**
+ * `auth.challenge-expired`: the challenge expired (10 minutes), was answered, was replaced,
+ * or is unknown or malformed.
+ */
+export type ChallengeExpiredResponse = Problem;
+
+/**
+ * `auth.challenge-expired` (checked first, no attempt counted), then
+ * `auth.two-step-code-invalid` with `details.remainingAttempts` (at least 1): the code is
+ * wrong or was used already.
+ */
+export type TwoStepCodeRefusedResponse = Problem;
+
+/**
+ * `auth.challenge-expired` (checked first), then `auth.security-key-refused`: no key on the
+ * account (options), or an answer that does not verify (answer, with
+ * `details.remainingAttempts`).
+ */
+export type SecurityKeyAnswerRefusedResponse = Problem;
+
+/**
+ * `auth.two-step-locked`: the two-step answers of the account are locked until
+ * `details.lockedUntil`, 15 minutes after the fifth wrong answer in a row.
+ */
+export type TwoStepLockedResponse = Problem;
+
+/**
+ * `auth.mfa-required-by-organization`: the policy of an organization of the copy of the
+ * memberships requires two-step verification for the role of the actor in it;
+ * `details.organizationIds` lists them.
+ */
+export type MfaRequiredByOrganizationResponse = Problem;
+
+/**
+ * `auth.two-step-setup-expired`: no pending setup of the session, or it expired or was
+ * replaced; `auth.two-step-code-invalid`: a wrong code, without `details.remainingAttempts`.
+ */
+export type SetupCodeRefusedResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled`: the request needs two-step verification on the account of the
+ * actor: backup codes, a security key, a `code` of the re-authentication, or a policy that
+ * requires it for a role of the actor.
+ */
+export type TwoStepNotEnabledResponse = Problem;
+
+/**
+ * `auth.two-step-not-enabled` (two-step verification off), or
+ * `auth.security-key-limit-reached` (10 keys, with `details.maxSecurityKeys`).
+ */
+export type SecurityKeyNotAddableResponse = Problem;
+
+/**
+ * `auth.two-step-setup-expired`: no pending registration of the session, or it expired or
+ * was replaced; `auth.security-key-refused`: the answer does not verify, or the account
+ * already has the key.
+ */
+export type SecurityKeyRegistrationRefusedResponse = Problem;
+
+/**
+ * - `user.not-found`: the user id is not the actor, or no account has it;
+ * - `session.not-found`: the session of the request is not an open session of the actor. The
+ *   gateway answers it as `401 auth.session-expired`;
+ * - `security-key.not-found`: no key with this id belongs to the actor.
+ */
+export type UserSessionOrSecurityKeyNotFoundResponse = Problem;
+
+/**
+ * - `organization.mfa-required`: the policy of the organization requires two-step
+ *   verification for the role of the actor, who has none; `details.organizationId` names it.
+ *   The gateway forwards it with the French title of `openapi/public/organizations.yaml`;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
+ */
+export type OrganizationChoiceRefusedResponse = Problem;
+
+/**
+ * - `organization.role-forbidden`: only the owner and the admins of the organization, in the
+ *   copy of the memberships, read and change its policy;
+ * - `auth.reauthentication-required`, on a change: the session has no authentication in the
+ *   last 10 minutes, with `details.methods`; the gateway forwards it with its French title;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type PolicyAccessRefusedResponse = Problem;
+
+/**
+ * - `organization.not-found`: the copy of the memberships holds no membership of the actor
+ *   in the organization of the token;
+ * - `session.not-found`: `sessionId` is not an open session of the actor. The gateway
+ *   answers it as `401 auth.session-expired`.
+ */
+export type OrganizationOrSessionNotFoundResponse = Problem;
+
+/**
+ * `organization.not-found`: the copy of the memberships holds no membership of the actor in
+ * the organization of the token.
+ */
+export type OrganizationNotFoundResponse = Problem;
 
 /**
  * A session is open. `token` is returned here only, once: the gateway sets the cookie from it
@@ -696,7 +1309,8 @@ export type CredentialsRefusedResponse = Problem;
 
 /**
  * `auth.account-locked`: the password sign-in of the address is locked until
- * `details.lockedUntil`, 15 minutes after the failure that used the last attempt.
+ * `details.lockedUntil`, 15 minutes after the failure that used the last attempt. On the
+ * re-authentication with a `code`: `auth.two-step-locked` instead (see `TwoStepLocked`).
  */
 export type AccountLockedResponse = Problem;
 
@@ -761,7 +1375,9 @@ export type PasswordResetRefusedResponse = Problem;
 
 /**
  * `auth.password-incorrect`, with `details.remainingAttempts` (at least 1): the failures left
- * before the lockout of the password sign-in of the address of the account.
+ * before the lockout of the password sign-in of the address of the account. On the
+ * re-authentication with a `code`: `auth.two-step-code-invalid`, with
+ * `details.remainingAttempts` before the lockout of the two-step answers of the account.
  */
 export type PasswordRefusedResponse = Problem;
 
@@ -774,7 +1390,9 @@ export type PasswordChangeRefusedResponse = Problem;
 
 /**
  * - `auth.reauthentication-required`: the session has no authentication in the last 10
- *   minutes. `details.methods` lists the ways its person can confirm, `password` today; the
+ *   minutes that counts for its account, or the re-authentication sent a password for an
+ *   account with two-step verification. `details.methods` lists the ways its person can
+ *   confirm: `[password]` without two-step verification, `[authenticator-app]` with it; the
  *   gateway forwards the code, its `details` and the French title of
  *   `openapi/public/auth.yaml`;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, and `auth.organization-required` on
@@ -827,6 +1445,11 @@ export type ListUserSessionsInternalParams = {
    * @maximum 100
    */
   limit?: LimitParameter;
+};
+
+export type UpdateAuthenticationPolicyInternalParams = {
+  /** The session of the public request, as the introspection returned it, whose recent authentication is checked. */
+  sessionId: string;
 };
 
 export type ListApiTokensInternalParams = {
@@ -1044,9 +1667,11 @@ const getSignInWithPasswordInternalUrl = () => {
  *   `deletionCancelled: true` and `user.deletion-cancelled.v1`.
  * - A session opened on a device the account did not use in the last 90 days emits
  *   `session.opened-on-new-device.v1`.
- * - Later versions answer `202` with a two-step challenge, no token and no session, to an
- *   account that needs one; only the `200` opens a session, cancels a deletion and counts the
- *   device.
+ * - The right password of an account with two-step verification answers `202` with a
+ *   two-step challenge, no token and no session, unless `trustedDeviceToken` names a device
+ *   this account trusts (see "Two-step challenge"). Only the `200`, here or of the answer of
+ *   the challenge, opens a session, cancels a deletion and counts the device; the challenge
+ *   keeps `rememberMe` for the session its answer opens, for the `client` of the answer.
  *
  * Internal token: actor `anonymous`, no organization.
  * @summary Sign in with a password
@@ -1119,9 +1744,11 @@ const getSignInWithCodeInternalUrl = () => {
  * Checks the `sign-in` code and opens a session for the `client`. An address without a
  * verified account answers like a wrong code. As with `POST /internal/v1/auth/sign-in`, the
  * session cancels a scheduled deletion (`deletionCancelled: true`,
- * `user.deletion-cancelled.v1`), emits `session.opened-on-new-device.v1` on a device the
- * account did not use in the last 90 days, and later versions answer `202` with a two-step
- * challenge when the account needs one. Internal token: actor `anonymous`, no organization.
+ * `user.deletion-cancelled.v1`) and emits `session.opened-on-new-device.v1` on a device the
+ * account did not use in the last 90 days. The right code of an account with two-step
+ * verification answers `202` with a two-step challenge, no token and no session, unless
+ * `trustedDeviceToken` names a device this account trusts. Internal token: actor
+ * `anonymous`, no organization.
  * @summary Sign in with a code
  */
 const signInWithCodeInternal = async (codeVerification: CodeVerification, options?: RequestInit): Promise<signInWithCodeInternalResponse> => {
@@ -1144,6 +1771,200 @@ const signInWithCodeInternal = async (codeVerification: CodeVerification, option
 
 
 
+const getInspectSignInChallengeInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/sign-in/challenge/inspection`
+}
+
+/**
+ * Returns a usable challenge, as the `202` of the sign-in gave it, without answering it or
+ * counting an attempt. Its `200` has the schema of those `202`: the gateway validates both
+ * with its validator. A challenge that expired, was answered, was replaced or is unknown, and
+ * a malformed token, answer `422 auth.challenge-expired`. Internal token: actor `anonymous`,
+ * no organization.
+ * @summary Read a two-step challenge
+ */
+const inspectSignInChallengeInternal = async (challengeTokenRequest: ChallengeTokenRequest, options?: RequestInit): Promise<inspectSignInChallengeInternalResponse> => {
+
+  const res = await fetchFn(getInspectSignInChallengeInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(challengeTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inspectSignInChallengeInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inspectSignInChallengeInternalResponse
+}
+
+
+
+const getAnswerSignInChallengeWithAuthenticatorAppInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/sign-in/challenge/authenticator-app`
+}
+
+/**
+ * Checks the challenge, then the code against the authenticator app of its account (one step
+ * of tolerance either way; a time step already accepted is refused). On success, in one
+ * transaction: the challenge is used up, a session is opened for the `client` with the
+ * `rememberMe` of the sign-in, a scheduled deletion is cancelled
+ * (`user.deletion-cancelled.v1`), the device is counted
+ * (`session.opened-on-new-device.v1`), the count of wrong answers ends, and, with
+ * `trustDevice`, a trusted device is recorded and returned in `trustedDevice`.
+ *
+ * A wrong or used code answers `422 auth.two-step-code-invalid` with
+ * `details.remainingAttempts`; the fifth wrong answer in a row of the account, and every
+ * answer during the lockout, `429 auth.two-step-locked` with `details.lockedUntil`. A
+ * challenge no longer usable answers `422 auth.challenge-expired` and counts nothing.
+ * Internal token: actor `anonymous`, no organization.
+ * @summary Answer a two-step challenge with a code of the app
+ */
+const answerSignInChallengeWithAuthenticatorAppInternal = async (authenticatorAppAnswer: AuthenticatorAppAnswer, options?: RequestInit): Promise<answerSignInChallengeWithAuthenticatorAppInternalResponse> => {
+
+  const res = await fetchFn(getAnswerSignInChallengeWithAuthenticatorAppInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(authenticatorAppAnswer)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: answerSignInChallengeWithAuthenticatorAppInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as answerSignInChallengeWithAuthenticatorAppInternalResponse
+}
+
+
+
+const getAnswerSignInChallengeWithBackupCodeInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/sign-in/challenge/backup-code`
+}
+
+/**
+ * Checks the challenge, then the backup code, upper-cased and without its dash, against the
+ * hashes of the unused backup codes of its account; the right one is used up in the
+ * transaction that opens the session. Otherwise as
+ * `POST /internal/v1/auth/sign-in/challenge/authenticator-app`: the same refusals, counted
+ * together, and the same effects of the success. Internal token: actor `anonymous`, no
+ * organization.
+ * @summary Answer a two-step challenge with a backup code
+ */
+const answerSignInChallengeWithBackupCodeInternal = async (backupCodeAnswer: BackupCodeAnswer, options?: RequestInit): Promise<answerSignInChallengeWithBackupCodeInternalResponse> => {
+
+  const res = await fetchFn(getAnswerSignInChallengeWithBackupCodeInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(backupCodeAnswer)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: answerSignInChallengeWithBackupCodeInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as answerSignInChallengeWithBackupCodeInternalResponse
+}
+
+
+
+const getGetSignInChallengeSecurityKeyOptionsInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/sign-in/challenge/security-key/options`
+}
+
+/**
+ * Issues a new WebAuthn assertion challenge for a usable two-step challenge, valid 5 minutes,
+ * allowing the security keys of its account only, and replaces the previous options of the
+ * challenge. A challenge no longer usable answers `422 auth.challenge-expired`, an account
+ * without a key `422 auth.security-key-refused`, and a lockout of the two-step answers
+ * `429 auth.two-step-locked`. Counts no attempt. Internal token: actor `anonymous`, no
+ * organization.
+ * @summary Issue the WebAuthn options of a challenge
+ */
+const getSignInChallengeSecurityKeyOptionsInternal = async (challengeTokenRequest: ChallengeTokenRequest, options?: RequestInit): Promise<getSignInChallengeSecurityKeyOptionsInternalResponse> => {
+
+  const res = await fetchFn(getGetSignInChallengeSecurityKeyOptionsInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(challengeTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSignInChallengeSecurityKeyOptionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSignInChallengeSecurityKeyOptionsInternalResponse
+}
+
+
+
+const getAnswerSignInChallengeWithSecurityKeyInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/auth/sign-in/challenge/security-key`
+}
+
+/**
+ * Checks the challenge, then verifies `credential` against the latest options of the
+ * challenge and the keys of its account (`@simplewebauthn/server`: the WebAuthn challenge;
+ * the exact origin of the web application of the environment, cross-origin answers refused;
+ * the relying party of the environment; the signature; the counter; and `userHandle`, when
+ * present, equal to the handle of the account of the challenge). An
+ * answer that does not verify answers `422 auth.security-key-refused` with
+ * `details.remainingAttempts`, counted with the other wrong answers. On success, the effects
+ * of `POST /internal/v1/auth/sign-in/challenge/authenticator-app`, and the key records its
+ * last use and its counter. Internal token: actor `anonymous`, no organization.
+ * @summary Answer a two-step challenge with a security key
+ */
+const answerSignInChallengeWithSecurityKeyInternal = async (securityKeyAnswer: SecurityKeyAnswer, options?: RequestInit): Promise<answerSignInChallengeWithSecurityKeyInternalResponse> => {
+
+  const res = await fetchFn(getAnswerSignInChallengeWithSecurityKeyInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(securityKeyAnswer)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: answerSignInChallengeWithSecurityKeyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as answerSignInChallengeWithSecurityKeyInternalResponse
+}
+
+
+
 const getIntrospectTokenUrl = () => {
 
 
@@ -1162,9 +1983,13 @@ const getIntrospectTokenUrl = () => {
  * A token that is unknown, expired, revoked or malformed answers `200` with
  * `active: false`, never an error; so does a personal API token, introspected by
  * `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
- * inactivity period of the session (12 hours by default) starts again. Calling it twice has
- * the same effect as once, so the call can be retried. Internal token: actor `system`, no
- * organization.
+ * inactivity period of the session starts again, the one the authentication policy of its
+ * current organization sets (12 hours by default and without an organization); a session
+ * idle for longer is inactive. A current organization withheld for want of two-step
+ * verification gives `withheldOrganization` and no organization (see "Withheld
+ * organization"); the inactivity of the policy of that organization still applies to the
+ * session. Calling it twice has the same effect as once, so the call can be retried.
+ * Internal token: actor `system`, no organization.
  * @summary Introspect a session token
  */
 const introspectToken = async (introspectionRequest: IntrospectionRequest, options?: RequestInit): Promise<introspectTokenResponse> => {
@@ -1312,8 +2137,19 @@ const getSwitchSessionOrganizationUrl = (sessionId: string,) => {
  * current organization of the session again answers `200` and leaves the session as it is,
  * but records the organization as the last choice of the actor again, the one their next
  * sessions start in, also when another session of theirs chose another organization since.
- * From the next introspection the session carries the organization and the role. Internal
- * token: actor `user`, no organization.
+ * From the next introspection the session carries the organization and the role.
+ *
+ * An organization whose authentication policy requires two-step verification for the role of
+ * the actor in it, while the account has none, answers `403 organization.mfa-required` with
+ * `details.organizationId`, and the session and the last choice stay as they were: the
+ * person sets two-step verification up, then chooses again. Checked once the membership is
+ * found.
+ *
+ * The inactivity of the session counts against the policy of the organization chosen: a
+ * session that had been idle, before this request, for longer than that policy allows is
+ * closed instead, and answers `404 session.not-found`, so that choosing an organization never
+ * revives a session its own policy would have closed. Internal token: actor `user`, no
+ * organization.
  * @summary Choose the current organization of a session
  */
 const switchSessionOrganization = async (sessionId: string,
@@ -1428,8 +2264,10 @@ const getConfirmPasswordResetInternalUrl = () => {
  * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
  *   with `session.revoked.v1`.
  * - Ends the lockout of the password sign-in of the address, drops a pending change of
- *   address and ends the recent authentication of the sessions it leaves open; keeps the
- *   personal API tokens; does not cancel a scheduled deletion.
+ *   address, ends the recent authentication of the sessions it leaves open, voids the open
+ *   challenge and every pending two-step setup and key registration of the account, and
+ *   forgets every trusted device of the account; keeps the personal API tokens and the two-step
+ *   verification; does not cancel a scheduled deletion.
  *
  * Emits `user.password-changed.v1` with `method: reset`, the number of closed sessions and
  * the device of the `client`. Internal token: actor `anonymous`, no organization.
@@ -1464,13 +2302,20 @@ const getReauthenticateInternalUrl = (sessionId: string,) => {
 }
 
 /**
- * Checks the password of the actor and records a recent authentication of the session, which
- * opens the 10-minute window of the guarded routes. A wrong password answers
+ * Checks the password of an actor without two-step verification, or the `code` of the
+ * authenticator app of an actor with it, and records a recent authentication of the session,
+ * which opens the 10-minute window of the guarded routes. Both or neither answer
+ * `400 request.invalid`; a `password` for an account with two-step verification answers
+ * `403 auth.reauthentication-required` with `details.methods: [authenticator-app]`, without
+ * checking or counting the password; a `code` for an account without an authenticator app
+ * answers `409 auth.two-step-not-enabled`. A wrong password answers
  * `422 auth.password-incorrect` and counts with the failed sign-ins of the address
- * (`429 auth.account-locked` once locked); the session stays open. A session of another user,
- * an unknown or an ended one, answers `404 session.not-found`. Internal token: actor `user`,
- * no organization.
- * @summary Confirm the password in a session
+ * (`429 auth.account-locked` once locked); a wrong or used code answers
+ * `422 auth.two-step-code-invalid` and counts with the wrong answers of the two-step
+ * challenges of the account (`429 auth.two-step-locked` once locked); the session stays open
+ * either way. A session of another user, an unknown or an ended one, answers
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Confirm who the person of a session is
  */
 const reauthenticateInternal = async (sessionId: string,
     reauthenticationRequest: ReauthenticationRequest, options?: RequestInit): Promise<reauthenticateInternalResponse> => {
@@ -1503,7 +2348,8 @@ const getRevokeOtherSessionsInternalUrl = (sessionId: string,) => {
 
 /**
  * Revokes every open session of the actor except `sessionId`, each with
- * `session.revoked.v1`, and says how many. The personal API tokens stay. A session of another
+ * `session.revoked.v1`, and says how many, and forgets every trusted device of the account,
+ * the one of `sessionId` included. The personal API tokens stay. A session of another
  * user, an unknown or an ended one, answers `404 session.not-found` and revokes nothing.
  * Internal token: actor `user`, no organization.
  * @summary Revoke every other session of the actor
@@ -1546,9 +2392,10 @@ const getListUserSessionsInternalUrl = (userId: string,
 
 /**
  * Lists the open sessions of the actor, sorted by sign-in, the most recent first, then by
- * id, and marks `currentSessionId` as `current`. Another user id, or an unknown one, answers
- * `404 user.not-found`; a `currentSessionId` that is not an open session of the actor answers
- * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * id, marks `currentSessionId` as `current`, and gives each the inactivity of the policy of
+ * its current organization (`inactivityTimeoutMinutes`). Another user id, or an unknown one,
+ * answers `404 user.not-found`; a `currentSessionId` that is not an open session of the actor
+ * answers `404 session.not-found`. Internal token: actor `user`, no organization.
  * @summary List the open sessions of a user
  */
 const listUserSessionsInternal = async (userId: string,
@@ -1583,10 +2430,16 @@ const getChangePasswordInternalUrl = (userId: string,) => {
 /**
  * Replaces the password of the actor, as `PUT /v1/me/password` says: the new password is
  * checked first (`422 auth.password-too-short`, `422 auth.password-compromised`), without
- * counting an attempt; then the current one (`422 auth.password-incorrect`, counted with the
- * failed sign-ins; `429 auth.account-locked`). A right current password records a recent
- * authentication of `sessionId`. Every session stays open, but a pending change of address is
- * dropped and the recent authentication of the other sessions ends. Answers the account with
+ * counting an attempt; then, for an account with two-step verification only, a recent
+ * two-step proof of `sessionId` (`403 auth.reauthentication-required` with
+ * `details.methods: [authenticator-app]`, before the current password is checked or
+ * counted); then the current one, always required (`422 auth.password-incorrect`, counted
+ * with the failed sign-ins; `429 auth.account-locked`). For an account without two-step
+ * verification, a right current password records a recent authentication of `sessionId`;
+ * for an account with it, it records none. Every session stays open, but a pending change of
+ * address is dropped, the recent authentication of the other sessions ends with their
+ * pending two-step setups and key registrations, the open challenge of the account is voided,
+ * and every trusted device of the account is forgotten. Answers the account with
  * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
  * `method: change`, no closed session and the device of the `client`. Another user id, or an
  * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
@@ -1715,8 +2568,9 @@ const getScheduleAccountDeletionInternalUrl = (userId: string,) => {
  * recent authentication of `sessionId` (`403 auth.reauthentication-required`).
  *
  * On success, in the same transaction: every session of the account, `sessionId` included,
- * is revoked (`session.revoked.v1` each), every personal API token is revoked, a pending
- * change of address is dropped, and `user.deletion-scheduled.v1` is emitted. The gateway
+ * is revoked (`session.revoked.v1` each), every personal API token is revoked, every trusted
+ * device is forgotten, a pending change of address is dropped, and
+ * `user.deletion-scheduled.v1` is emitted. The two-step verification stays. The gateway
  * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
  * `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
  * an organization then (one whose creation reached the copy after the scheduling) is not
@@ -1743,6 +2597,422 @@ const scheduleAccountDeletionInternal = async (userId: string,
 
   const data: scheduleAccountDeletionInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as scheduleAccountDeletionInternalResponse
+}
+
+
+
+const getGetTwoStepVerificationInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification`
+}
+
+/**
+ * Returns the two-step verification of the account of the actor, as
+ * `GET /v1/me/two-step-verification` says, with `requiredBy` from the copy of the memberships
+ * and the authentication policies. Never returns a secret. Another user id, or an unknown
+ * one, answers `404 user.not-found`. Internal token: actor `user`, no organization.
+ * @summary Read the two-step verification of a user
+ */
+const getTwoStepVerificationInternal = async (userId: string, options?: RequestInit): Promise<getTwoStepVerificationInternalResponse> => {
+
+  const res = await fetchFn(getGetTwoStepVerificationInternalUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTwoStepVerificationInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTwoStepVerificationInternalResponse
+}
+
+
+
+const getDisableTwoStepVerificationInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/disable`
+}
+
+/**
+ * Turns the two-step verification of the actor off, as `DELETE /v1/me/two-step-verification`
+ * says. The checks run in this order: an organization of the copy of the memberships whose
+ * policy requires it for the role of the actor (`409 auth.mfa-required-by-organization`, with
+ * `details.organizationIds`), then the recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`). On success, in one transaction, the authenticator
+ * app, the security keys, the backup codes, the pending setups and the trusted devices of the
+ * account are deleted, and `user.two-step-verification-changed.v1` (`change: disabled`) is
+ * emitted with the device of the `client`. Already off: `204`, nothing emitted. Another user
+ * id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+ * session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+ * organization.
+ * @summary Turn the two-step verification of a user off
+ */
+const disableTwoStepVerificationInternal = async (userId: string,
+    twoStepChange: TwoStepChange, options?: RequestInit): Promise<disableTwoStepVerificationInternalResponse> => {
+
+  const res = await fetchFn(getDisableTwoStepVerificationInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(twoStepChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableTwoStepVerificationInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as disableTwoStepVerificationInternalResponse
+}
+
+
+
+const getStartAuthenticatorAppSetupInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/authenticator-app/setup`
+}
+
+/**
+ * Requires the recent authentication of `sessionId` (`403 auth.reauthentication-required`),
+ * then records a pending setup of the actor for that session, valid 15 minutes, with a new
+ * TOTP secret of 160 random bits from `node:crypto`, kept encrypted, and returns the secret
+ * and its `otpauth://` URI once. A new start replaces the pending setup. Nothing else changes
+ * until the confirmation; the current app, if any, keeps working. Another user id, or an
+ * unknown one, answers `404 user.not-found`; a `sessionId` that is not an open session of the
+ * actor, `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Start setting up the authenticator app of a user
+ */
+const startAuthenticatorAppSetupInternal = async (userId: string,
+    sessionReference: SessionReference, options?: RequestInit): Promise<startAuthenticatorAppSetupInternalResponse> => {
+
+  const res = await fetchFn(getStartAuthenticatorAppSetupInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(sessionReference)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startAuthenticatorAppSetupInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as startAuthenticatorAppSetupInternalResponse
+}
+
+
+
+const getConfirmAuthenticatorAppSetupInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/authenticator-app/setup/confirmation`
+}
+
+/**
+ * Checks `code` against the secret of the pending setup of `sessionId` and, in one
+ * transaction, makes it the authenticator app of the actor and ends the pending setup. When
+ * two-step verification was off, it turns on with 10 new backup codes, returned once and
+ * kept as HMAC-SHA-256 under a key derived from the pepper (`change: enabled`); otherwise
+ * the new app replaces the previous one and the backup codes stay (`backupCodes: null`,
+ * `change: authenticator-app-replaced`). The right code records a recent two-step
+ * authentication of `sessionId`, and turning two-step verification on ends the recent
+ * authentication other sessions of the actor opened with a password. Emits
+ * `user.two-step-verification-changed.v1` with the device of the `client`. No pending setup
+ * of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`; a wrong code:
+ * `422 auth.two-step-code-invalid`, without a count. Recent authentication is not required
+ * again. Another user id, or an unknown one, answers `404 user.not-found`; a `sessionId` that
+ * is not an open session of the actor, `404 session.not-found`. Internal token: actor `user`,
+ * no organization.
+ * @summary Confirm the authenticator app of a user
+ */
+const confirmAuthenticatorAppSetupInternal = async (userId: string,
+    authenticatorAppConfirmation: AuthenticatorAppConfirmation, options?: RequestInit): Promise<confirmAuthenticatorAppSetupInternalResponse> => {
+
+  const res = await fetchFn(getConfirmAuthenticatorAppSetupInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(authenticatorAppConfirmation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: confirmAuthenticatorAppSetupInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as confirmAuthenticatorAppSetupInternalResponse
+}
+
+
+
+const getRegenerateBackupCodesInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/backup-codes/regenerate`
+}
+
+/**
+ * Replaces the backup codes of the actor with 10 new ones, returned once and kept hashed; the
+ * previous ones stop working in the same transaction, which emits
+ * `user.two-step-verification-changed.v1` (`change: backup-codes-regenerated`) with the device
+ * of the `client`. The checks run in this order: two-step verification on
+ * (`409 auth.two-step-not-enabled`), then the recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`). Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Generate new backup codes of a user
+ */
+const regenerateBackupCodesInternal = async (userId: string,
+    twoStepChange: TwoStepChange, options?: RequestInit): Promise<regenerateBackupCodesInternalResponse> => {
+
+  const res = await fetchFn(getRegenerateBackupCodesInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(twoStepChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: regenerateBackupCodesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as regenerateBackupCodesInternalResponse
+}
+
+
+
+const getStartSecurityKeyRegistrationInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/security-keys/registration`
+}
+
+/**
+ * Records a pending registration of `sessionId`, valid 5 minutes, and returns its WebAuthn
+ * creation options (`@simplewebauthn/server`, `residentKey: 'preferred'`, the keys of the
+ * account in `excludeCredentials`). A new start replaces it. The checks run in this order:
+ * two-step verification on and fewer than 10 keys (`409 auth.two-step-not-enabled`,
+ * `409 auth.security-key-limit-reached`), then the recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`). Another user id, or an unknown one, answers
+ * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * `404 session.not-found`. Internal token: actor `user`, no organization.
+ * @summary Issue the WebAuthn options to register a key of a user
+ */
+const startSecurityKeyRegistrationInternal = async (userId: string,
+    sessionReference: SessionReference, options?: RequestInit): Promise<startSecurityKeyRegistrationInternalResponse> => {
+
+  const res = await fetchFn(getStartSecurityKeyRegistrationInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(sessionReference)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startSecurityKeyRegistrationInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as startSecurityKeyRegistrationInternalResponse
+}
+
+
+
+const getAddSecurityKeyInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/security-keys`
+}
+
+/**
+ * Verifies `credential` against the pending registration of `sessionId` and, in one
+ * transaction, stores the key (its credential id, public key, counter, transports and flags,
+ * so that passkeys can come later without a migration) under `name`, after the same checks
+ * of origin and relying party as the answers of a challenge, ends the pending
+ * registration, and emits `user.two-step-verification-changed.v1`
+ * (`change: security-key-added`) with the device of the `client`. An answer that does not
+ * verify, or a credential id already registered, to this account or another one:
+ * `422 auth.security-key-refused`; no
+ * pending registration of `sessionId`, or an expired one: `422 auth.two-step-setup-expired`;
+ * two-step verification turned off since, or 10 keys: `409 auth.two-step-not-enabled`,
+ * `409 auth.security-key-limit-reached`. Recent authentication is not required again.
+ * Another user id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not
+ * an open session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+ * organization.
+ * @summary Register a security key of a user
+ */
+const addSecurityKeyInternal = async (userId: string,
+    securityKeyAddition: SecurityKeyAddition, options?: RequestInit): Promise<addSecurityKeyInternalResponse> => {
+
+  const res = await fetchFn(getAddSecurityKeyInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(securityKeyAddition)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: addSecurityKeyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as addSecurityKeyInternalResponse
+}
+
+
+
+const getRemoveSecurityKeyInternalUrl = (userId: string,
+    securityKeyId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/two-step-verification/security-keys/${securityKeyId}/remove`
+}
+
+/**
+ * Deletes a key of the actor and emits `user.two-step-verification-changed.v1`
+ * (`change: security-key-removed`) with the device of the `client`, in one transaction. A key
+ * of another user, an unknown or a removed one answers `404 security-key.not-found`; then the
+ * recent authentication of `sessionId` is checked (`403 auth.reauthentication-required`).
+ * Another user id, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not
+ * an open session of the actor, `404 session.not-found`. Internal token: actor `user`, no
+ * organization.
+ * @summary Remove a security key of a user
+ */
+const removeSecurityKeyInternal = async (userId: string,
+    securityKeyId: string,
+    twoStepChange: TwoStepChange, options?: RequestInit): Promise<removeSecurityKeyInternalResponse> => {
+
+  const res = await fetchFn(getRemoveSecurityKeyInternalUrl(userId,securityKeyId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(twoStepChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeSecurityKeyInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removeSecurityKeyInternalResponse
+}
+
+
+
+const getGetAuthenticationPolicyInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/organization/authentication-policy`
+}
+
+/**
+ * Returns the authentication policy of the organization of the token, as
+ * `GET /v1/organization/authentication-policy` says, with the counts of its members without
+ * two-step verification from the copy of the memberships. The owner and the admins only, from
+ * the copy of the memberships: `403 organization.role-forbidden` otherwise; an actor the copy
+ * does not hold as a member, `404 organization.not-found`. Internal token: actor `user`,
+ * organization required.
+ * @summary Read the authentication policy of the organization
+ */
+const getAuthenticationPolicyInternal = async ( options?: RequestInit): Promise<getAuthenticationPolicyInternalResponse> => {
+
+  const res = await fetchFn(getGetAuthenticationPolicyInternalUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAuthenticationPolicyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAuthenticationPolicyInternalResponse
+}
+
+
+
+const getUpdateAuthenticationPolicyInternalUrl = (params: UpdateAuthenticationPolicyInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/organization/authentication-policy?${stringifiedParams}` : `/internal/v1/organization/authentication-policy`
+}
+
+/**
+ * Applies a JSON Merge Patch to the authentication policy of the organization of the token,
+ * as `PATCH /v1/organization/authentication-policy` says. The checks run in this order: the
+ * role of the actor in the copy of the memberships (`403 organization.role-forbidden`, or
+ * `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), when the patch
+ * requires two-step verification for a role the actor has, the two-step verification of the
+ * actor (`409 auth.two-step-not-enabled`), then the recent authentication of `sessionId`
+ * (`403 auth.reauthentication-required`; `404 session.not-found` for a session that is not
+ * an open session of the actor). A patch that changes nothing answers `200` with the same
+ * version. From the next introspection, the sessions and tokens acting on the organization
+ * follow the new policy. Emits nothing. Internal token: actor `user`, organization required.
+ * @summary Update the authentication policy of the organization
+ */
+const updateAuthenticationPolicyInternal = async (authenticationPolicyPatch: AuthenticationPolicyPatch,
+    params: UpdateAuthenticationPolicyInternalParams, options?: RequestInit): Promise<updateAuthenticationPolicyInternalResponse> => {
+
+  const res = await fetchFn(getUpdateAuthenticationPolicyInternalUrl(params),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(authenticationPolicyPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateAuthenticationPolicyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateAuthenticationPolicyInternalResponse
 }
 
 
@@ -1884,10 +3154,13 @@ const getIntrospectApiTokenUrl = () => {
  * inactive while the person is not a member, and active again, until revoked or expired, once
  * they join the organization again with a new membership. Any other token,
  * malformed ones and session tokens included, answers `200` with `active: false`, never an
- * error. An active answer records the last use of the token, at most once a minute. The call
- * can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose active answer
- * always names a session and an expiry: a personal token has neither a session nor, with
- * `never`, an expiry. Internal token: actor `system`, no organization.
+ * error. While the authentication policy of its organization requires two-step verification
+ * for the role of its user, who has none, the token stays active but acts on nothing:
+ * `withheldOrganization` names the organization and `scopes` is empty (see "Withheld
+ * organization"). An active answer records the last use of the token, at most once a
+ * minute. The call can be retried. Separate from `POST /internal/v1/tokens/introspect`, whose
+ * active answer always names a session and an expiry: a personal token has neither a session
+ * nor, with `never`, an expiry. Internal token: actor `system`, no organization.
  * @summary Introspect a personal API token
  */
 const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospectionRequest, options?: RequestInit): Promise<introspectApiTokenResponse> => {
@@ -1910,7 +3183,7 @@ const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospe
 
 
 
-return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
+return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, inspectSignInChallengeInternal, getInspectSignInChallengeInternalUrl, answerSignInChallengeWithAuthenticatorAppInternal, getAnswerSignInChallengeWithAuthenticatorAppInternalUrl, answerSignInChallengeWithBackupCodeInternal, getAnswerSignInChallengeWithBackupCodeInternalUrl, getSignInChallengeSecurityKeyOptionsInternal, getGetSignInChallengeSecurityKeyOptionsInternalUrl, answerSignInChallengeWithSecurityKeyInternal, getAnswerSignInChallengeWithSecurityKeyInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, getTwoStepVerificationInternal, getGetTwoStepVerificationInternalUrl, disableTwoStepVerificationInternal, getDisableTwoStepVerificationInternalUrl, startAuthenticatorAppSetupInternal, getStartAuthenticatorAppSetupInternalUrl, confirmAuthenticatorAppSetupInternal, getConfirmAuthenticatorAppSetupInternalUrl, regenerateBackupCodesInternal, getRegenerateBackupCodesInternalUrl, startSecurityKeyRegistrationInternal, getStartSecurityKeyRegistrationInternalUrl, addSecurityKeyInternal, getAddSecurityKeyInternalUrl, removeSecurityKeyInternal, getRemoveSecurityKeyInternalUrl, getAuthenticationPolicyInternal, getGetAuthenticationPolicyInternalUrl, updateAuthenticationPolicyInternal, getUpdateAuthenticationPolicyInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
 };
 
 export type discoverSignInMethodsInternalResponse200 = {
@@ -2063,6 +3336,11 @@ export type signInWithPasswordInternalResponse200 = {
   status: 200
 }
 
+export type signInWithPasswordInternalResponse202 = {
+  data: ChallengeIssuedResponse
+  status: 202
+}
+
 export type signInWithPasswordInternalResponse400 = {
   data: BadRequestResponse
   status: 400
@@ -2088,7 +3366,7 @@ export type signInWithPasswordInternalResponse429 = {
   status: 429
 }
 
-export type signInWithPasswordInternalResponseSuccess = (signInWithPasswordInternalResponse200) & {
+export type signInWithPasswordInternalResponseSuccess = (signInWithPasswordInternalResponse200 | signInWithPasswordInternalResponse202) & {
   headers: Headers;
 };
 export type signInWithPasswordInternalResponseError = (signInWithPasswordInternalResponse400 | signInWithPasswordInternalResponse401 | signInWithPasswordInternalResponse403 | signInWithPasswordInternalResponse422 | signInWithPasswordInternalResponse429) & {
@@ -2138,6 +3416,11 @@ export type signInWithCodeInternalResponse200 = {
   status: 200
 }
 
+export type signInWithCodeInternalResponse202 = {
+  data: ChallengeIssuedResponse
+  status: 202
+}
+
 export type signInWithCodeInternalResponse400 = {
   data: BadRequestResponse
   status: 400
@@ -2158,7 +3441,7 @@ export type signInWithCodeInternalResponse422 = {
   status: 422
 }
 
-export type signInWithCodeInternalResponseSuccess = (signInWithCodeInternalResponse200) & {
+export type signInWithCodeInternalResponseSuccess = (signInWithCodeInternalResponse200 | signInWithCodeInternalResponse202) & {
   headers: Headers;
 };
 export type signInWithCodeInternalResponseError = (signInWithCodeInternalResponse400 | signInWithCodeInternalResponse401 | signInWithCodeInternalResponse403 | signInWithCodeInternalResponse422) & {
@@ -2166,6 +3449,201 @@ export type signInWithCodeInternalResponseError = (signInWithCodeInternalRespons
 };
 
 export type signInWithCodeInternalResponse = (signInWithCodeInternalResponseSuccess | signInWithCodeInternalResponseError)
+
+
+export type inspectSignInChallengeInternalResponse200 = {
+  data: SignInChallenge
+  status: 200
+}
+
+export type inspectSignInChallengeInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type inspectSignInChallengeInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type inspectSignInChallengeInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type inspectSignInChallengeInternalResponse422 = {
+  data: ChallengeExpiredResponse
+  status: 422
+}
+
+export type inspectSignInChallengeInternalResponseSuccess = (inspectSignInChallengeInternalResponse200) & {
+  headers: Headers;
+};
+export type inspectSignInChallengeInternalResponseError = (inspectSignInChallengeInternalResponse400 | inspectSignInChallengeInternalResponse401 | inspectSignInChallengeInternalResponse403 | inspectSignInChallengeInternalResponse422) & {
+  headers: Headers;
+};
+
+export type inspectSignInChallengeInternalResponse = (inspectSignInChallengeInternalResponseSuccess | inspectSignInChallengeInternalResponseError)
+
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse200 = {
+  data: ChallengeAnsweredResponse
+  status: 200
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse422 = {
+  data: TwoStepCodeRefusedResponse
+  status: 422
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse429 = {
+  data: TwoStepLockedResponse
+  status: 429
+}
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponseSuccess = (answerSignInChallengeWithAuthenticatorAppInternalResponse200) & {
+  headers: Headers;
+};
+export type answerSignInChallengeWithAuthenticatorAppInternalResponseError = (answerSignInChallengeWithAuthenticatorAppInternalResponse400 | answerSignInChallengeWithAuthenticatorAppInternalResponse401 | answerSignInChallengeWithAuthenticatorAppInternalResponse403 | answerSignInChallengeWithAuthenticatorAppInternalResponse422 | answerSignInChallengeWithAuthenticatorAppInternalResponse429) & {
+  headers: Headers;
+};
+
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse = (answerSignInChallengeWithAuthenticatorAppInternalResponseSuccess | answerSignInChallengeWithAuthenticatorAppInternalResponseError)
+
+
+export type answerSignInChallengeWithBackupCodeInternalResponse200 = {
+  data: ChallengeAnsweredResponse
+  status: 200
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponse422 = {
+  data: TwoStepCodeRefusedResponse
+  status: 422
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponse429 = {
+  data: TwoStepLockedResponse
+  status: 429
+}
+
+export type answerSignInChallengeWithBackupCodeInternalResponseSuccess = (answerSignInChallengeWithBackupCodeInternalResponse200) & {
+  headers: Headers;
+};
+export type answerSignInChallengeWithBackupCodeInternalResponseError = (answerSignInChallengeWithBackupCodeInternalResponse400 | answerSignInChallengeWithBackupCodeInternalResponse401 | answerSignInChallengeWithBackupCodeInternalResponse403 | answerSignInChallengeWithBackupCodeInternalResponse422 | answerSignInChallengeWithBackupCodeInternalResponse429) & {
+  headers: Headers;
+};
+
+export type answerSignInChallengeWithBackupCodeInternalResponse = (answerSignInChallengeWithBackupCodeInternalResponseSuccess | answerSignInChallengeWithBackupCodeInternalResponseError)
+
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse200 = {
+  data: SecurityKeyAssertionOptions
+  status: 200
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse422 = {
+  data: SecurityKeyAnswerRefusedResponse
+  status: 422
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse429 = {
+  data: TwoStepLockedResponse
+  status: 429
+}
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponseSuccess = (getSignInChallengeSecurityKeyOptionsInternalResponse200) & {
+  headers: Headers;
+};
+export type getSignInChallengeSecurityKeyOptionsInternalResponseError = (getSignInChallengeSecurityKeyOptionsInternalResponse400 | getSignInChallengeSecurityKeyOptionsInternalResponse401 | getSignInChallengeSecurityKeyOptionsInternalResponse403 | getSignInChallengeSecurityKeyOptionsInternalResponse422 | getSignInChallengeSecurityKeyOptionsInternalResponse429) & {
+  headers: Headers;
+};
+
+export type getSignInChallengeSecurityKeyOptionsInternalResponse = (getSignInChallengeSecurityKeyOptionsInternalResponseSuccess | getSignInChallengeSecurityKeyOptionsInternalResponseError)
+
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse200 = {
+  data: ChallengeAnsweredResponse
+  status: 200
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse422 = {
+  data: SecurityKeyAnswerRefusedResponse
+  status: 422
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse429 = {
+  data: TwoStepLockedResponse
+  status: 429
+}
+
+export type answerSignInChallengeWithSecurityKeyInternalResponseSuccess = (answerSignInChallengeWithSecurityKeyInternalResponse200) & {
+  headers: Headers;
+};
+export type answerSignInChallengeWithSecurityKeyInternalResponseError = (answerSignInChallengeWithSecurityKeyInternalResponse400 | answerSignInChallengeWithSecurityKeyInternalResponse401 | answerSignInChallengeWithSecurityKeyInternalResponse403 | answerSignInChallengeWithSecurityKeyInternalResponse422 | answerSignInChallengeWithSecurityKeyInternalResponse429) & {
+  headers: Headers;
+};
+
+export type answerSignInChallengeWithSecurityKeyInternalResponse = (answerSignInChallengeWithSecurityKeyInternalResponseSuccess | answerSignInChallengeWithSecurityKeyInternalResponseError)
 
 
 export type introspectTokenResponse200 = {
@@ -2324,7 +3802,7 @@ export type switchSessionOrganizationResponse401 = {
 }
 
 export type switchSessionOrganizationResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: OrganizationChoiceRefusedResponse
   status: 403
 }
 
@@ -2464,13 +3942,18 @@ export type reauthenticateInternalResponse401 = {
 }
 
 export type reauthenticateInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: RecentAuthenticationRequiredResponse
   status: 403
 }
 
 export type reauthenticateInternalResponse404 = {
   data: SessionNotFoundResponse
   status: 404
+}
+
+export type reauthenticateInternalResponse409 = {
+  data: TwoStepNotEnabledResponse
+  status: 409
 }
 
 export type reauthenticateInternalResponse422 = {
@@ -2486,7 +3969,7 @@ export type reauthenticateInternalResponse429 = {
 export type reauthenticateInternalResponseSuccess = (reauthenticateInternalResponse200) & {
   headers: Headers;
 };
-export type reauthenticateInternalResponseError = (reauthenticateInternalResponse400 | reauthenticateInternalResponse401 | reauthenticateInternalResponse403 | reauthenticateInternalResponse404 | reauthenticateInternalResponse422 | reauthenticateInternalResponse429) & {
+export type reauthenticateInternalResponseError = (reauthenticateInternalResponse400 | reauthenticateInternalResponse401 | reauthenticateInternalResponse403 | reauthenticateInternalResponse404 | reauthenticateInternalResponse409 | reauthenticateInternalResponse422 | reauthenticateInternalResponse429) & {
   headers: Headers;
 };
 
@@ -2579,7 +4062,7 @@ export type changePasswordInternalResponse401 = {
 }
 
 export type changePasswordInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: RecentAuthenticationRequiredResponse
   status: 403
 }
 
@@ -2741,6 +4224,396 @@ export type scheduleAccountDeletionInternalResponseError = (scheduleAccountDelet
 };
 
 export type scheduleAccountDeletionInternalResponse = (scheduleAccountDeletionInternalResponseSuccess | scheduleAccountDeletionInternalResponseError)
+
+
+export type getTwoStepVerificationInternalResponse200 = {
+  data: TwoStepVerification
+  status: 200
+}
+
+export type getTwoStepVerificationInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTwoStepVerificationInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTwoStepVerificationInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTwoStepVerificationInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type getTwoStepVerificationInternalResponseSuccess = (getTwoStepVerificationInternalResponse200) & {
+  headers: Headers;
+};
+export type getTwoStepVerificationInternalResponseError = (getTwoStepVerificationInternalResponse400 | getTwoStepVerificationInternalResponse401 | getTwoStepVerificationInternalResponse403 | getTwoStepVerificationInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTwoStepVerificationInternalResponse = (getTwoStepVerificationInternalResponseSuccess | getTwoStepVerificationInternalResponseError)
+
+
+export type disableTwoStepVerificationInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type disableTwoStepVerificationInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type disableTwoStepVerificationInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type disableTwoStepVerificationInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type disableTwoStepVerificationInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type disableTwoStepVerificationInternalResponse409 = {
+  data: MfaRequiredByOrganizationResponse
+  status: 409
+}
+
+export type disableTwoStepVerificationInternalResponseSuccess = (disableTwoStepVerificationInternalResponse204) & {
+  headers: Headers;
+};
+export type disableTwoStepVerificationInternalResponseError = (disableTwoStepVerificationInternalResponse400 | disableTwoStepVerificationInternalResponse401 | disableTwoStepVerificationInternalResponse403 | disableTwoStepVerificationInternalResponse404 | disableTwoStepVerificationInternalResponse409) & {
+  headers: Headers;
+};
+
+export type disableTwoStepVerificationInternalResponse = (disableTwoStepVerificationInternalResponseSuccess | disableTwoStepVerificationInternalResponseError)
+
+
+export type startAuthenticatorAppSetupInternalResponse200 = {
+  data: AuthenticatorAppSetup
+  status: 200
+}
+
+export type startAuthenticatorAppSetupInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type startAuthenticatorAppSetupInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type startAuthenticatorAppSetupInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type startAuthenticatorAppSetupInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type startAuthenticatorAppSetupInternalResponseSuccess = (startAuthenticatorAppSetupInternalResponse200) & {
+  headers: Headers;
+};
+export type startAuthenticatorAppSetupInternalResponseError = (startAuthenticatorAppSetupInternalResponse400 | startAuthenticatorAppSetupInternalResponse401 | startAuthenticatorAppSetupInternalResponse403 | startAuthenticatorAppSetupInternalResponse404) & {
+  headers: Headers;
+};
+
+export type startAuthenticatorAppSetupInternalResponse = (startAuthenticatorAppSetupInternalResponseSuccess | startAuthenticatorAppSetupInternalResponseError)
+
+
+export type confirmAuthenticatorAppSetupInternalResponse200 = {
+  data: AuthenticatorAppConfigured
+  status: 200
+}
+
+export type confirmAuthenticatorAppSetupInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type confirmAuthenticatorAppSetupInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type confirmAuthenticatorAppSetupInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type confirmAuthenticatorAppSetupInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type confirmAuthenticatorAppSetupInternalResponse422 = {
+  data: SetupCodeRefusedResponse
+  status: 422
+}
+
+export type confirmAuthenticatorAppSetupInternalResponseSuccess = (confirmAuthenticatorAppSetupInternalResponse200) & {
+  headers: Headers;
+};
+export type confirmAuthenticatorAppSetupInternalResponseError = (confirmAuthenticatorAppSetupInternalResponse400 | confirmAuthenticatorAppSetupInternalResponse401 | confirmAuthenticatorAppSetupInternalResponse403 | confirmAuthenticatorAppSetupInternalResponse404 | confirmAuthenticatorAppSetupInternalResponse422) & {
+  headers: Headers;
+};
+
+export type confirmAuthenticatorAppSetupInternalResponse = (confirmAuthenticatorAppSetupInternalResponseSuccess | confirmAuthenticatorAppSetupInternalResponseError)
+
+
+export type regenerateBackupCodesInternalResponse200 = {
+  data: BackupCodes
+  status: 200
+}
+
+export type regenerateBackupCodesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type regenerateBackupCodesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type regenerateBackupCodesInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type regenerateBackupCodesInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type regenerateBackupCodesInternalResponse409 = {
+  data: TwoStepNotEnabledResponse
+  status: 409
+}
+
+export type regenerateBackupCodesInternalResponseSuccess = (regenerateBackupCodesInternalResponse200) & {
+  headers: Headers;
+};
+export type regenerateBackupCodesInternalResponseError = (regenerateBackupCodesInternalResponse400 | regenerateBackupCodesInternalResponse401 | regenerateBackupCodesInternalResponse403 | regenerateBackupCodesInternalResponse404 | regenerateBackupCodesInternalResponse409) & {
+  headers: Headers;
+};
+
+export type regenerateBackupCodesInternalResponse = (regenerateBackupCodesInternalResponseSuccess | regenerateBackupCodesInternalResponseError)
+
+
+export type startSecurityKeyRegistrationInternalResponse200 = {
+  data: SecurityKeyRegistration
+  status: 200
+}
+
+export type startSecurityKeyRegistrationInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type startSecurityKeyRegistrationInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type startSecurityKeyRegistrationInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type startSecurityKeyRegistrationInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type startSecurityKeyRegistrationInternalResponse409 = {
+  data: SecurityKeyNotAddableResponse
+  status: 409
+}
+
+export type startSecurityKeyRegistrationInternalResponseSuccess = (startSecurityKeyRegistrationInternalResponse200) & {
+  headers: Headers;
+};
+export type startSecurityKeyRegistrationInternalResponseError = (startSecurityKeyRegistrationInternalResponse400 | startSecurityKeyRegistrationInternalResponse401 | startSecurityKeyRegistrationInternalResponse403 | startSecurityKeyRegistrationInternalResponse404 | startSecurityKeyRegistrationInternalResponse409) & {
+  headers: Headers;
+};
+
+export type startSecurityKeyRegistrationInternalResponse = (startSecurityKeyRegistrationInternalResponseSuccess | startSecurityKeyRegistrationInternalResponseError)
+
+
+export type addSecurityKeyInternalResponse201 = {
+  data: SecurityKey
+  status: 201
+}
+
+export type addSecurityKeyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type addSecurityKeyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type addSecurityKeyInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type addSecurityKeyInternalResponse404 = {
+  data: UserOrSessionNotFoundResponse
+  status: 404
+}
+
+export type addSecurityKeyInternalResponse409 = {
+  data: SecurityKeyNotAddableResponse
+  status: 409
+}
+
+export type addSecurityKeyInternalResponse422 = {
+  data: SecurityKeyRegistrationRefusedResponse
+  status: 422
+}
+
+export type addSecurityKeyInternalResponseSuccess = (addSecurityKeyInternalResponse201) & {
+  headers: Headers;
+};
+export type addSecurityKeyInternalResponseError = (addSecurityKeyInternalResponse400 | addSecurityKeyInternalResponse401 | addSecurityKeyInternalResponse403 | addSecurityKeyInternalResponse404 | addSecurityKeyInternalResponse409 | addSecurityKeyInternalResponse422) & {
+  headers: Headers;
+};
+
+export type addSecurityKeyInternalResponse = (addSecurityKeyInternalResponseSuccess | addSecurityKeyInternalResponseError)
+
+
+export type removeSecurityKeyInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeSecurityKeyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type removeSecurityKeyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type removeSecurityKeyInternalResponse403 = {
+  data: RecentAuthenticationRequiredResponse
+  status: 403
+}
+
+export type removeSecurityKeyInternalResponse404 = {
+  data: UserSessionOrSecurityKeyNotFoundResponse
+  status: 404
+}
+
+export type removeSecurityKeyInternalResponseSuccess = (removeSecurityKeyInternalResponse204) & {
+  headers: Headers;
+};
+export type removeSecurityKeyInternalResponseError = (removeSecurityKeyInternalResponse400 | removeSecurityKeyInternalResponse401 | removeSecurityKeyInternalResponse403 | removeSecurityKeyInternalResponse404) & {
+  headers: Headers;
+};
+
+export type removeSecurityKeyInternalResponse = (removeSecurityKeyInternalResponseSuccess | removeSecurityKeyInternalResponseError)
+
+
+export type getAuthenticationPolicyInternalResponse200 = {
+  data: AuthenticationPolicy
+  status: 200
+}
+
+export type getAuthenticationPolicyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getAuthenticationPolicyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getAuthenticationPolicyInternalResponse403 = {
+  data: PolicyAccessRefusedResponse
+  status: 403
+}
+
+export type getAuthenticationPolicyInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type getAuthenticationPolicyInternalResponseSuccess = (getAuthenticationPolicyInternalResponse200) & {
+  headers: Headers;
+};
+export type getAuthenticationPolicyInternalResponseError = (getAuthenticationPolicyInternalResponse400 | getAuthenticationPolicyInternalResponse401 | getAuthenticationPolicyInternalResponse403 | getAuthenticationPolicyInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getAuthenticationPolicyInternalResponse = (getAuthenticationPolicyInternalResponseSuccess | getAuthenticationPolicyInternalResponseError)
+
+
+export type updateAuthenticationPolicyInternalResponse200 = {
+  data: AuthenticationPolicy
+  status: 200
+}
+
+export type updateAuthenticationPolicyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateAuthenticationPolicyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateAuthenticationPolicyInternalResponse403 = {
+  data: PolicyAccessRefusedResponse
+  status: 403
+}
+
+export type updateAuthenticationPolicyInternalResponse404 = {
+  data: OrganizationOrSessionNotFoundResponse
+  status: 404
+}
+
+export type updateAuthenticationPolicyInternalResponse409 = {
+  data: TwoStepNotEnabledResponse
+  status: 409
+}
+
+export type updateAuthenticationPolicyInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateAuthenticationPolicyInternalResponseSuccess = (updateAuthenticationPolicyInternalResponse200) & {
+  headers: Headers;
+};
+export type updateAuthenticationPolicyInternalResponseError = (updateAuthenticationPolicyInternalResponse400 | updateAuthenticationPolicyInternalResponse401 | updateAuthenticationPolicyInternalResponse403 | updateAuthenticationPolicyInternalResponse404 | updateAuthenticationPolicyInternalResponse409 | updateAuthenticationPolicyInternalResponse412) & {
+  headers: Headers;
+};
+
+export type updateAuthenticationPolicyInternalResponse = (updateAuthenticationPolicyInternalResponseSuccess | updateAuthenticationPolicyInternalResponseError)
 
 
 export type createApiTokenInternalResponse201 = {

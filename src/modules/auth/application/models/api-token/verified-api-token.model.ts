@@ -74,5 +74,17 @@ export interface VerifiedApiToken {
    * @readonly
    */
   readonly expiresAt: string | null;
+
+  /**
+   * Property withheldOrganization
+   *
+   * @description
+   * The organization of the token withheld for want of two-step verification of its user; the
+   * token then acts on nothing and `scopes` is empty. Absent when nothing is withheld.
+   *
+   * @type {{ readonly organizationId: string; readonly code: string } | undefined}
+   * @readonly
+   */
+  readonly withheldOrganization?: { readonly organizationId: string; readonly code: string };
   // #endregion
 }

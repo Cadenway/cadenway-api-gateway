@@ -22,16 +22,22 @@ import type { RecentAuthentication as InternalRecentAuthentication } from '../..
  * Constant REAUTHENTICATION_PROBLEMS
  *
  * @description
- * Client errors of identity-service that `POST /v1/auth/reauthentication` answers as they are: a
- * wrong password (`PasswordRefused`) and the lockout it shares with the sign-in
- * (`AccountLocked`), with `Retry-After` derived from `details.lockedUntil`.
+ * Client errors of identity-service that `POST /v1/auth/reauthentication` answers as they are:
+ * both or neither of `password` and `code` (`400 request.invalid`); a password for an account with
+ * two-step verification (`403 auth.reauthentication-required`, `details.methods`), unchecked and
+ * uncounted; a code without an authenticator app (`409 auth.two-step-not-enabled`); a wrong
+ * password or code (`PasswordRefused`); and the lockouts they count towards (`AccountLocked`: the
+ * one of the password sign-in, or the one of the two-step answers), with `Retry-After` derived
+ * from `details.lockedUntil`.
  *
  * @type {AcceptedProblems}
  */
 const REAUTHENTICATION_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  422: ['auth.password-incorrect'],
-  429: ['auth.account-locked'],
+  403: ['auth.reauthentication-required'],
+  409: ['auth.two-step-not-enabled'],
+  422: ['auth.password-incorrect', 'auth.two-step-code-invalid'],
+  429: ['auth.account-locked', 'auth.two-step-locked'],
 };
 
 /**
@@ -56,8 +62,9 @@ const ENDED_SESSION: readonly string[] = ['session.not-found'];
  * request (`403 auth.csrf-rejected` without an exact allowed `Origin` and
  * `Content-Type: application/json`), and answers a personal API token, which needs no `Origin`,
  * `403 auth.api-token-not-accepted`; `RateLimitGuard` counts the session. Every answer carries
- * `Cache-Control: no-store` (see `AuthRoutesModule`). The password travels in the body only and
- * is never logged.
+ * `Cache-Control: no-store` (see `AuthRoutesModule`). The password or the code travels in the body
+ * only and is never logged; the gateway sends whichever the browser sent, and identity-service
+ * decides which one the account needs.
  */
 @Controller('v1/auth')
 @UseGuards(CredentialGuard, RateLimitGuard)
@@ -67,7 +74,7 @@ export class ReauthenticationController {
    * Property reauthentication
    *
    * @description
-   * Confirms the password of the person of the session.
+   * Confirms the password, or a code of the authenticator app, of the person of the session.
    *
    * @type {Reauthenticate}
    * @readonly
@@ -82,7 +89,7 @@ export class ReauthenticationController {
    * @description
    * Receives the use case of the re-authentication.
    *
-   * @param {Reauthenticate} reauthentication - Confirms the password in the session.
+   * @param {Reauthenticate} reauthentication - Confirms the password or the code in the session.
    * @constructor
    */
   public constructor(@Inject(Reauthenticate) reauthentication: Reauthenticate) {
@@ -95,13 +102,15 @@ export class ReauthenticationController {
    * Method reauthenticate
    *
    * @description
-   * `POST /v1/auth/reauthentication`: confirms the password of the person of the session, which
-   * opens the 10-minute window of recent authentication of this session. The session is the one
-   * the introspection returned, never one the request names. `422 auth.password-incorrect` and
-   * `429 auth.account-locked` (with `Retry-After`) are answered as they are; a session that ended
-   * since its introspection (`404 session.not-found`) is `401 auth.session-expired`.
+   * `POST /v1/auth/reauthentication`: confirms the password (an account without two-step
+   * verification) or a code of the authenticator app (an account with it) of the person of the
+   * session, which opens the 10-minute window of recent authentication of this session. The
+   * session is the one the introspection returned, never one the request names. The refusals of
+   * `REAUTHENTICATION_PROBLEMS` are answered as they are, `403 auth.reauthentication-required`
+   * with its French title and `details.methods`; a session that ended since its introspection
+   * (`404 session.not-found`) is `401 auth.session-expired`.
    *
-   * @param {z.output<typeof ReauthenticateBody>} body - The password.
+   * @param {z.output<typeof ReauthenticateBody>} body - The password or the code.
    * @param {Request} request - Request, for its verified session.
    * @param {Response} response - Response, for `Retry-After`.
    * @returns {Promise<RecentAuthentication>} The window of recent authentication.
@@ -129,7 +138,8 @@ export class ReauthenticationController {
       () =>
         this.reauthentication.execute({
           sessionId: session.sessionId,
-          password: body.password,
+          ...(body.password === undefined ? {} : { password: body.password }),
+          ...(body.code === undefined ? {} : { code: body.code }),
         }),
       ENDED_SESSION,
     );

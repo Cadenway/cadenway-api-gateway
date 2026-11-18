@@ -11,7 +11,8 @@ import type { OpenSessionPage } from '../../../../application/models/sessions/op
  *
  * @description
  * Maps a session to `OpenSession` of `openapi/public/auth.yaml`, member by member: its id, never
- * its token.
+ * its token, and the inactivity of the policy of its current organization when identity-service
+ * sends it.
  *
  * @param {OpenSession} session - The session.
  * @returns {PublicOpenSession} The public session.
@@ -31,6 +32,9 @@ export function toOpenSession(session: OpenSession): PublicOpenSession {
     signedInAt: session.signedInAt,
     lastActiveAt: session.lastActiveAt,
     expiresAt: session.expiresAt,
+    ...(session.inactivityTimeoutMinutes === undefined
+      ? {}
+      : { inactivityTimeoutMinutes: session.inactivityTimeoutMinutes }),
   };
 }
 

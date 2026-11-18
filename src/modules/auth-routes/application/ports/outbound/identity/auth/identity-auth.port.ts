@@ -14,6 +14,15 @@ import type { PasswordResetLink } from '../../../../models/auth/password-reset-l
 import type { ConfirmPasswordResetInput } from '../../../../use-cases/commands/auth/confirm-password-reset/confirm-password-reset.input.js';
 import type { PasswordResetCompleted } from '../../../../models/auth/password-reset-completed.model.js';
 import type { RecentAuthentication } from '../../../../models/auth/recent-authentication.model.js';
+import type { ReauthenticateInput } from '../../../../use-cases/commands/auth/reauthenticate/reauthenticate.input.js';
+import type { SignInOutcome } from '../../../../models/auth/sign-in-outcome.model.js';
+import type { SignInChallenge } from '../../../../models/auth/sign-in-challenge.model.js';
+import type { SecurityKeyAssertionOptions } from '../../../../models/auth/security-key-assertion-options.model.js';
+import type { InspectSignInChallengeInput } from '../../../../use-cases/queries/auth/inspect-sign-in-challenge/inspect-sign-in-challenge.input.js';
+import type { GetSignInChallengeSecurityKeyOptionsInput } from '../../../../use-cases/commands/auth/get-sign-in-challenge-security-key-options/get-sign-in-challenge-security-key-options.input.js';
+import type { AnswerSignInChallengeWithAuthenticatorAppInput } from '../../../../use-cases/commands/auth/answer-sign-in-challenge-with-authenticator-app/answer-sign-in-challenge-with-authenticator-app.input.js';
+import type { AnswerSignInChallengeWithBackupCodeInput } from '../../../../use-cases/commands/auth/answer-sign-in-challenge-with-backup-code/answer-sign-in-challenge-with-backup-code.input.js';
+import type { AnswerSignInChallengeWithSecurityKeyInput } from '../../../../use-cases/commands/auth/answer-sign-in-challenge-with-security-key/answer-sign-in-challenge-with-security-key.input.js';
 
 /**
  * Interface IdentityAuth
@@ -21,8 +30,8 @@ import type { RecentAuthentication } from '../../../../models/auth/recent-authen
  * @description
  * Outgoing port of the routes of `openapi/public/auth.yaml` under `/v1/auth`: the internal routes
  * of `openapi/internal/identity-service.yaml` they call. The local adapter delegates to the shared
- * client, which signs the flows before a session (sign-up, sign-in, password reset) as the actor
- * `anonymous`, and the revocation and the re-authentication as the user of the current
+ * client, which signs the flows before a session (sign-up, sign-in and its two-step challenge,
+ * password reset) as the actor `anonymous`, and the revocation and the re-authentication as the user of the current
  * organization context.
  *
  * Every method resolves with a response that matched the internal contract, and rejects with a
@@ -82,12 +91,15 @@ export interface IdentityAuth {
    * Method signInWithPassword
    *
    * @description
-   * `POST /internal/v1/auth/sign-in`.
+   * `POST /internal/v1/auth/sign-in`, with the trusted device token of the browser when it sent
+   * one.
    *
-   * @param {SignInWithPasswordInput} request - Address, password, persistence and browser of the session.
-   * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
+   * @param {SignInWithPasswordInput} request - Address, password, persistence and browser of the
+   * session, and the trusted device token.
+   * @returns {Promise<SignInOutcome>} The session opened, with its token returned once, or the
+   * two-step challenge of the account (`202`), with no session.
    */
-  signInWithPassword(request: SignInWithPasswordInput): Promise<SessionIssued>;
+  signInWithPassword(request: SignInWithPasswordInput): Promise<SignInOutcome>;
 
   /**
    * Method requestSignInCode
@@ -104,12 +116,89 @@ export interface IdentityAuth {
    * Method signInWithCode
    *
    * @description
-   * `POST /internal/v1/auth/sign-in/code/verification`.
+   * `POST /internal/v1/auth/sign-in/code/verification`, with the trusted device token of the
+   * browser when it sent one.
    *
-   * @param {SignInWithCodeInput} request - Address, code, persistence and browser of the session.
-   * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
+   * @param {SignInWithCodeInput} request - Address, code, persistence and browser of the session,
+   * and the trusted device token.
+   * @returns {Promise<SignInOutcome>} The session opened, with its token returned once, or the
+   * two-step challenge of the account (`202`), with no session.
    */
-  signInWithCode(request: SignInWithCodeInput): Promise<SessionIssued>;
+  signInWithCode(request: SignInWithCodeInput): Promise<SignInOutcome>;
+
+  /**
+   * Method inspectSignInChallenge
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/inspection`. Rejects with
+   * `422 auth.challenge-expired`.
+   *
+   * @param {InspectSignInChallengeInput} request - The token of the challenge.
+   * @returns {Promise<SignInChallenge>} The challenge, as the sign-in issued it.
+   */
+  inspectSignInChallenge(request: InspectSignInChallengeInput): Promise<SignInChallenge>;
+
+  /**
+   * Method answerSignInChallengeWithAuthenticatorApp
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/authenticator-app`. Rejects with
+   * `422 auth.challenge-expired`, `422 auth.two-step-code-invalid` or `429 auth.two-step-locked`.
+   *
+   * @param {AnswerSignInChallengeWithAuthenticatorAppInput} request - Token, code, trust of the
+   * device and browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`.
+   */
+  answerSignInChallengeWithAuthenticatorApp(
+    request: AnswerSignInChallengeWithAuthenticatorAppInput,
+  ): Promise<SessionIssued>;
+
+  /**
+   * Method answerSignInChallengeWithBackupCode
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/backup-code`, with the same refusals as the code of
+   * the app.
+   *
+   * @param {AnswerSignInChallengeWithBackupCodeInput} request - Token, backup code, trust of the
+   * device and browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`.
+   */
+  answerSignInChallengeWithBackupCode(
+    request: AnswerSignInChallengeWithBackupCodeInput,
+  ): Promise<SessionIssued>;
+
+  /**
+   * Method getSignInChallengeSecurityKeyOptions
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/security-key/options`. Rejects with
+   * `422 auth.challenge-expired`, `422 auth.security-key-refused` or `429 auth.two-step-locked`.
+   *
+   * @param {GetSignInChallengeSecurityKeyOptionsInput} request - The token of the challenge.
+   * @returns {Promise<SecurityKeyAssertionOptions>} The WebAuthn options and their expiry.
+   */
+  getSignInChallengeSecurityKeyOptions(
+    request: GetSignInChallengeSecurityKeyOptionsInput,
+  ): Promise<SecurityKeyAssertionOptions>;
+
+  /**
+   * Method answerSignInChallengeWithSecurityKey
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/security-key`. Rejects with
+   * `422 auth.challenge-expired`, `422 auth.security-key-refused` or `429 auth.two-step-locked`.
+   *
+   * @param {AnswerSignInChallengeWithSecurityKeyInput} request - Token, answer of the key, trust
+   * of the device and browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`.
+   */
+  answerSignInChallengeWithSecurityKey(
+    request: AnswerSignInChallengeWithSecurityKeyInput,
+  ): Promise<SessionIssued>;
 
   /**
    * Method revokeSession
@@ -163,12 +252,15 @@ export interface IdentityAuth {
    * @description
    * `POST /internal/v1/sessions/{sessionId}/reauthentication`, for the user of the current
    * organization context. Rejects with `422 auth.password-incorrect`, `429 auth.account-locked`,
-   * or `404 session.not-found` when the session is no longer an open session of the user.
+   * `403 auth.reauthentication-required` (a password for an account with two-step verification),
+   * `409 auth.two-step-not-enabled` (a code without an app), `422 auth.two-step-code-invalid`,
+   * `429 auth.two-step-locked`, or `404 session.not-found` when the session is no longer an open
+   * session of the user.
    *
-   * @param {string} sessionId - Id of the session, as the introspection returned it.
-   * @param {string} password - The password of the account.
+   * @param {ReauthenticateInput} request - Id of the session, as the introspection returned it,
+   * and the password or the code.
    * @returns {Promise<RecentAuthentication>} The window of recent authentication.
    */
-  reauthenticate(sessionId: string, password: string): Promise<RecentAuthentication>;
+  reauthenticate(request: ReauthenticateInput): Promise<RecentAuthentication>;
   // #endregion
 }

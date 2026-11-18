@@ -1,4 +1,6 @@
 import type { SessionIssued } from '@cadenway/contracts/types/internal/identity-service';
+
+import type { IdentitySignIn } from '../../../../../../clients/identity-service.client.js';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -80,6 +82,42 @@ function issuedSession(persistent: boolean): SessionIssued {
     },
     user: { ...CAMILLE },
   };
+}
+
+/**
+ * Function signedIn
+ *
+ * @description
+ * Answer of identity-service to a sign-in by password or by code that opens the session.
+ *
+ * @param {SessionIssued} issued - The session opened.
+ * @returns {IdentitySignIn} The outcome of the sign-in.
+ */
+function signedIn(issued: SessionIssued): IdentitySignIn {
+  return { outcome: 'signed-in', session: issued };
+}
+
+/**
+ * Function resolveCodeSignIn
+ *
+ * @description
+ * Gives the verification of a sign-up code or of a sign-in code the session it opens: the first
+ * answers the session alone, the second the outcome of a sign-in.
+ *
+ * @param {FakeIdentity} identity - The fake of identity-service.
+ * @param {'verifySignUp' | 'signInWithCode'} operation - The method of the client.
+ * @param {SessionIssued} issued - The session opened.
+ */
+function resolveCodeSignIn(
+  identity: FakeIdentity,
+  operation: 'verifySignUp' | 'signInWithCode',
+  issued: SessionIssued,
+): void {
+  if (operation === 'verifySignUp') {
+    identity.verifySignUp.mockResolvedValue(issued);
+  } else {
+    identity.signInWithCode.mockResolvedValue(signedIn(issued));
+  }
 }
 
 /**
@@ -392,7 +430,7 @@ describe('routes of /v1/auth', () => {
     ['/v1/auth/sign-in/code/verification', 'signInWithCode'],
   ] as const)('POST %s', (path, operation) => {
     it('signs in with a session cookie that ends with the browser', async () => {
-      identity[operation].mockResolvedValue(issuedSession(false));
+      resolveCodeSignIn(identity, operation, issuedSession(false));
 
       const response: request.Response = await post(application, path, {
         email: CAMILLE.email,
@@ -422,7 +460,7 @@ describe('routes of /v1/auth', () => {
     });
 
     it('sets Max-Age to the seconds left until the end of a persistent session', async () => {
-      identity[operation].mockResolvedValue(issuedSession(true));
+      resolveCodeSignIn(identity, operation, issuedSession(true));
 
       const response: request.Response = await post(application, path, {
         email: CAMILLE.email,
@@ -470,7 +508,7 @@ describe('routes of /v1/auth', () => {
     });
 
     it('never writes the code or the session token into a log line', async () => {
-      identity[operation].mockResolvedValue(issuedSession(false));
+      resolveCodeSignIn(identity, operation, issuedSession(false));
 
       await post(application, path, { email: CAMILLE.email, code: '482913' });
 
@@ -633,7 +671,7 @@ describe('routes of /v1/auth', () => {
     };
 
     it('signs in with a persistent session cookie, and reads the browser behind one proxy hop', async () => {
-      identity.signInWithPassword.mockResolvedValue(issuedSession(true));
+      identity.signInWithPassword.mockResolvedValue(signedIn(issuedSession(true)));
 
       const response: request.Response = await post(application, '/v1/auth/sign-in', body)
         // Traefik appends the address it saw; the entries before it are written by the client.
@@ -655,7 +693,7 @@ describe('routes of /v1/auth', () => {
     });
 
     it('sends the socket address and no User-Agent when there is no proxy and no header', async () => {
-      identity.signInWithPassword.mockResolvedValue(issuedSession(false));
+      identity.signInWithPassword.mockResolvedValue(signedIn(issuedSession(false)));
 
       const response: request.Response = await request(application.server)
         .post('/v1/auth/sign-in')
@@ -673,7 +711,7 @@ describe('routes of /v1/auth', () => {
     });
 
     it('cuts a User-Agent longer than the internal contract allows', async () => {
-      identity.signInWithPassword.mockResolvedValue(issuedSession(false));
+      identity.signInWithPassword.mockResolvedValue(signedIn(issuedSession(false)));
 
       await post(application, '/v1/auth/sign-in', body).set('User-Agent', 'a'.repeat(1500));
 
@@ -683,7 +721,7 @@ describe('routes of /v1/auth', () => {
     });
 
     it('ignores a stale session cookie: the route carries no session', async () => {
-      identity.signInWithPassword.mockResolvedValue(issuedSession(true));
+      identity.signInWithPassword.mockResolvedValue(signedIn(issuedSession(true)));
 
       const response: request.Response = await post(application, '/v1/auth/sign-in', body).set(
         'Cookie',
@@ -1651,16 +1689,18 @@ describe('password reset and the cancellation of a deletion', () => {
   ] as const)(
     'passes deletionCancelled and passwordChangedAt on in the answer of %s',
     async (path, body, method) => {
-      identity[method].mockResolvedValue({
-        token: 'new-session-token-0123456789',
-        session: {
-          id: CAMILLE_SESSION.sessionId,
-          expiresAt: '2026-12-08T13:07:00Z',
-          persistent: false,
-        },
-        user: { ...CAMILLE, passwordChangedAt: '2026-08-12T09:30:00Z' },
-        deletionCancelled: true,
-      });
+      identity[method].mockResolvedValue(
+        signedIn({
+          token: 'new-session-token-0123456789',
+          session: {
+            id: CAMILLE_SESSION.sessionId,
+            expiresAt: '2026-12-08T13:07:00Z',
+            persistent: false,
+          },
+          user: { ...CAMILLE, passwordChangedAt: '2026-08-12T09:30:00Z' },
+          deletionCancelled: true,
+        }),
+      );
 
       const response: request.Response = await runRouteCase(application, identity, {
         name: path,
@@ -1680,15 +1720,17 @@ describe('password reset and the cancellation of a deletion', () => {
   );
 
   it('leaves deletionCancelled out of a sign-in when identity-service does not send it', async () => {
-    identity.signInWithPassword.mockResolvedValue({
-      token: 'new-session-token-0123456789',
-      session: {
-        id: CAMILLE_SESSION.sessionId,
-        expiresAt: '2026-12-08T13:07:00Z',
-        persistent: false,
-      },
-      user: { ...CAMILLE },
-    });
+    identity.signInWithPassword.mockResolvedValue(
+      signedIn({
+        token: 'new-session-token-0123456789',
+        session: {
+          id: CAMILLE_SESSION.sessionId,
+          expiresAt: '2026-12-08T13:07:00Z',
+          persistent: false,
+        },
+        user: { ...CAMILLE },
+      }),
+    );
 
     const response: request.Response = await runRouteCase(application, identity, {
       name: 'sign-in',
@@ -1702,5 +1744,287 @@ describe('password reset and the cancellation of a deletion', () => {
 
     expect(response.body).not.toHaveProperty('deletionCancelled');
     expect((response.body as { user: unknown }).user).not.toHaveProperty('passwordChangedAt');
+  });
+});
+
+/**
+ * Constant CHALLENGE
+ *
+ * @description
+ * The two-step challenge identity-service answers a sign-in of an account with two-step
+ * verification (`202`), as the internal contract shows it.
+ *
+ * @type {Record<string, unknown>}
+ */
+const CHALLENGE: {
+  token: string;
+  expiresAt: string;
+  email: string;
+  name: string;
+  primaryMethod: string;
+  methods: string[];
+  securityKeys: { name: string }[];
+  backupCodesRemaining: number;
+  lockedUntil: string | null;
+} = {
+  token: 'ChallengeTokenOfTheSignInOfCamille00000000',
+  expiresAt: '2026-11-09T07:52:00Z',
+  email: CAMILLE.email,
+  name: CAMILLE.name,
+  primaryMethod: 'authenticator-app',
+  methods: ['authenticator-app', 'security-key', 'backup-code'],
+  securityKeys: [{ name: 'YubiKey 5C NFC' }],
+  backupCodesRemaining: 7,
+  lockedUntil: null,
+};
+
+/**
+ * Constant DEVICE_TOKEN
+ *
+ * @description
+ * Value of the trusted device cookie of the browser: a secret, sent on the two sign-ins only.
+ *
+ * @type {string}
+ */
+const DEVICE_TOKEN: string = 'TrustedDeviceTokenOfThisBrowser000000000000';
+
+/**
+ * Interface SignInRoute
+ *
+ * @description
+ * One of the two sign-ins that may answer a two-step challenge, with a valid body and the method
+ * of the fake it calls.
+ */
+interface SignInRoute {
+  // #region Properties
+  /**
+   * Property path
+   *
+   * @description
+   * Path of the route.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly path: string;
+
+  /**
+   * Property body
+   *
+   * @description
+   * A body the schema of the route accepts.
+   *
+   * @type {Record<string, unknown>}
+   * @readonly
+   */
+  readonly body: Record<string, unknown>;
+
+  /**
+   * Property method
+   *
+   * @description
+   * Method of the fake of identity-service the route calls.
+   *
+   * @type {'signInWithPassword' | 'signInWithCode'}
+   * @readonly
+   */
+  readonly method: 'signInWithPassword' | 'signInWithCode';
+
+  /**
+   * Property refusal
+   *
+   * @description
+   * The `422` of a wrong password or code.
+   *
+   * @type {string}
+   * @readonly
+   */
+  readonly refusal: string;
+  // #endregion
+}
+
+/**
+ * Constant SIGN_INS
+ *
+ * @description
+ * The sign-in by password and the sign-in by email code.
+ *
+ * @type {readonly SignInRoute[]}
+ */
+const SIGN_INS: readonly SignInRoute[] = [
+  {
+    path: '/v1/auth/sign-in',
+    body: { email: CAMILLE.email, password: PASSWORD },
+    method: 'signInWithPassword',
+    refusal: 'auth.invalid-credentials',
+  },
+  {
+    path: '/v1/auth/sign-in/code/verification',
+    body: { email: CAMILLE.email, code: '482913' },
+    method: 'signInWithCode',
+    refusal: 'auth.code-invalid',
+  },
+];
+
+/**
+ * Function signInCases
+ *
+ * @description
+ * The success, the challenge and every declared error of a sign-in.
+ *
+ * @param {SignInRoute} route - The sign-in.
+ * @returns {RouteCase[]} The cases.
+ */
+function signInCases(route: SignInRoute): RouteCase[] {
+  const base: Omit<RouteCase, 'name' | 'status'> = {
+    method: 'post',
+    path: route.path,
+    url: route.path,
+    credential: 'none',
+    body: route.body,
+    headers: BROWSER_HEADERS,
+  };
+  return [
+    {
+      ...base,
+      name: `POST ${route.path} signs in with the session cookie on a 200`,
+      arrange: ({ identity }) =>
+        identity[route.method].mockResolvedValue(signedIn(issuedSession(false))),
+      status: 200,
+      check: (response) => {
+        expect(response.headers['set-cookie']).toEqual([
+          '__Host-cw_session=new-session-token-0123456789; Path=/; Secure; HttpOnly; SameSite=Lax',
+        ]);
+      },
+    },
+    {
+      ...base,
+      name: `POST ${route.path} answers the 202 challenge as is, with no cookie`,
+      arrange: ({ identity }) =>
+        identity[route.method].mockResolvedValue({ outcome: 'challenge', challenge: CHALLENGE }),
+      status: 202,
+      check: (response) => {
+        expect(response.body).toEqual(CHALLENGE);
+        expect(response.headers['set-cookie']).toBeUndefined();
+        expect(response.headers['cache-control']).toBe('no-store');
+      },
+    },
+    {
+      ...base,
+      name: `POST ${route.path} sends the trusted device cookie as trustedDeviceToken, and no other cookie`,
+      headers: {
+        ...BROWSER_HEADERS,
+        Cookie: `__Host-cw_session=stale-token; __Host-cw_trusted_device=${DEVICE_TOKEN}`,
+      },
+      arrange: ({ identity }) =>
+        identity[route.method].mockResolvedValue(signedIn(issuedSession(false))),
+      status: 200,
+      check: (_response, { identity }) => {
+        expect(identity[route.method]).toHaveBeenCalledWith({
+          ...route.body,
+          rememberMe: false,
+          client: BROWSER_CLIENT,
+          trustedDeviceToken: DEVICE_TOKEN,
+        });
+        expect(identity.introspect).not.toHaveBeenCalled();
+      },
+    },
+    {
+      ...base,
+      name: `POST ${route.path} leaves out a device cookie longer than the internal contract allows`,
+      headers: { ...BROWSER_HEADERS, Cookie: `__Host-cw_trusted_device=${'d'.repeat(257)}` },
+      arrange: ({ identity }) =>
+        identity[route.method].mockResolvedValue({ outcome: 'challenge', challenge: CHALLENGE }),
+      status: 202,
+      check: (_response, { identity }) => {
+        expect(identity[route.method].mock.calls[0]?.[0]).not.toHaveProperty('trustedDeviceToken');
+      },
+    },
+    {
+      ...base,
+      name: `POST ${route.path} refuses an invalid body before identity-service`,
+      body: { email: 'camille' },
+      status: 400,
+      code: 'request.invalid',
+    },
+    {
+      ...base,
+      name: `POST ${route.path} refuses another origin`,
+      origin: 'https://evil.test',
+      status: 403,
+      code: 'auth.csrf-rejected',
+    },
+    {
+      ...base,
+      name: `POST ${route.path} relays 422 ${route.refusal}`,
+      arrange: ({ identity }) =>
+        identity[route.method].mockRejectedValue(
+          identityProblem(422, route.refusal, { remainingAttempts: 3 }),
+        ),
+      status: 422,
+      code: route.refusal,
+    },
+    {
+      ...base,
+      name: `POST ${route.path} answers 429 beyond the quota of the address`,
+      arrange: ({ anonymousCounter }) =>
+        anonymousCounter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 9 }),
+      status: 429,
+      code: 'rate-limit.exceeded',
+    },
+    {
+      ...base,
+      name: `POST ${route.path} answers 503 when identity-service cannot answer`,
+      arrange: ({ identity }) => identity[route.method].mockRejectedValue(identityUnavailable()),
+      status: 503,
+      code: 'upstream.unavailable',
+    },
+  ];
+}
+
+describe('the two-step challenge of the sign-ins', () => {
+  let identity: FakeIdentity;
+  let application: RouteApplication;
+  const cases: readonly RouteCase[] = SIGN_INS.flatMap(signInCases);
+
+  beforeAll(async () => {
+    identity = createFakeIdentity();
+    application = await createRouteApplication(identity);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterAll(async () => {
+    await application.app.close();
+  });
+
+  it('exercises every status each sign-in declares', () => {
+    expectEveryDeclaredStatus(cases);
+  });
+
+  it.each(cases.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
+    '%s',
+    async (_name, routeCase) => {
+      await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it('reads the trusted device cookie on the two sign-ins only, not on the sign-up verification', async () => {
+    identity.verifySignUp.mockResolvedValue(issuedSession(false));
+
+    await runRouteCase(application, identity, {
+      name: 'sign-up verification',
+      method: 'post',
+      path: '/v1/auth/sign-up/verification',
+      url: '/v1/auth/sign-up/verification',
+      credential: 'none',
+      body: { email: CAMILLE.email, code: '482913' },
+      headers: { ...BROWSER_HEADERS, Cookie: `__Host-cw_trusted_device=${DEVICE_TOKEN}` },
+      status: 200,
+    });
+
+    expect(identity.verifySignUp.mock.calls[0]?.[0]).not.toHaveProperty('trustedDeviceToken');
   });
 });

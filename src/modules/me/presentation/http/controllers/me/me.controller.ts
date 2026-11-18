@@ -84,14 +84,18 @@ const UPDATE_PROBLEMS: AcceptedProblems = {
  * Constant CHANGE_PASSWORD_PROBLEMS
  *
  * @description
- * Client errors of identity-service that `PUT /v1/me/password` answers as they are
- * (`PasswordChangeRefused`, `AccountLocked`): the new password first, then the current one, and
- * the lockout it shares with the sign-in, with `Retry-After` derived from `details.lockedUntil`.
+ * Client errors of identity-service that `PUT /v1/me/password` answers as they are, in the order
+ * identity-service checks them: the new password (`PasswordChangeRefused`), then, for an account
+ * with two-step verification only, its recent two-step proof (`403 auth.reauthentication-required`
+ * with `details.methods: [authenticator-app]`, before the current password is checked or counted),
+ * then the current password and the lockout it shares with the sign-in (`AccountLocked`), with
+ * `Retry-After` derived from `details.lockedUntil`.
  *
  * @type {AcceptedProblems}
  */
 const CHANGE_PASSWORD_PROBLEMS: AcceptedProblems = {
   400: INVALID_REQUEST,
+  403: ['auth.reauthentication-required'],
   422: ['auth.password-too-short', 'auth.password-compromised', 'auth.password-incorrect'],
   429: ['auth.account-locked'],
 };

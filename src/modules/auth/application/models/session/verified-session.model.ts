@@ -75,5 +75,17 @@ export interface VerifiedSession {
    * @readonly
    */
   readonly expiresAt: string;
+
+  /**
+   * Property withheldOrganization
+   *
+   * @description
+   * The current organization withheld for want of two-step verification; `organizationId` and
+   * `role` are then `null`. Absent when nothing is withheld.
+   *
+   * @type {{ readonly organizationId: string; readonly code: string } | undefined}
+   * @readonly
+   */
+  readonly withheldOrganization?: { readonly organizationId: string; readonly code: string };
   // #endregion
 }

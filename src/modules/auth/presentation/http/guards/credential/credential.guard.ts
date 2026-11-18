@@ -15,6 +15,7 @@ import {
   apiTokenNotAcceptedProblem,
   bearerFailureLimitExceededProblem,
   organizationNotSelectedProblem,
+  organizationWithheldProblem,
   scopeMissingProblem,
 } from '../../../../../../problems/credential-problems.js';
 import {
@@ -67,18 +68,25 @@ import {
  *    token that cannot be a personal API token, or that the introspection does not find active,
  *    answers `401 auth.api-token-invalid` and counts as a failure of the address. Then the
  *    operation must accept a token
- *    (`403 auth.api-token-not-accepted`) and the token must hold every scope of its `apiToken`
- *    requirement (`403 auth.scope-missing`). A token needs no `Origin`: it is no ambient
- *    credential.
+ *    (`403 auth.api-token-not-accepted`); a token whose organization identity-service withholds
+ *    for want of two-step verification of its user (`withheldOrganization`) acts on nothing and
+ *    answers `403 organization.mfa-required` with `details.organizationId` (`auth.scope-missing`
+ *    for a code the public contracts do not declare), before its scopes are looked at; then the token must hold every scope of its `apiToken` requirement
+ *    (`403 auth.scope-missing`). A token needs no `Origin`: it is no ambient credential.
  * 3. Otherwise the cookie: none answers `401 auth.session-required`; an unsafe request then passes
  *    the cross-site check (`403 auth.csrf-rejected`) before any call; a cookie that cannot be a
  *    token, or that the introspection does not find active, answers `401 auth.session-expired`.
  *    With an optional credential, both let the route run without an identity. A session holds
- *    every scope; an operation on the current organization answers
- *    `403 organization.not-selected` when the session has none.
+ *    every scope. An operation on the current organization answers
+ *    `403 organization.mfa-required` (`details.organizationId`) when identity-service withholds
+ *    the current organization of the session for want of two-step verification
+ *    (`withheldOrganization`; `organization.not-selected` for a code the public contracts do not
+ *    declare), checked first, and `403 organization.not-selected` when the session has none; the operations that need no organization (the account, the choice of an
+ *    organization) run without one, so that the person can set two-step verification up.
  * 4. A verified credential gives the request its organization context with
  *    `setRequestOrganizationContext` of `@cadenway/nest-common`, from the introspection only: the
- *    user, and the organization, role and scopes identity-service returned. The internal HTTP
+ *    user, and the organization, role and scopes identity-service returned, never an organization
+ *    or a role when the introspection carries `withheldOrganization`. The internal HTTP
  *    client signs the internal token of every call from it, and the log lines of the request carry
  *    `organizationId` and `userId`. The credential itself (its id, never its secret) is kept with
  *    `attachVerifiedCredential` for the rate limit, the sign-out and the choice of organization.
@@ -184,7 +192,7 @@ export class CredentialGuard implements CanActivate {
    * @returns {Promise<boolean>} `true` when the request may continue.
    * @throws {ProblemException} 401 `auth.session-required`, `auth.session-expired` or
    * `auth.api-token-invalid`; 403 `auth.csrf-rejected`, `auth.api-token-not-accepted`,
-   * `auth.scope-missing` or `organization.not-selected`; 429 `rate-limit.exceeded` after too many
+   * `organization.mfa-required`, `auth.scope-missing` or `organization.not-selected`; 429 `rate-limit.exceeded` after too many
    * failed bearer tokens from the client address; or 503 `upstream.*` when identity-service cannot
    * answer.
    * @throws {Error} When the handler declares no `OperationSecurity`: a programming error.
@@ -253,6 +261,14 @@ export class CredentialGuard implements CanActivate {
     if (requiredScopes === undefined) {
       throw apiTokenNotAcceptedProblem();
     }
+    if (token.withheldOrganization !== undefined) {
+      // A code the public contracts do not declare still refuses the token, as its empty scopes
+      // would make a gateway that does not read `withheldOrganization` refuse it.
+      throw (
+        organizationWithheldProblem(token.withheldOrganization) ??
+        scopeMissingProblem(requiredScopes)
+      );
+    }
     if (requiredScopes.some((scope: string) => !token.scopes.includes(scope))) {
       throw scopeMissingProblem(requiredScopes);
     }
@@ -274,7 +290,8 @@ export class CredentialGuard implements CanActivate {
    *
    * @description
    * Authenticates a request by its session cookie, after the cross-site check of an unsafe
-   * request, then checks the current organization the operation needs.
+   * request, then checks the current organization the operation needs: a withheld one first,
+   * then a missing one. A withheld organization never reaches the context of the request.
    *
    * @param {Request} request - Incoming request.
    * @param {OperationSecurity} operation - Security of the operation.
@@ -306,13 +323,22 @@ export class CredentialGuard implements CanActivate {
       }
       throw sessionExpiredProblem();
     }
+    const withheld: boolean = session.withheldOrganization !== undefined;
+    if (operation.organization && session.withheldOrganization !== undefined) {
+      // A code the public contracts do not declare still refuses the route, as the missing
+      // organization would make a gateway that does not read `withheldOrganization` refuse it.
+      throw (
+        organizationWithheldProblem(session.withheldOrganization) ??
+        organizationNotSelectedProblem()
+      );
+    }
     if (operation.organization && session.organizationId === null) {
       throw organizationNotSelectedProblem();
     }
     setRequestOrganizationContext(request, {
-      organizationId: session.organizationId,
+      organizationId: withheld ? null : session.organizationId,
       actor: { type: 'user', id: session.userId },
-      role: session.role,
+      role: withheld ? null : session.role,
       scopes: session.scopes,
     });
     attachVerifiedCredential(request, {

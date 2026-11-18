@@ -187,6 +187,13 @@ export interface Member {
   joinedAt: string;
   /** @minimum 1 */
   version: number;
+  /**
+     * Whether the account has two-step verification, from the user directory
+     * (`user.two-step-verification-changed.v1`), `false` until an event says otherwise.
+     * Present when the actor is the owner or an admin of the organization, absent otherwise;
+     * the gateway passes it on as is.
+     */
+  twoStepVerificationEnabled?: boolean;
 }
 
 /**
@@ -693,8 +700,10 @@ const getListMembersInternalUrl = (params?: ListMembersInternalParams,) => {
 
 /**
  * Lists the members of the organization of the token, with `total` and `counts` as
- * `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. Internal token:
- * actor `user`, organization required.
+ * `GET /v1/members` says. A guest gets `403 organization.role-forbidden`. For an actor who
+ * is the owner or an admin, each member carries `twoStepVerificationEnabled` from the user
+ * directory; for any other actor `twoStepVerificationEnabled` is absent. Internal token: actor `user`,
+ * organization required.
  * @summary List the members
  */
 const listMembersInternal = async (params?: ListMembersInternalParams, options?: RequestInit): Promise<listMembersInternalResponse> => {

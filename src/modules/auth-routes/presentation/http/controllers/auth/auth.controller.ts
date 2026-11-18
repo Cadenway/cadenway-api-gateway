@@ -3,6 +3,7 @@ import type {
   PasswordResetCompleted,
   PasswordResetLink,
   PasswordResetLinkSent,
+  SignInChallenge,
   SignInMethods,
   SignedIn,
 } from '@cadenway/contracts/types/public/auth';
@@ -35,12 +36,12 @@ import {
   verifiedSessionOf,
   type RequestSession,
 } from '../../../../../../presentation/http/session/request-session.js';
+import { readTrustedDeviceToken } from '../../../../../../presentation/http/session/trusted-device-cookie.js';
 import {
   isUpstreamProblem,
   relayUpstream,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toCurrentUser } from '../../../../../../presentation/http/mappers/current-user.mapper.js';
 import { browserClient } from '../../../../../../presentation/http/mappers/browser-client.mapper.js';
 import { DiscoverSignInMethods } from '../../../../application/use-cases/queries/auth/discover-sign-in-methods/discover-sign-in-methods.use-case.js';
 import { SignUp } from '../../../../application/use-cases/commands/auth/sign-up/sign-up.use-case.js';
@@ -56,6 +57,8 @@ import { ConfirmPasswordReset } from '../../../../application/use-cases/commands
 
 import type { CodeSent as InternalCodeSent } from '../../../../application/models/auth/code-sent.model.js';
 import type { SessionIssued } from '../../../../application/models/auth/session-issued.model.js';
+import type { SignInOutcome } from '../../../../application/models/auth/sign-in-outcome.model.js';
+import { toSignedIn, toSignInChallenge } from '../../mappers/auth/sign-in.mapper.js';
 import type { PasswordResetLinkSent as InternalPasswordResetLinkSent } from '../../../../application/models/auth/password-reset-link-sent.model.js';
 import type { PasswordResetLink as InternalPasswordResetLink } from '../../../../application/models/auth/password-reset-link.model.js';
 import type { PasswordResetCompleted as InternalPasswordResetCompleted } from '../../../../application/models/auth/password-reset-completed.model.js';
@@ -245,6 +248,22 @@ const PASSWORD_RESET_CONFIRMATION_PROBLEMS: AcceptedProblems = {
 const STRICT_SIGN_OUT_BODY: z.ZodType<Record<string, never>> = SignOutBody.strict();
 
 /**
+ * Function trustedDeviceOf
+ *
+ * @description
+ * The trusted device token of a sign-in, read from the cookie `__Host-cw_trusted_device` of the
+ * request, as the member of the internal request: absent when the browser sent none, or one that
+ * cannot be a device token. Only the two sign-ins read the cookie; it is never logged.
+ *
+ * @param {Request} request - Incoming request, after cookie-parser.
+ * @returns {{ trustedDeviceToken?: string }} The member to spread into the request.
+ */
+function trustedDeviceOf(request: Request): { trustedDeviceToken?: string } {
+  const token: string | undefined = readTrustedDeviceToken(request);
+  return token === undefined ? {} : { trustedDeviceToken: token };
+}
+
+/**
  * Function toCodeSent
  *
  * @description
@@ -270,7 +289,8 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  * reset (request, inspection of the link, confirmation). Each maps the public request to its
  * internal call of `openapi/internal/identity-service.yaml`, and the internal answer back to the
  * public contract, member by member. The re-authentication, which needs a session, has its own
- * controller (`ReauthenticationController`).
+ * controller (`ReauthenticationController`), and so do the answers of the two-step challenge of
+ * the sign-ins (`SignInChallengeController`).
  *
  * - Every route is `POST` and passes `CsrfGuard` first: an exact allowed `Origin` and
  *   `Content-Type: application/json`, signed in or not (the login cross-site decision of
@@ -285,6 +305,11 @@ function toCodeSent(sent: InternalCodeSent): CodeSent {
  *   (`Max-Age` only for a persistent session) and answer the user and the session, never the
  *   token, with `deletionCancelled` when identity-service says the sign-in cancelled a scheduled
  *   deletion. The browser's address and User-Agent travel in `client`.
+ * - The two sign-ins (password, email code) send identity-service the trusted device token of the
+ *   cookie `__Host-cw_trusted_device`, when the browser has one. For an account with two-step
+ *   verification on a device it does not trust, identity-service answers `202` with a challenge:
+ *   the route answers that `202` with the challenge, validated against the internal contract, and
+ *   sets no cookie. Only a `200` signs in.
  * - Passwords, codes and reset tokens travel to identity-service in the body only and are never
  *   logged; the reset token reaches the gateway in the body too, never in a URL (the link keeps it
  *   in its fragment, which only the browser reads).
@@ -593,12 +618,14 @@ export class AuthController {
    *
    * @description
    * `POST /v1/auth/sign-in`: checks an address and its password, with the lockout of
-   * identity-service. `200` with the session cookie.
+   * identity-service. `200` with the session cookie, or `202` with the two-step challenge of an
+   * account with two-step verification and no cookie.
    *
    * @param {z.output<typeof SignInWithPasswordBody>} body - Address, password and `rememberMe`.
-   * @param {Request} request - Request, for the browser's address and User-Agent.
-   * @param {Response} response - Response, for the cookie and `Retry-After`.
-   * @returns {Promise<SignedIn>} The user and the session.
+   * @param {Request} request - Request, for the browser's address and User-Agent and the trusted
+   * device cookie.
+   * @param {Response} response - Response, for the cookie, the `202` and `Retry-After`.
+   * @returns {Promise<SignedIn | SignInChallenge>} The user and the session, or the challenge.
    */
   @Post('sign-in')
   @CredentialGuard.requires({
@@ -612,16 +639,17 @@ export class AuthController {
     body: z.output<typeof SignInWithPasswordBody>,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<SignedIn> {
-    const issued: SessionIssued = await relayUpstream(response, PASSWORD_SIGN_IN_PROBLEMS, () =>
+  ): Promise<SignedIn | SignInChallenge> {
+    const outcome: SignInOutcome = await relayUpstream(response, PASSWORD_SIGN_IN_PROBLEMS, () =>
       this.signInWithPasswordUseCase.execute({
         email: body.email,
         password: body.password,
         rememberMe: body.rememberMe,
         client: browserClient(request),
+        ...trustedDeviceOf(request),
       }),
     );
-    return this.signIn(response, issued);
+    return this.signInOrChallenge(response, outcome);
   }
 
   /**
@@ -655,12 +683,14 @@ export class AuthController {
    *
    * @description
    * `POST /v1/auth/sign-in/code/verification`: checks a sign-in code. `200` with the session
-   * cookie.
+   * cookie, or `202` with the two-step challenge of an account with two-step verification and no
+   * cookie: the email code proves the address, not the second step.
    *
    * @param {z.output<typeof SignInWithCodeBody>} body - Address, code and `rememberMe`.
-   * @param {Request} request - Request, for the browser's address and User-Agent.
-   * @param {Response} response - Response, for the cookie.
-   * @returns {Promise<SignedIn>} The user and the session.
+   * @param {Request} request - Request, for the browser's address and User-Agent and the trusted
+   * device cookie.
+   * @param {Response} response - Response, for the cookie and the `202`.
+   * @returns {Promise<SignedIn | SignInChallenge>} The user and the session, or the challenge.
    */
   @Post('sign-in/code/verification')
   @CredentialGuard.requires({ operationId: 'signInWithCode', security: [], organization: false })
@@ -669,16 +699,17 @@ export class AuthController {
     @Body(new ZodValidationPipe(SignInWithCodeBody)) body: z.output<typeof SignInWithCodeBody>,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<SignedIn> {
-    const issued: SessionIssued = await relayUpstream(response, CODE_VERIFICATION_PROBLEMS, () =>
+  ): Promise<SignedIn | SignInChallenge> {
+    const outcome: SignInOutcome = await relayUpstream(response, CODE_VERIFICATION_PROBLEMS, () =>
       this.signInWithCodeUseCase.execute({
         email: body.email,
         code: body.code,
         rememberMe: body.rememberMe,
         client: browserClient(request),
+        ...trustedDeviceOf(request),
       }),
     );
-    return this.signIn(response, issued);
+    return this.signInOrChallenge(response, outcome);
   }
 
   /**
@@ -857,13 +888,31 @@ export class AuthController {
    */
   private signIn(response: Response, issued: SessionIssued): SignedIn {
     response.setHeader('Set-Cookie', sessionCookieHeader(issued.token, issued.session, new Date()));
-    return {
-      user: toCurrentUser(issued.user),
-      session: { id: issued.session.id, expiresAt: issued.session.expiresAt },
-      ...(issued.deletionCancelled === undefined
-        ? {}
-        : { deletionCancelled: issued.deletionCancelled }),
-    };
+    return toSignedIn(issued);
+  }
+
+  /**
+   * Method signInOrChallenge
+   *
+   * @description
+   * Completes a sign-in by password or by email code: a session opened signs in (`200` with the
+   * session cookie, see `signIn`); a two-step challenge answers `202` with the challenge and sets
+   * no cookie, so that only the answer of the challenge opens a session.
+   *
+   * @param {Response} response - Response of the request.
+   * @param {SignInOutcome} outcome - What identity-service answered.
+   * @returns {SignedIn | SignInChallenge} The public answer.
+   */
+  private signInOrChallenge(
+    response: Response,
+    outcome: SignInOutcome,
+  ): SignedIn | SignInChallenge {
+    if (outcome.outcome === 'challenge') {
+      // The handler status is set before the handler runs; the challenge overrides it.
+      response.status(202);
+      return toSignInChallenge(outcome.challenge);
+    }
+    return this.signIn(response, outcome.session);
   }
   // #endregion
 }

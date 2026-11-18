@@ -8,6 +8,7 @@ import { identityAuthProvider } from './composition/providers/adapters/auth/iden
 import { noStore } from '../../presentation/http/middleware/no-store.middleware.js';
 import { AuthController } from './presentation/http/controllers/auth/auth.controller.js';
 import { ReauthenticationController } from './presentation/http/controllers/reauthentication/reauthentication.controller.js';
+import { SignInChallengeController } from './presentation/http/controllers/sign-in-challenge/sign-in-challenge.controller.js';
 
 import { discoverSignInMethodsProvider } from './composition/providers/use-cases/auth/discover-sign-in-methods.provider.js';
 import { signUpProvider } from './composition/providers/use-cases/auth/sign-up.provider.js';
@@ -21,13 +22,18 @@ import { requestPasswordResetProvider } from './composition/providers/use-cases/
 import { inspectPasswordResetLinkProvider } from './composition/providers/use-cases/auth/inspect-password-reset-link.provider.js';
 import { confirmPasswordResetProvider } from './composition/providers/use-cases/auth/confirm-password-reset.provider.js';
 import { reauthenticateProvider } from './composition/providers/use-cases/auth/reauthenticate.provider.js';
+import { inspectSignInChallengeProvider } from './composition/providers/use-cases/auth/inspect-sign-in-challenge.provider.js';
+import { answerSignInChallengeWithAuthenticatorAppProvider } from './composition/providers/use-cases/auth/answer-sign-in-challenge-with-authenticator-app.provider.js';
+import { answerSignInChallengeWithBackupCodeProvider } from './composition/providers/use-cases/auth/answer-sign-in-challenge-with-backup-code.provider.js';
+import { getSignInChallengeSecurityKeyOptionsProvider } from './composition/providers/use-cases/auth/get-sign-in-challenge-security-key-options.provider.js';
+import { answerSignInChallengeWithSecurityKeyProvider } from './composition/providers/use-cases/auth/answer-sign-in-challenge-with-security-key.provider.js';
 
 /**
  * Class AuthRoutesModule
  *
  * @description
- * The routes of `openapi/public/auth.yaml` under `/v1/auth`: sign-up, sign-in, sign-out, password
- * reset and re-authentication. Every answer, errors included, carries `Cache-Control: no-store`.
+ * The routes of `openapi/public/auth.yaml` under `/v1/auth`: sign-up, sign-in and its two-step
+ * challenge, sign-out, password reset and re-authentication. Every answer, errors included, carries `Cache-Control: no-store`.
  * The capability owns its Identity port and imports the shared authentication and rate-limit
  * guards.
  */
@@ -47,8 +53,13 @@ import { reauthenticateProvider } from './composition/providers/use-cases/auth/r
     inspectPasswordResetLinkProvider,
     confirmPasswordResetProvider,
     reauthenticateProvider,
+    inspectSignInChallengeProvider,
+    answerSignInChallengeWithAuthenticatorAppProvider,
+    answerSignInChallengeWithBackupCodeProvider,
+    getSignInChallengeSecurityKeyOptionsProvider,
+    answerSignInChallengeWithSecurityKeyProvider,
   ],
-  controllers: [AuthController, ReauthenticationController],
+  controllers: [AuthController, SignInChallengeController, ReauthenticationController],
 })
 export class AuthRoutesModule implements NestModule {
   // #region Methods
@@ -61,7 +72,9 @@ export class AuthRoutesModule implements NestModule {
    * @param {MiddlewareConsumer} consumer - Middleware registry of NestJS.
    */
   public configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(noStore).forRoutes(AuthController, ReauthenticationController);
+    consumer
+      .apply(noStore)
+      .forRoutes(AuthController, SignInChallengeController, ReauthenticationController);
   }
   // #endregion
 }

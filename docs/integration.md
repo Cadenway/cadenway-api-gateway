@@ -131,6 +131,84 @@ re-authentication, the password, the address, the deletion and the open sessions
 - **Secrets.** Passwords, reset tokens and codes travel in request bodies only and are never
   logged (`tests/account-security.int-spec.ts` checks the log lines).
 
+### Two-step verification routes
+
+Phase P2c-2 of the integration plan, `@cadenway/contracts` 0.8.0: the two-step challenge of the
+sign-ins, trusted devices, the two-step verification of the account, the authentication policy of
+an organization and its withheld organization.
+
+| Public route                                                             | Guards                            | Internal call, actor                                                                           |
+| ------------------------------------------------------------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `POST /v1/auth/sign-in/challenge/inspection`                             | Cross-site                        | `POST /internal/v1/auth/sign-in/challenge/inspection`, `anonymous`                             |
+| `POST /v1/auth/sign-in/challenge/authenticator-app`                      | Cross-site                        | `POST /internal/v1/auth/sign-in/challenge/authenticator-app`, `anonymous`                      |
+| `POST /v1/auth/sign-in/challenge/backup-code`                            | Cross-site                        | `POST /internal/v1/auth/sign-in/challenge/backup-code`, `anonymous`                            |
+| `POST /v1/auth/sign-in/challenge/security-key/options`                   | Cross-site                        | `POST /internal/v1/auth/sign-in/challenge/security-key/options`, `anonymous`                   |
+| `POST /v1/auth/sign-in/challenge/security-key`                           | Cross-site                        | `POST /internal/v1/auth/sign-in/challenge/security-key`, `anonymous`                           |
+| `GET /v1/me/two-step-verification`                                       | Session                           | `GET /internal/v1/users/{userId}/two-step-verification`, `user`                                |
+| `DELETE /v1/me/two-step-verification`                                    | Cross-site (`Origin`), session    | `POST /internal/v1/users/{userId}/two-step-verification/disable` (body `sessionId`), `user`    |
+| `POST /v1/me/two-step-verification/authenticator-app/setup`              | Cross-site, session               | `POST .../authenticator-app/setup` (body `sessionId`), `user`                                  |
+| `POST /v1/me/two-step-verification/authenticator-app/setup/confirmation` | Cross-site, session               | `POST .../authenticator-app/setup/confirmation` (body `sessionId`), `user`                     |
+| `POST /v1/me/two-step-verification/backup-codes/regenerate`              | Cross-site, session               | `POST .../backup-codes/regenerate` (body `sessionId`), `user`                                  |
+| `POST /v1/me/two-step-verification/security-keys/registration`           | Cross-site, session               | `POST .../security-keys/registration` (body `sessionId`), `user`                               |
+| `POST /v1/me/two-step-verification/security-keys`                        | Cross-site, session               | `POST .../security-keys` (body `sessionId`), `user`                                            |
+| `DELETE /v1/me/two-step-verification/security-keys/{securityKeyId}`      | Cross-site (`Origin`), session    | `POST .../security-keys/{securityKeyId}/remove` (body `sessionId`), `user`                     |
+| `GET /v1/organization/authentication-policy`                             | Session, organization             | `GET /internal/v1/organization/authentication-policy`, `user` of the organization              |
+| `PATCH /v1/organization/authentication-policy`                           | Cross-site, session, organization | `PATCH /internal/v1/organization/authentication-policy?sessionId=`, `user` of the organization |
+
+- **Challenge of the sign-ins.** For an account with two-step verification on a device it does
+  not trust, the internal sign-ins answer `202` with a challenge, no token and no session. The
+  gateway checks that body against `InspectSignInChallengeInternalResponse` (orval generates a
+  response validator for the first success status only, and the inspection answers the same
+  schema) and answers the same `202` with no cookie; only a `200` signs in. The challenge routes
+  carry no session (`security: []`), pass the cross-site check and count on the client address
+  (60 per minute), on top of the lockout of identity-service (`429 auth.two-step-locked`,
+  `Retry-After` from `details.lockedUntil`).
+- **Trusted devices.** The gateway reads `__Host-cw_trusted_device` on the two sign-ins only
+  (password and email code) and sends it as `trustedDeviceToken` when it holds 1 to 256
+  characters. A right answer of a challenge with `trustDevice` writes it from `trustedDevice`:
+  `__Host-cw_trusted_device=<token>; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=2592000`,
+  beside the session cookie; a device token the answer did not ask for is never written. The
+  contract clears the cookie nowhere: identity-service forgets the trusted devices (password
+  change or reset, closing the other sessions, disabling two-step verification, scheduling the
+  deletion) and ignores a stale cookie, so the sign-out and the deletion clear the session cookie
+  only, as before.
+- **Withheld organization.** Both introspections may name a `withheldOrganization`. The credential
+  guard checks it before the organization and scope checks: a session answers
+  `403 organization.mfa-required` (`details.organizationId`) on every operation on the current
+  organization, a personal API token on every operation it may call (after
+  `403 auth.api-token-not-accepted`, before `403 auth.scope-missing`). The routes that need no
+  organization (the account, its two-step verification, the choice of an organization) still run,
+  and the request then carries no organization context, whatever the introspection says. A code
+  of `withheldOrganization` the public contracts do not declare (the internal enumeration is
+  extensible) is never answered as is: the request is refused as a gateway that ignores the field
+  would refuse it, `403 organization.not-selected` for a session, `403 auth.scope-missing` for a
+  token.
+- **Re-authentication.** `POST /v1/auth/reauthentication` passes `password` or `code` as the
+  browser sent them; identity-service decides which the account needs. The gateway relays
+  `403 auth.reauthentication-required` (a password for an account with two-step verification,
+  with `details.methods: [authenticator-app]`) on it and on `PUT /v1/me/password`, besides the
+  routes of P2c-1, the starts and removals of two-step verification and the change of the
+  authentication policy.
+- **Session of the request.** As in P2c-1, every route of the signed-in person sends the session
+  the introspection returned, and `404 session.not-found` (or `404 user.not-found`) of
+  identity-service answers `401 auth.session-expired`; `404 security-key.not-found` names the key
+  of the path and is relayed as is.
+- **Passed on.** `OpenSession.inactivityTimeoutMinutes` and `Member.twoStepVerificationEnabled`
+  (present for the owner and the admins only) are passed on as the services send them. The
+  WebAuthn options identity-service builds and the answers the browser sends are passed on whole,
+  members the contract does not list included.
+- **Problems.** The ten new codes have their French titles in `PROBLEM_TITLES`:
+  `auth.challenge-expired`, `auth.two-step-code-invalid`, `auth.security-key-refused`,
+  `auth.two-step-locked`, `auth.two-step-not-enabled`, `auth.two-step-setup-expired`,
+  `auth.security-key-limit-reached`, `auth.mfa-required-by-organization`,
+  `organization.mfa-required` and `security-key.not-found`.
+- **Secrets.** Codes, backup codes, challenge and device tokens, the TOTP secret and its URI, and
+  the WebAuthn payloads travel in bodies (and the device token in its cookie) only and are never
+  logged. Every answer of the tag `two-step-verification` and of the challenge carries
+  `Cache-Control: no-store`.
+- **Retries.** Only the reads (`GET`) are retried once; the challenge, the setup, the keys, the
+  disabling and the change of the policy are not.
+
 ### Decisions of the walking skeleton
 
 Fixed for phase P2a of the integration plan, and open to revision by the maintainers:

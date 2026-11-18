@@ -10,6 +10,7 @@ import { MembersModule } from './modules/members/members.module.js';
 import { MeRoutesModule } from './modules/me/me.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
+import { TwoStepVerificationModule } from './modules/two-step-verification/two-step-verification.module.js';
 
 /**
  * Constant ROUTE_MODULES
@@ -25,6 +26,7 @@ export const ROUTE_MODULES: readonly Type[] = [
   AuthRoutesModule,
   MeRoutesModule,
   SessionsModule,
+  TwoStepVerificationModule,
   OrganizationsModule,
   MembersModule,
   InvitationsModule,
@@ -63,8 +65,9 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  *   `main.ts` validated once to `createApplication` (`provideConfig: true`), which provides it
  *   globally. Importing this module reads nothing.
  * - Route capabilities import technical clients and bind their own ports.
- * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule`, `MeRoutesModule` and
- *   `SessionsModule` (the routes of `openapi/public/auth.yaml`), `OrganizationsModule`
+ * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule`, `MeRoutesModule`,
+ *   `SessionsModule` and `TwoStepVerificationModule` (the routes of `openapi/public/auth.yaml`),
+ *   `OrganizationsModule`
  *   (`organizations.yaml`), `MembersModule` and `InvitationsModule` (`members.yaml`) and
  *   `ApiTokensModule` (`api-tokens.yaml`). Each applies the credential guard of `auth` and the
  *   rate limit of `rate-limit`.

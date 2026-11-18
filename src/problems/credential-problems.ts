@@ -73,6 +73,52 @@ export function organizationNotSelectedProblem(): ProblemException {
 }
 
 /**
+ * Constant WITHHELD_ORGANIZATION_CODES
+ *
+ * @description
+ * The codes of `withheldOrganization` the public contracts declare, which the gateway answers as
+ * they are: `organization.mfa-required` today. identity-service may add codes
+ * (`x-extensible-enum`); until the public contracts declare one, the gateway refuses the request
+ * as a gateway that does not read `withheldOrganization` would, never with an undeclared code.
+ *
+ * @type {ReadonlySet<string>}
+ */
+const WITHHELD_ORGANIZATION_CODES: ReadonlySet<string> = new Set<string>([
+  'organization.mfa-required',
+]);
+
+/**
+ * Function organizationWithheldProblem
+ *
+ * @description
+ * `403 organization.mfa-required` (the `code` identity-service names in `withheldOrganization`):
+ * the authentication policy of the organization the credential acts on requires two-step
+ * verification for the role of its person, who has none, so the organization is withheld and the
+ * route, which needs it, is refused. `details.organizationId` names it, so that the web
+ * application offers the setup from the account.
+ *
+ * @param {{ readonly organizationId: string; readonly code: string }} withheld - The
+ * `withheldOrganization` of the introspection.
+ * @returns {ProblemException | undefined} The problem to throw, or `undefined` for a code the
+ * public contracts do not declare: the caller then refuses the request with the problem a gateway
+ * that ignores `withheldOrganization` would answer.
+ */
+export function organizationWithheldProblem(withheld: {
+  readonly organizationId: string;
+  readonly code: string;
+}): ProblemException | undefined {
+  if (!WITHHELD_ORGANIZATION_CODES.has(withheld.code)) {
+    return undefined;
+  }
+  return publicProblem({
+    status: 403,
+    code: withheld.code,
+    detail: 'The organization of this request requires two-step verification of the caller.',
+    details: { organizationId: withheld.organizationId },
+  });
+}
+
+/**
  * Function rateLimitExceededProblem
  *
  * @description

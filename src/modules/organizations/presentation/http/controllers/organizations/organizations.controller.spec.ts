@@ -528,6 +528,34 @@ const CASES: readonly RouteCase[] = [
     code: 'auth.api-token-not-accepted',
   },
   {
+    name: 'PUT /v1/session/organization relays 403 organization.mfa-required with the organization and its French title',
+    method: 'put',
+    path: '/v1/session/organization',
+    url: '/v1/session/organization',
+    credential: 'session-without-organization',
+    body: { organizationId: ATELIER_NORD_ID },
+    arrange: ({ identity }) =>
+      identity.switchSessionOrganization.mockRejectedValue(
+        identityProblem(403, 'organization.mfa-required', { organizationId: ATELIER_NORD_ID }),
+      ),
+    status: 403,
+    code: 'organization.mfa-required',
+    check: (response, { identity }) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title:
+          'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.',
+        status: 403,
+        code: 'organization.mfa-required',
+        details: { organizationId: ATELIER_NORD_ID },
+      });
+      expect(identity.switchSessionOrganization).toHaveBeenCalledWith(
+        CAMILLE_SESSION.sessionId,
+        ATELIER_NORD_ID,
+      );
+    },
+  },
+  {
     name: 'PUT /v1/session/organization relays 404 organization.not-found',
     method: 'put',
     path: '/v1/session/organization',

@@ -82,5 +82,18 @@ export interface Member {
    * @readonly
    */
   readonly version: number;
+
+  /**
+   * Property twoStepVerificationEnabled
+   *
+   * @description
+   * Whether the account of the member has two-step verification ("Deux étapes"), from the user
+   * directory of organization-service; present when the caller is the owner or an admin, absent
+   * otherwise.
+   *
+   * @type {boolean | undefined}
+   * @readonly
+   */
+  readonly twoStepVerificationEnabled?: boolean;
   // #endregion
 }
