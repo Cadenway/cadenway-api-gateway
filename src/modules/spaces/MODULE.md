@@ -33,7 +33,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   checks the query or body against the internal contract before the call and the answer after it,
   and the controller maps the answer to the public contract through the public validator of the
   operation, which drops any member the public contract does not declare. A mismatch of the
-  answer is `503 upstream.failed`.
+  answer is `503 upstream.failed`. `tests/support/task-contract-fit.ts` makes a drift between the
+  public and internal validators fail `pnpm typecheck`, as hand-written models would.
 - Each route relays the client errors its public operation declares (`<OPERATION>_PROBLEMS`), with
   the French titles of `PROBLEM_TITLES`; any other is `503 upstream.failed`. An actor task-service
   does not know yet answers `404 organization.not-found`, relayed.
