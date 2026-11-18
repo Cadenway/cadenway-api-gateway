@@ -9,6 +9,7 @@ import { vi, type Mock } from 'vitest';
 import { ROUTE_MODULES } from '../../src/app.module.js';
 import { IdentityServiceClient } from '../../src/clients/identity-service.client.js';
 import { OrganizationServiceClient } from '../../src/clients/organization-service.client.js';
+import { TaskServiceClient } from '../../src/clients/task-service.client.js';
 import { createGatewayApplication } from '../../src/gateway-application.js';
 import type { RequestCounter } from '../../src/modules/rate-limit/application/ports/outbound/counters/requests/request-counter.port.js';
 import { ANONYMOUS_REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/addresses/anonymous-request-counter.token.js';
@@ -16,6 +17,7 @@ import { BEARER_FAILURE_COUNTER } from '../../src/modules/rate-limit/composition
 import { REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/requests/request-counter.token.js';
 import type { FakeIdentity } from './fake-identity.js';
 import { createFakeOrganization, type FakeOrganization } from './fake-organization.js';
+import { createFakeTask, type FakeTask } from './fake-task.js';
 import { testConfig } from './test-environment.js';
 
 /**
@@ -47,6 +49,8 @@ export interface RouteApplication {
   readonly logLines: string[];
   /** The fake of organization-service. */
   readonly organization: FakeOrganization;
+  /** The fake of task-service. */
+  readonly task: FakeTask;
   /** The fake of the counters of the sessions and personal API tokens. */
   readonly counter: FakeCounter;
   /** The fake of the counters of the requests without a credential, per client address. */
@@ -77,12 +81,14 @@ export function createFakeCounter(): FakeCounter {
  * @param organization - The fake of organization-service; a fresh one when omitted.
  * @param counter - The fake of the counters of the credentials; one that allows everything when
  * omitted.
+ * @param task - The fake of task-service; one answering the contract examples when omitted.
  * @returns The application and its log lines.
  */
 export async function createRouteApplication(
   fake: FakeIdentity,
   organization: FakeOrganization = createFakeOrganization(),
   counter: FakeCounter = createFakeCounter(),
+  task: FakeTask = createFakeTask(),
 ): Promise<RouteApplication> {
   const logLines: string[] = [];
   const sink: Writable = new Writable({
@@ -100,6 +106,7 @@ export async function createRouteApplication(
   const app: NestExpressApplication = await createGatewayApplication(testConfig(), sink, root);
   Object.assign(app.get(IdentityServiceClient), fake);
   Object.assign(app.get(OrganizationServiceClient), organization);
+  Object.assign(app.get(TaskServiceClient), task);
   Object.assign(app.get<symbol, RequestCounter>(REQUEST_COUNTER), counter);
   Object.assign(app.get<symbol, RequestCounter>(ANONYMOUS_REQUEST_COUNTER), anonymousCounter);
   Object.assign(app.get<symbol, RequestCounter>(BEARER_FAILURE_COUNTER), bearerFailureCounter);
@@ -109,6 +116,7 @@ export async function createRouteApplication(
     server: app.getHttpServer() as App,
     logLines,
     organization,
+    task,
     counter,
     anonymousCounter,
     bearerFailureCounter,

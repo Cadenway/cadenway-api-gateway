@@ -7,7 +7,8 @@
 The checkout contains the runtime wiring below, the credential guard and the rate limit, and the
 routes of `openapi/public/auth.yaml`, `organizations.yaml`, `members.yaml` and `api-tokens.yaml`
 through the clients of identity-service and organization-service (phases P2a, P2b, P2c-1 and P2c-2 of the
-integration plan). The ownership map that follows governs gateway capabilities as they are
+integration plan), and the task core routes of `spaces.yaml`, `lists.yaml` and `tasks.yaml`, the
+task detail aggregate included, through the client of task-service (phase P3a). The ownership map that follows governs gateway capabilities as they are
 implemented.
 
 ## Runtime wiring
@@ -54,6 +55,9 @@ event `api-usage.recorded.v1` (phase P5 of the integration plan), through
 | `src/modules/organizations/`         | The routes of `openapi/public/organizations.yaml`                                                                                                                                                                                                                                                         |
 | `src/modules/members/`               | The member routes of `openapi/public/members.yaml`                                                                                                                                                                                                                                                        |
 | `src/modules/invitations/`           | The invitation routes of `openapi/public/members.yaml`                                                                                                                                                                                                                                                    |
+| `src/modules/spaces/`                | The routes of `openapi/public/spaces.yaml` and their `SpaceRegistry` port                                                                                                                                                                                                                                 |
+| `src/modules/lists/`                 | The routes of `openapi/public/lists.yaml` and their `ListRegistry` port                                                                                                                                                                                                                                   |
+| `src/modules/tasks/`                 | The routes of `openapi/public/tasks.yaml`, their `TaskRegistry` port and the task detail aggregate (`GetTaskDetail`)                                                                                                                                                                                      |
 | `src/modules/api-tokens/`            | The routes of `openapi/public/api-tokens.yaml`                                                                                                                                                                                                                                                            |
 | `src/presentation/http/`             | Shared HTTP helpers for current-user mapping, the client address, query parameters, cache policy, session cookies and the verified credential of a request                                                                                                                                                |
 
@@ -77,7 +81,7 @@ Follow the [Cadenway NestJS architecture reference](https://github.com/Cadenway/
 
 - Each capability lives at `src/modules/<module>/` with `MODULE.md` and `<module>.module.ts`.
   The existing owners are `auth`, `auth-routes`, `me`, `sessions`, `two-step-verification`, `rate-limit`,
-  `organizations`, `members`, `invitations` and `api-tokens`. Add new owners for aggregated resources and
+  `organizations`, `members`, `invitations`, `api-tokens`, `spaces`, `lists` and `tasks`. Add new owners for aggregated resources and
   unauthenticated workflows when those capabilities are implemented.
 - HTTP controllers, guards and DTOs live in `presentation/http/`. Every route delegates to an
   operation in `application/use-cases/{commands,queries}/<area>/<operation>/`. Application uses

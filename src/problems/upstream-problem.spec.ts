@@ -66,7 +66,7 @@ describe('toPublicProblem', () => {
 
     expect((translated as ProblemException).problem).toEqual({
       type: 'about:blank',
-      title: 'Not Found',
+      title: 'Tâche introuvable.',
       status: 404,
       code: 'task.not-found',
     });

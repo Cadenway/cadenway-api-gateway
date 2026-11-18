@@ -1,0 +1,412 @@
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import {
+  CAMILLE,
+  createFakeIdentity,
+  type FakeIdentity,
+} from '../../../../../../../tests/support/fake-identity.js';
+import {
+  ADDED_CHECKLIST_ITEM_ID,
+  taskDetailCore,
+  UNASSIGNED_VERSION,
+} from '../../../../../../../tests/support/fake-task.js';
+import {
+  createRouteApplication,
+  type RouteApplication,
+} from '../../../../../../../tests/support/route-application.js';
+import {
+  expectEveryDeclaredStatus,
+  runRouteCase,
+  type RouteCase,
+} from '../../../../../../../tests/support/route-cases.js';
+import {
+  taskRouteCases,
+  type TaskRoute,
+} from '../../../../../../../tests/support/task-route-matrix.js';
+
+/**
+ * Id of the list "Sprint 14" of the contract examples.
+ */
+const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
+
+/**
+ * Key of the task "Refondre l’écran de connexion SSO" of the contract examples.
+ */
+const TASK_KEY = 'CAD-482';
+
+/**
+ * Id of an account, Inès Robert of the contract examples.
+ */
+const INES_ID = '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31';
+
+/**
+ * Id of a checklist item.
+ */
+const ITEM_ID = '019a7c00-1a2b-7c3d-8e4f-5a6b7c8d9e10';
+
+/**
+ * A valid creation of a task, every member with a default given.
+ */
+const TASK_CREATION = {
+  name: 'Ajouter la connexion par lien magique',
+  description: null,
+  status: 'todo',
+  priority: 'haute',
+  assigneeIds: [CAMILLE.id],
+  dueDate: '2026-11-16',
+  labels: ['Auth', 'Front'],
+  subtasks: [{ name: 'Envoyer le lien par e-mail' }],
+};
+
+/**
+ * A valid creation of a subtask, every member with a default given.
+ */
+const SUBTASK_CREATION = {
+  name: 'Tester la connexion avec Okta',
+  status: 'todo',
+  priority: 'moyenne',
+  labels: [],
+};
+
+/**
+ * Checks that the answer carries the `ETag` of the version of the task it holds.
+ *
+ * @param response - The answer.
+ * @param response.body - Its body, a task.
+ * @param response.headers - Its headers.
+ */
+function expectTaskEtag(response: {
+  body: unknown;
+  headers: Record<string, string | undefined>;
+}): void {
+  expect(response.headers.etag).toBe(`"${String((response.body as { version: number }).version)}"`);
+}
+
+/**
+ * The routes of `openapi/public/tasks.yaml`.
+ */
+const ROUTES: readonly TaskRoute[] = [
+  {
+    method: 'get',
+    path: '/v1/lists/{listId}/tasks',
+    url: `/v1/lists/${LIST_ID}/tasks?status=progress,review&priority=haute&assignee=me,none&label=Auth&search=sso&dueFrom=2026-11-01&dueTo=2026-11-30&level=all&sort=-dueDate&limit=10`,
+    call: 'listTasks',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [
+      LIST_ID,
+      {
+        status: ['progress', 'review'],
+        priority: ['haute'],
+        assignee: ['me', 'none'],
+        label: ['Auth'],
+        search: 'sso',
+        dueFrom: '2026-11-01',
+        dueTo: '2026-11-30',
+        level: 'all',
+        sort: '-dueDate',
+        limit: 10,
+      },
+    ],
+    invalid: { url: `/v1/lists/${LIST_ID}/tasks?assignee=someone` },
+  },
+  {
+    method: 'post',
+    path: '/v1/lists/{listId}/tasks',
+    url: `/v1/lists/${LIST_ID}/tasks`,
+    call: 'createTask',
+    scope: 'tasks:write',
+    status: 201,
+    body: TASK_CREATION,
+    headers: { 'Idempotency-Key': 'task-creation-1' },
+    calledWith: [LIST_ID, TASK_CREATION, 'task-creation-1'],
+    invalid: { body: { ...TASK_CREATION, name: '' } },
+    check: (response) => {
+      expect(response.headers.location).toBe(`/v1/tasks/${(response.body as { key: string }).key}`);
+      expectTaskEtag(response);
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/lists/{listId}/task-groups',
+    url: `/v1/lists/${LIST_ID}/task-groups?groupBy=status&assignee=me&limit=20`,
+    call: 'countTaskGroups',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [LIST_ID, { groupBy: 'status', assignee: ['me'], level: 'roots', limit: 20 }],
+    invalid: { url: `/v1/lists/${LIST_ID}/task-groups` },
+  },
+  {
+    method: 'get',
+    path: '/v1/tasks/{taskKey}',
+    url: `/v1/tasks/${TASK_KEY}`,
+    call: 'getTask',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [TASK_KEY],
+    invalid: { url: '/v1/tasks/cad-482' },
+    check: expectTaskEtag,
+  },
+  {
+    method: 'patch',
+    path: '/v1/tasks/{taskKey}',
+    url: `/v1/tasks/${TASK_KEY}`,
+    call: 'updateTask',
+    scope: 'tasks:write',
+    status: 200,
+    body: { status: 'cancelled', cancelReason: 'duplicate', dueDate: null },
+    headers: { 'If-Match': '"12"' },
+    calledWith: [
+      TASK_KEY,
+      { status: 'cancelled', cancelReason: 'duplicate', dueDate: null },
+      '"12"',
+    ],
+    invalid: { body: { estimateMinutes: 0 } },
+    check: expectTaskEtag,
+  },
+  {
+    method: 'get',
+    path: '/v1/tasks/{taskKey}/detail',
+    url: `/v1/tasks/${TASK_KEY}/detail`,
+    call: 'getTaskDetail',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [TASK_KEY],
+    invalid: { url: '/v1/tasks/CAD-0/detail' },
+    check: (response) => {
+      expect(response.body).toEqual({ ...taskDetailCore(), partial: [] });
+      expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
+    },
+  },
+  {
+    method: 'get',
+    path: '/v1/tasks/{taskKey}/subtasks',
+    url: `/v1/tasks/${TASK_KEY}/subtasks?limit=25`,
+    call: 'listSubtasks',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [TASK_KEY, { limit: 25 }],
+    invalid: { url: `/v1/tasks/${TASK_KEY}/subtasks?limit=many` },
+  },
+  {
+    method: 'post',
+    path: '/v1/tasks/{taskKey}/subtasks',
+    url: `/v1/tasks/${TASK_KEY}/subtasks`,
+    call: 'createSubtask',
+    scope: 'tasks:write',
+    status: 201,
+    body: SUBTASK_CREATION,
+    headers: { 'Idempotency-Key': 'subtask-1' },
+    calledWith: [TASK_KEY, SUBTASK_CREATION, 'subtask-1'],
+    invalid: { headers: { 'Idempotency-Key': '' } },
+    check: (response) => {
+      expect(response.headers.location).toBe(`/v1/tasks/${(response.body as { key: string }).key}`);
+    },
+  },
+  {
+    method: 'post',
+    path: '/v1/tasks/{taskKey}/checklist-items',
+    url: `/v1/tasks/${TASK_KEY}/checklist-items`,
+    call: 'addChecklistItem',
+    scope: 'tasks:write',
+    status: 201,
+    body: { text: 'Relire les messages d’erreur' },
+    calledWith: [TASK_KEY, { text: 'Relire les messages d’erreur' }, undefined],
+    invalid: { body: { text: 'x'.repeat(301) } },
+    check: (response) => {
+      const task = response.body as { key: string };
+      expect(response.headers.location).toBe(
+        `/v1/tasks/${task.key}/checklist-items/${ADDED_CHECKLIST_ITEM_ID}`,
+      );
+      expectTaskEtag(response);
+    },
+  },
+  {
+    method: 'patch',
+    path: '/v1/tasks/{taskKey}/checklist-items/{checklistItemId}',
+    url: `/v1/tasks/${TASK_KEY}/checklist-items/${ITEM_ID}`,
+    call: 'updateChecklistItem',
+    scope: 'tasks:write',
+    status: 200,
+    body: { done: true },
+    calledWith: [TASK_KEY, ITEM_ID, { done: true }, undefined],
+    invalid: { body: { done: 'yes' } },
+  },
+  {
+    method: 'put',
+    path: '/v1/tasks/{taskKey}/assignees/{userId}',
+    url: `/v1/tasks/${TASK_KEY}/assignees/${INES_ID}`,
+    call: 'assignTask',
+    scope: 'tasks:write',
+    status: 200,
+    body: {},
+    headers: { 'If-Match': '"12"' },
+    calledWith: [TASK_KEY, INES_ID, '"12"'],
+    invalid: { url: `/v1/tasks/${TASK_KEY}/assignees/ines` },
+    check: expectTaskEtag,
+  },
+  {
+    method: 'delete',
+    path: '/v1/tasks/{taskKey}/assignees/{userId}',
+    url: `/v1/tasks/${TASK_KEY}/assignees/${INES_ID}`,
+    call: 'unassignTask',
+    scope: 'tasks:write',
+    status: 204,
+    headers: { 'If-Match': '"12"' },
+    calledWith: [TASK_KEY, INES_ID, '"12"'],
+    invalid: { url: `/v1/tasks/${TASK_KEY}/assignees/ines` },
+    check: (response) => {
+      expect(response.headers.etag).toBe(`"${String(UNASSIGNED_VERSION)}"`);
+      expect(response.text).toBe('');
+    },
+  },
+  {
+    method: 'post',
+    path: '/v1/tasks/{taskKey}/labels/add',
+    url: `/v1/tasks/${TASK_KEY}/labels/add`,
+    call: 'addTaskLabel',
+    scope: 'tasks:write',
+    status: 200,
+    body: { name: 'Sécurité' },
+    headers: { 'If-Match': '"12"' },
+    calledWith: [TASK_KEY, { name: 'Sécurité' }, '"12"'],
+    invalid: { body: { name: 'x'.repeat(33) } },
+    check: expectTaskEtag,
+  },
+  {
+    method: 'post',
+    path: '/v1/tasks/{taskKey}/labels/remove',
+    url: `/v1/tasks/${TASK_KEY}/labels/remove`,
+    call: 'removeTaskLabel',
+    scope: 'tasks:write',
+    status: 200,
+    body: { name: 'Front' },
+    calledWith: [TASK_KEY, { name: 'Front' }, undefined],
+    invalid: { body: {} },
+  },
+  {
+    method: 'get',
+    path: '/v1/tasks/{taskKey}/activity',
+    url: `/v1/tasks/${TASK_KEY}/activity?kind=status,due&limit=30`,
+    call: 'listTaskActivity',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [TASK_KEY, { kind: ['status', 'due'], limit: 30 }],
+    invalid: { url: `/v1/tasks/${TASK_KEY}/activity?unknown=1` },
+  },
+  {
+    method: 'get',
+    path: '/v1/labels',
+    url: '/v1/labels?search=au&limit=20',
+    call: 'listLabels',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [{ search: 'au', limit: 20 }],
+    invalid: { url: '/v1/labels?limit=0' },
+  },
+  {
+    method: 'get',
+    path: '/v1/me/tasks',
+    url: '/v1/me/tasks?state=closed&limit=50',
+    call: 'listMyTasks',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [CAMILLE.id, { state: 'closed', limit: 50 }],
+    invalid: { url: '/v1/me/tasks?state=archived' },
+  },
+  {
+    method: 'get',
+    path: '/v1/me/home',
+    url: '/v1/me/home?today=2026-11-18',
+    call: 'getHome',
+    scope: 'tasks:read',
+    status: 200,
+    calledWith: [CAMILLE.id, { today: '2026-11-18' }],
+    invalid: { url: '/v1/me/home' },
+  },
+];
+
+/**
+ * Every case of every task route.
+ */
+const CASES: readonly RouteCase[] = ROUTES.flatMap(taskRouteCases);
+
+describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
+  let identity: FakeIdentity;
+  let application: RouteApplication;
+
+  beforeAll(async () => {
+    identity = createFakeIdentity();
+    application = await createRouteApplication(identity);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  afterAll(async () => {
+    await application.app.close();
+  });
+
+  it('exercises every status each task route declares', () => {
+    expectEveryDeclaredStatus(CASES);
+  });
+
+  it.each(CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
+    '%s',
+    async (_name, routeCase) => {
+      await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it('answers 503 upstream.failed when task-service answers a detail the public contract cannot carry', async () => {
+    application.task.getTaskDetail.mockResolvedValue({
+      ...taskDetailCore(),
+      subtasks: [{ key: 'not a key' }],
+    } as never);
+
+    const response = await runRouteCase(application, identity, {
+      name: 'detail outside the public contract',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}/detail',
+      url: `/v1/tasks/${TASK_KEY}/detail`,
+      status: 503,
+      code: 'upstream.failed',
+    });
+
+    expect((response.body as { details?: unknown }).details).toEqual({ service: 'task-service' });
+  });
+
+  it('drops a member of an answer the public contract does not declare', async () => {
+    application.task.getTask.mockResolvedValue({
+      ...(await application.task.getTask.getMockImplementation()?.(TASK_KEY)),
+      internalScore: 42,
+    } as never);
+
+    const response = await runRouteCase(application, identity, {
+      name: 'member outside the public contract',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}',
+      url: `/v1/tasks/${TASK_KEY}`,
+      status: 200,
+    });
+
+    expect(response.body).not.toHaveProperty('internalScore');
+  });
+
+  it('reads "Mes tâches" for the user of a personal API token, never one the request names', async () => {
+    await runRouteCase(application, identity, {
+      name: 'my tasks with a token',
+      method: 'get',
+      path: '/v1/me/tasks',
+      url: '/v1/me/tasks',
+      credential: 'tasks-token',
+      status: 200,
+    });
+
+    expect(application.task.listMyTasks).toHaveBeenCalledWith(CAMILLE.id, {
+      state: 'open',
+      limit: expect.any(Number) as number,
+    });
+  });
+});

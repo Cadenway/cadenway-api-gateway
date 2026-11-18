@@ -268,3 +268,27 @@ function withRetryAfter(response: Response, translated: unknown): unknown {
   }
   return translated;
 }
+
+/**
+ * Function relayProblems
+ *
+ * @description
+ * Runs the internal call of a public route that answers no `429` of its own and, when it fails,
+ * throws the public problem of `toPublicProblem`: a client error only when its status and code
+ * are in `accepted`, `503 upstream.*` otherwise.
+ *
+ * @param {AcceptedProblems} accepted - Client errors the public operation declares.
+ * @param {() => Promise<TResult>} call - The internal call.
+ * @returns {Promise<TResult>} What the call resolved with.
+ * @throws {unknown} The public problem, or an error that is not a problem, unchanged.
+ */
+export async function relayProblems<TResult>(
+  accepted: AcceptedProblems,
+  call: () => Promise<TResult>,
+): Promise<TResult> {
+  try {
+    return await call();
+  } catch (error) {
+    throw toPublicProblem(error, accepted);
+  }
+}

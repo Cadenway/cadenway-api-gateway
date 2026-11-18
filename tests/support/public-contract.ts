@@ -24,6 +24,9 @@ export const PUBLIC_SPEC_NAMES: readonly string[] = [
   'organizations.yaml',
   'members.yaml',
   'api-tokens.yaml',
+  'spaces.yaml',
+  'lists.yaml',
+  'tasks.yaml',
 ];
 
 /**
@@ -308,4 +311,95 @@ function resolveMedia(spec: PublicSpec, pointer: string): SpecNode | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Reads the example of a JSON response of a public operation, as the contract shows it.
+ *
+ * @param method - Method of the operation.
+ * @param path - Path of the operation, as the spec writes it.
+ * @param status - Status of the response.
+ * @returns The example.
+ * @throws When the response declares no JSON example.
+ */
+export function responseExample(method: SpecMethod, path: string, status: number): unknown {
+  const declared: { pointer: string; node: SpecNode } = resolveNode(
+    specOf(path),
+    `/paths/${escapePointer(path)}/${method}/responses/${String(status)}`,
+  );
+  const content: unknown = declared.node.content;
+  const media: unknown = isNode(content) ? content['application/json'] : undefined;
+  if (isNode(media) && media.example !== undefined) {
+    return media.example;
+  }
+  const first: unknown =
+    isNode(media) && isNode(media.examples) ? Object.values(media.examples)[0] : undefined;
+  const reference: unknown = isNode(first) ? first.$ref : undefined;
+  const named: unknown =
+    typeof reference === 'string'
+      ? resolveNode(specOf(path), reference.slice(1)).node.value
+      : isNode(first)
+        ? first.value
+        : undefined;
+  if (named === undefined) {
+    throw new Error(`${method.toUpperCase()} ${path} ${String(status)} shows no JSON example.`);
+  }
+  return named;
+}
+
+/**
+ * Lists the problem codes a public operation declares for one status: the codes its response
+ * names in backquotes in its description and the codes of its examples, `details.*` members
+ * excluded.
+ *
+ * @param method - Method of the operation.
+ * @param path - Path of the operation, as the spec writes it.
+ * @param status - Status of the response.
+ * @returns The codes, each once; none when the status is not declared.
+ */
+export function declaredProblemCodes(
+  method: SpecMethod,
+  path: string,
+  status: number,
+): readonly string[] {
+  const spec: PublicSpec = specOf(path);
+  const responses: SpecNode = nodeAt(spec, `/paths/${escapePointer(path)}/${method}/responses`);
+  if (!(String(status) in responses)) {
+    return [];
+  }
+  const pointer = `/paths/${escapePointer(path)}/${method}/responses/${String(status)}`;
+  const declared: SpecNode = resolveNode(spec, pointer).node;
+  const codes: Set<string> = new Set<string>();
+  const description: unknown = declared.description;
+  if (typeof description === 'string') {
+    for (const match of description.matchAll(/`([a-z][a-z-]*\.[a-z][a-z-]*)`/gu)) {
+      if (match[1] !== undefined && !match[1].startsWith('details.')) {
+        codes.add(match[1]);
+      }
+    }
+  }
+  const media: SpecNode | undefined = resolveMedia(
+    spec,
+    `${resolveNode(spec, pointer).pointer}/content/application~1problem+json`,
+  );
+  const values: unknown[] = [];
+  if (media !== undefined && isNode(media.example)) {
+    values.push(media.example);
+  }
+  if (media !== undefined && isNode(media.examples)) {
+    for (const example of Object.values(media.examples)) {
+      const reference: unknown = isNode(example) ? example.$ref : undefined;
+      const node: unknown =
+        typeof reference === 'string'
+          ? resolveNode(spec, reference.slice(1)).node.value
+          : undefined;
+      values.push(node ?? (isNode(example) ? example.value : undefined));
+    }
+  }
+  for (const value of values) {
+    if (isNode(value) && typeof value.code === 'string') {
+      codes.add(value.code);
+    }
+  }
+  return [...codes];
 }

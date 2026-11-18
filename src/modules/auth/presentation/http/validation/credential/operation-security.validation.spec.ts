@@ -278,7 +278,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(55);
+    expect(operations).toHaveLength(84);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -314,13 +314,47 @@ describe('the security of every route against the public contracts', () => {
     },
   );
 
-  it('derives a member scope only for the two member reads', () => {
+  it('derives a token scope only for the two member reads and the task core operations', () => {
     const withToken: string[] = operations
       .filter((operation: ContractOperation) => apiTokenScopesOf(operation.security) !== undefined)
       .map((operation: ContractOperation) => operation.security.operationId)
       .sort();
 
-    expect(withToken).toEqual(['getMember', 'listMembers']);
+    expect(withToken).toEqual(
+      [
+        'getMember',
+        'listMembers',
+        'listSpaces',
+        'createSpace',
+        'getSpace',
+        'updateSpace',
+        'getSpaceOverview',
+        'createList',
+        'listLists',
+        'getList',
+        'updateList',
+        'getListCounts',
+        'listListActivity',
+        'listTasks',
+        'createTask',
+        'countTaskGroups',
+        'getTask',
+        'updateTask',
+        'getTaskDetail',
+        'listSubtasks',
+        'createSubtask',
+        'addChecklistItem',
+        'updateChecklistItem',
+        'assignTask',
+        'unassignTask',
+        'addTaskLabel',
+        'removeTaskLabel',
+        'listTaskActivity',
+        'listLabels',
+        'listMyTasks',
+        'getHome',
+      ].sort(),
+    );
   });
 });
 

@@ -6,9 +6,9 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  * @description
  * French `title` of the public problems the web application shows to the person as they are,
  * by `code`, taken from the examples of `openapi/public/` (`auth.yaml`, `organizations.yaml`,
- * `members.yaml`, `api-tokens.yaml`) of `@cadenway/contracts`, the account security codes of
- * 0.7.0 and the two-step verification codes of 0.8.0 included
- * (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
+ * `members.yaml`, `api-tokens.yaml`, `spaces.yaml`, `lists.yaml`, `tasks.yaml`) of
+ * `@cadenway/contracts`, the account security codes of 0.7.0, the two-step verification codes of
+ * 0.8.0 and the task core codes of 0.9.0 included (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
  * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
  * The text is the same
  * for every occurrence of a code; the punctuation (the space before a colon, the typographic
@@ -113,6 +113,37 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
     'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.',
   ],
   ['security-key.not-found', 'Clé de sécurité introuvable.'],
+  ['space.not-found', 'Espace introuvable.'],
+  ['space.prefix-taken', 'Ce préfixe est déjà utilisé par un autre espace.'],
+  [
+    'space.visibility-forbidden',
+    'Seuls le propriétaire de l’espace et les administrateurs changent sa confidentialité.',
+  ],
+  ['space.status-required', 'Ce statut est obligatoire : il ne peut pas être masqué.'],
+  ['list.not-found', 'Liste introuvable.'],
+  ['list.sprint-dates-invalid', 'La fin doit suivre le début.'],
+  ['task.not-found', 'Tâche introuvable.'],
+  ['task.status-hidden', 'Ce statut n’est plus utilisé dans cet espace.'],
+  [
+    'task.cancel-reason-required',
+    'Indiquez pourquoi : le motif reste visible sur la tâche et dans les rapports.',
+  ],
+  ['task.assignee-invalid', 'Seuls les membres de l’organisation peuvent être assignés.'],
+  ['task.assignee-limit-reached', '20 personnes au plus par tâche.'],
+  ['task.start-date-invalid', 'Le début doit précéder l’échéance.'],
+  ['task.list-invalid', 'Cette liste n’existe pas ou ne vous est pas accessible.'],
+  [
+    'task.parent-invalid',
+    'Une tâche ne peut pas devenir sous-tâche d’elle-même ni de ses sous-tâches.',
+  ],
+  [
+    'task.subtask-depth-exceeded',
+    'Niveau maximal atteint : 3 niveaux (tâche, sous-tâche, sous-sous-tâche). Utilisez la checklist pour détailler davantage.',
+  ],
+  ['task.subtask-limit-reached', '25 sous-tâches au plus : découpez plutôt en plusieurs tâches.'],
+  ['task.label-limit-reached', '20 étiquettes au plus par tâche.'],
+  ['task.checklist-limit-reached', '100 éléments au plus par checklist.'],
+  ['checklist-item.not-found', 'Élément de checklist introuvable.'],
 ]);
 
 /**
