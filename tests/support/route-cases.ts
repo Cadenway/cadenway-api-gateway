@@ -9,6 +9,7 @@ import {
   type FakeIdentity,
 } from './fake-identity.js';
 import type { FakeOrganization } from './fake-organization.js';
+import type { FakeTask } from './fake-task.js';
 import { declaredStatuses, expectPublicResponse, type SpecMethod } from './public-contract.js';
 import type { FakeCounter, RouteApplication } from './route-application.js';
 import { ALLOWED_ORIGIN } from './test-environment.js';
@@ -34,6 +35,8 @@ export interface CaseFakes {
   readonly identity: FakeIdentity;
   /** The fake of organization-service. */
   readonly organization: FakeOrganization;
+  /** The fake of task-service. */
+  readonly task: FakeTask;
   /** The fake of the counters of the sessions and personal API tokens. */
   readonly counter: FakeCounter;
   /** The fake of the counters of the requests without a credential, per client address. */
@@ -120,6 +123,7 @@ export async function runRouteCase(
   const fakes: CaseFakes = {
     identity,
     organization: application.organization,
+    task: application.task,
     counter: application.counter,
     anonymousCounter: application.anonymousCounter,
     bearerFailureCounter: application.bearerFailureCounter,
