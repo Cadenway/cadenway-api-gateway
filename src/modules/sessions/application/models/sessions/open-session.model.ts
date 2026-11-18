@@ -84,5 +84,17 @@ export interface OpenSession {
    * @readonly
    */
   readonly expiresAt: string;
+
+  /**
+   * Property inactivityTimeoutMinutes
+   *
+   * @description
+   * Minutes of inactivity after which the session closes, from the authentication policy of its
+   * current organization (720 without one); absent while identity-service does not send it.
+   *
+   * @type {number | undefined}
+   * @readonly
+   */
+  readonly inactivityTimeoutMinutes?: number;
   // #endregion
 }

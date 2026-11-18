@@ -7,7 +7,7 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  * French `title` of the public problems the web application shows to the person as they are,
  * by `code`, taken from the examples of `openapi/public/` (`auth.yaml`, `organizations.yaml`,
  * `members.yaml`, `api-tokens.yaml`) of `@cadenway/contracts`, the account security codes of
- * 0.7.0 included
+ * 0.7.0 and the two-step verification codes of 0.8.0 included
  * (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
  * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
  * The text is the same
@@ -91,6 +91,28 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
     'Chaque organisation dont vous êtes propriétaire doit d’abord avoir un autre propriétaire.',
   ],
   ['session.not-found', 'Session introuvable.'],
+  ['auth.challenge-expired', 'La vérification a expiré : connectez-vous de nouveau.'],
+  ['auth.two-step-code-invalid', 'Code incorrect ou déjà utilisé.'],
+  [
+    'auth.security-key-refused',
+    'Clé de sécurité non reconnue : réessayez ou choisissez une autre méthode.',
+  ],
+  ['auth.two-step-locked', 'Trop de tentatives échouées : réessayez dans 15 minutes.'],
+  ['auth.two-step-not-enabled', 'Activez d’abord la vérification en deux étapes.'],
+  ['auth.two-step-setup-expired', 'La configuration a expiré : recommencez.'],
+  [
+    'auth.security-key-limit-reached',
+    'Nombre maximal de clés de sécurité atteint : retirez-en une pour en ajouter une autre.',
+  ],
+  [
+    'auth.mfa-required-by-organization',
+    'Une de vos organisations exige la vérification en deux étapes : elle ne peut pas être désactivée.',
+  ],
+  [
+    'organization.mfa-required',
+    'Cette organisation exige la vérification en deux étapes : configurez-la depuis votre compte.',
+  ],
+  ['security-key.not-found', 'Clé de sécurité introuvable.'],
 ]);
 
 /**

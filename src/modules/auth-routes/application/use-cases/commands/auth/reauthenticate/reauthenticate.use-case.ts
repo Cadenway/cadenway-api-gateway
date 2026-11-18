@@ -6,8 +6,9 @@ import type { IdentityAuth } from '../../../../ports/outbound/identity/auth/iden
  * Class Reauthenticate
  *
  * @description
- * Confirms the password of the person of a session through Identity, which opens the window of
- * recent authentication of that session and counts a wrong password towards the lockout.
+ * Confirms the password, or a code of the authenticator app, of the person of a session through
+ * Identity, which opens the window of recent authentication of that session and counts a wrong
+ * password or code towards its lockout.
  */
 export class Reauthenticate {
   // #region Properties
@@ -43,13 +44,13 @@ export class Reauthenticate {
    * Method execute
    *
    * @description
-   * Confirms the password in the session.
+   * Confirms the password or the code in the session.
    *
-   * @param {ReauthenticateInput} input - Session of the request and password.
+   * @param {ReauthenticateInput} input - Session of the request, and the password or the code.
    * @returns {Promise<RecentAuthentication>} The window of recent authentication.
    */
   public execute(input: ReauthenticateInput): Promise<RecentAuthentication> {
-    return this.identity.reauthenticate(input.sessionId, input.password);
+    return this.identity.reauthenticate(input);
   }
   // #endregion
 }

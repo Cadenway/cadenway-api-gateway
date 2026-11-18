@@ -2,6 +2,15 @@ import type {
   ApiTokenCreated,
   ApiTokenCreation,
   ApiTokenPage,
+  AuthenticationPolicy,
+  AuthenticationPolicyPatch,
+  AuthenticatorAppAnswer,
+  AuthenticatorAppConfigured,
+  AuthenticatorAppConfirmation,
+  AuthenticatorAppSetup,
+  BackupCodeAnswer,
+  BackupCodes,
+  ChallengeTokenRequest,
   CodeRequest,
   CodeSent,
   CodeVerification,
@@ -25,27 +34,46 @@ import type {
   ReauthenticationRequest,
   RecentAuthentication,
   RevokedSessions,
+  SecurityKey,
+  SecurityKeyAddition,
+  SecurityKeyAnswer,
+  SecurityKeyAssertionOptions,
+  SecurityKeyRegistration,
   SessionIssued,
   SessionOrganization,
+  SessionReference,
+  SignInChallenge,
   SignInMethods,
   SignInMethodsRequest,
   SignUpRequest,
   SignUpVerification,
+  TwoStepChange,
+  TwoStepVerification,
   User,
 } from '@cadenway/contracts/types/internal/identity-service';
 import {
+  AddSecurityKeyInternalResponse,
+  AnswerSignInChallengeWithAuthenticatorAppInternalResponse,
+  AnswerSignInChallengeWithBackupCodeInternalResponse,
+  AnswerSignInChallengeWithSecurityKeyInternalResponse,
   ChangePasswordInternalResponse,
+  ConfirmAuthenticatorAppSetupInternalResponse,
   ConfirmEmailChangeInternalResponse,
   ConfirmPasswordResetInternalResponse,
   CreateApiTokenInternalResponse,
   DiscoverSignInMethodsInternalResponse,
+  GetAuthenticationPolicyInternalResponse,
+  GetSignInChallengeSecurityKeyOptionsInternalResponse,
+  GetTwoStepVerificationInternalResponse,
   GetUserResponse,
   InspectPasswordResetLinkInternalResponse,
+  InspectSignInChallengeInternalResponse,
   IntrospectApiTokenResponse,
   IntrospectTokenResponse,
   ListApiTokensInternalResponse,
   ListUserSessionsInternalResponse,
   ReauthenticateInternalResponse,
+  RegenerateBackupCodesInternalResponse,
   RequestEmailChangeInternalResponse,
   RequestPasswordResetInternalResponse,
   RequestSignInCodeInternalResponse,
@@ -55,7 +83,10 @@ import {
   SignInWithCodeInternalResponse,
   SignInWithPasswordInternalResponse,
   SignUpInternalResponse,
+  StartAuthenticatorAppSetupInternalResponse,
+  StartSecurityKeyRegistrationInternalResponse,
   SwitchSessionOrganizationResponse,
+  UpdateAuthenticationPolicyInternalResponse,
   UpdateUserResponse,
   VerifySignUpInternalResponse,
 } from '@cadenway/contracts/validators/internal/identity-service';
@@ -101,6 +132,22 @@ type IdentityApiToken = Omit<
   Extract<z.output<typeof IntrospectApiTokenResponse>, { active: true }>,
   'active' | 'tokenType'
 >;
+
+/**
+ * Type IdentitySignIn
+ *
+ * @description
+ * What a sign-in by password or by email code answers: `signed-in` with the session opened
+ * (`200`), or `challenge` with the two-step challenge of an account with two-step verification
+ * (`202`, no session and no token), validated with the validator of
+ * `POST /internal/v1/auth/sign-in/challenge/inspection`, whose `200` has the schema of that `202`
+ * (orval generates a response validator for the first success status only).
+ *
+ * @type {{ readonly outcome: 'signed-in'; readonly session: SessionIssued } | { readonly outcome: 'challenge'; readonly challenge: SignInChallenge }}
+ */
+export type IdentitySignIn =
+  | { readonly outcome: 'signed-in'; readonly session: SessionIssued }
+  | { readonly outcome: 'challenge'; readonly challenge: SignInChallenge };
 
 /**
  * Constant IDENTITY_SERVICE
@@ -250,6 +297,35 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
 }
 
 /**
+ * Function signInOf
+ *
+ * @description
+ * Reads the answer of a sign-in by password or by email code: a `202` is the two-step challenge,
+ * checked against `InspectSignInChallengeInternalResponse`; any other status must be the `200` of
+ * the operation, checked against its own validator. The challenge carries no session token, and
+ * the answer of the `202` sets no cookie.
+ *
+ * @param {string} operation - `operationId` of the call.
+ * @param {GeneratedResponse} response - Response of the generated function.
+ * @param {z.ZodType<SessionIssued>} signedIn - Validator of the `200` of the operation.
+ * @returns {IdentitySignIn} The session opened, or the challenge to answer.
+ * @throws {ProblemException} 503 `upstream.failed` when the status or the body does not match.
+ */
+function signInOf(
+  operation: string,
+  response: GeneratedResponse,
+  signedIn: z.ZodType<SessionIssued>,
+): IdentitySignIn {
+  if (response.status === 202) {
+    return {
+      outcome: 'challenge',
+      challenge: expectBody(operation, response, 202, InspectSignInChallengeInternalResponse),
+    };
+  }
+  return { outcome: 'signed-in', session: expectBody(operation, response, 200, signedIn) };
+}
+
+/**
  * Class IdentityServiceClient
  *
  * @description
@@ -258,17 +334,20 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
  * `@cadenway/nest-common`, behind the ports of the session guard and of the routes.
  *
  * - Every call carries an internal token signed by the gateway with `aud: identity-service`: the
- *   actor `anonymous` for the sign-up, sign-in and password reset flows, `system` for the two
+ *   actor `anonymous` for the sign-up, sign-in (its two-step challenge included) and password
+ *   reset flows, `system` for the two
  *   introspections, and the user of the current organization context for every other call (with
- *   the organization of that context, which the personal API token routes require).
+ *   the organization of that context, which the personal API token routes and the authentication
+ *   policy require).
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call (both introspections are
  *   declared idempotent by their contract, as `GET`, `PUT` and `DELETE` are, but the password
  *   change; the flows and the other `POST` and `PATCH` calls are not retried), and the circuit
  *   breaker of identity-service. It throws its problems: a relayed client error, or
  *   `503 upstream.*`.
- * - Passwords, reset tokens and codes travel in the bodies only, never in a path, a query or a
- *   log line.
+ * - Passwords, reset tokens, codes, backup codes, challenge and trusted device tokens and WebAuthn
+ *   answers travel in the bodies only, never in a path, a query or a log line; the TOTP secret
+ *   and the backup codes identity-service returns once are never logged either.
  * - Every success is checked against the internal contract before it is returned; a mismatch is
  *   `503 upstream.failed`.
  */
@@ -341,6 +420,9 @@ export class IdentityServiceClient {
       role: answer.role,
       scopes: answer.scopes,
       expiresAt: answer.expiresAt,
+      ...(answer.withheldOrganization === undefined
+        ? {}
+        : { withheldOrganization: answer.withheldOrganization }),
     };
   }
 
@@ -434,19 +516,21 @@ export class IdentityServiceClient {
    * Method signInWithPassword
    *
    * @description
-   * `POST /internal/v1/auth/sign-in` as the actor `anonymous`.
+   * `POST /internal/v1/auth/sign-in` as the actor `anonymous`. The password and the trusted
+   * device token, when the browser sent one, travel in the body only.
    *
-   * @param {PasswordSignIn} request - Address, password, persistence and browser of the session.
-   * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
+   * @param {PasswordSignIn} request - Address, password, persistence, browser of the session and
+   * the trusted device token of the browser.
+   * @returns {Promise<IdentitySignIn>} The session opened, with its token returned once, or the
+   * two-step challenge of the account.
    */
-  public async signInWithPassword(request: PasswordSignIn): Promise<SessionIssued> {
-    return expectBody(
+  public async signInWithPassword(request: PasswordSignIn): Promise<IdentitySignIn> {
+    return signInOf(
       'signInWithPasswordInternal',
       await answered(
         'signInWithPasswordInternal',
         this.routes.signInWithPasswordInternal(request, callerClaims('anonymous')),
       ),
-      200,
       SignInWithPasswordInternalResponse,
     );
   }
@@ -476,20 +560,155 @@ export class IdentityServiceClient {
    * Method signInWithCode
    *
    * @description
-   * `POST /internal/v1/auth/sign-in/code/verification` as the actor `anonymous`.
+   * `POST /internal/v1/auth/sign-in/code/verification` as the actor `anonymous`. The code and the
+   * trusted device token, when the browser sent one, travel in the body only.
    *
-   * @param {CodeVerification} request - Address, code, persistence and browser of the session.
-   * @returns {Promise<SessionIssued>} The session opened, with its token returned once.
+   * @param {CodeVerification} request - Address, code, persistence, browser of the session and the
+   * trusted device token of the browser.
+   * @returns {Promise<IdentitySignIn>} The session opened, with its token returned once, or the
+   * two-step challenge of the account.
    */
-  public async signInWithCode(request: CodeVerification): Promise<SessionIssued> {
-    return expectBody(
+  public async signInWithCode(request: CodeVerification): Promise<IdentitySignIn> {
+    return signInOf(
       'signInWithCodeInternal',
       await answered(
         'signInWithCodeInternal',
         this.routes.signInWithCodeInternal(request, callerClaims('anonymous')),
       ),
-      200,
       SignInWithCodeInternalResponse,
+    );
+  }
+
+  /**
+   * Method inspectSignInChallenge
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/inspection` as the actor `anonymous`. The challenge
+   * token travels in the body only. Not retried, as every flow before a session.
+   *
+   * @param {ChallengeTokenRequest} request - The token of the challenge.
+   * @returns {Promise<SignInChallenge>} The challenge, as the sign-in issued it.
+   */
+  public async inspectSignInChallenge(request: ChallengeTokenRequest): Promise<SignInChallenge> {
+    return expectBody(
+      'inspectSignInChallengeInternal',
+      await answered(
+        'inspectSignInChallengeInternal',
+        this.routes.inspectSignInChallengeInternal(request, callerClaims('anonymous')),
+      ),
+      200,
+      InspectSignInChallengeInternalResponse,
+    );
+  }
+
+  /**
+   * Method answerSignInChallengeWithAuthenticatorApp
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/authenticator-app` as the actor `anonymous`. The
+   * token and the code travel in the body only. Not retried: a wrong answer counts towards the
+   * lockout of the two-step answers of the account.
+   *
+   * @param {AuthenticatorAppAnswer} request - Token, code, trust of the device and browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`, each token returned once.
+   */
+  public async answerSignInChallengeWithAuthenticatorApp(
+    request: AuthenticatorAppAnswer,
+  ): Promise<SessionIssued> {
+    return expectBody(
+      'answerSignInChallengeWithAuthenticatorAppInternal',
+      await answered(
+        'answerSignInChallengeWithAuthenticatorAppInternal',
+        this.routes.answerSignInChallengeWithAuthenticatorAppInternal(
+          request,
+          callerClaims('anonymous'),
+        ),
+      ),
+      200,
+      AnswerSignInChallengeWithAuthenticatorAppInternalResponse,
+    );
+  }
+
+  /**
+   * Method answerSignInChallengeWithBackupCode
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/backup-code` as the actor `anonymous`. The token and
+   * the backup code travel in the body only. Not retried: the code works once.
+   *
+   * @param {BackupCodeAnswer} request - Token, backup code, trust of the device and browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`.
+   */
+  public async answerSignInChallengeWithBackupCode(
+    request: BackupCodeAnswer,
+  ): Promise<SessionIssued> {
+    return expectBody(
+      'answerSignInChallengeWithBackupCodeInternal',
+      await answered(
+        'answerSignInChallengeWithBackupCodeInternal',
+        this.routes.answerSignInChallengeWithBackupCodeInternal(request, callerClaims('anonymous')),
+      ),
+      200,
+      AnswerSignInChallengeWithBackupCodeInternalResponse,
+    );
+  }
+
+  /**
+   * Method getSignInChallengeSecurityKeyOptions
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/security-key/options` as the actor `anonymous`. Not
+   * retried: each call replaces the options of the challenge. The options keep the members the
+   * contract does not list (its validator is loose), for the browser.
+   *
+   * @param {ChallengeTokenRequest} request - The token of the challenge.
+   * @returns {Promise<SecurityKeyAssertionOptions>} The WebAuthn options and their expiry.
+   */
+  public async getSignInChallengeSecurityKeyOptions(
+    request: ChallengeTokenRequest,
+  ): Promise<SecurityKeyAssertionOptions> {
+    return expectBody(
+      'getSignInChallengeSecurityKeyOptionsInternal',
+      await answered(
+        'getSignInChallengeSecurityKeyOptionsInternal',
+        this.routes.getSignInChallengeSecurityKeyOptionsInternal(
+          request,
+          callerClaims('anonymous'),
+        ),
+      ),
+      200,
+      GetSignInChallengeSecurityKeyOptionsInternalResponse,
+    );
+  }
+
+  /**
+   * Method answerSignInChallengeWithSecurityKey
+   *
+   * @description
+   * `POST /internal/v1/auth/sign-in/challenge/security-key` as the actor `anonymous`. The token
+   * and the WebAuthn answer travel in the body only. Not retried: a refused answer counts towards
+   * the lockout.
+   *
+   * @param {SecurityKeyAnswer} request - Token, answer of the key, trust of the device, browser.
+   * @returns {Promise<SessionIssued>} The session opened, and the trusted device with
+   * `trustDevice`.
+   */
+  public async answerSignInChallengeWithSecurityKey(
+    request: SecurityKeyAnswer,
+  ): Promise<SessionIssued> {
+    return expectBody(
+      'answerSignInChallengeWithSecurityKeyInternal',
+      await answered(
+        'answerSignInChallengeWithSecurityKeyInternal',
+        this.routes.answerSignInChallengeWithSecurityKeyInternal(
+          request,
+          callerClaims('anonymous'),
+        ),
+      ),
+      200,
+      AnswerSignInChallengeWithSecurityKeyInternalResponse,
     );
   }
 
@@ -564,6 +783,9 @@ export class IdentityServiceClient {
       role: answer.role,
       scopes: answer.scopes,
       expiresAt: answer.expiresAt,
+      ...(answer.withheldOrganization === undefined
+        ? {}
+        : { withheldOrganization: answer.withheldOrganization }),
     };
   }
 
@@ -751,11 +973,12 @@ export class IdentityServiceClient {
    *
    * @description
    * `POST /internal/v1/sessions/{sessionId}/reauthentication` as the user of the current
-   * organization context. The password travels in the body only. Not retried: a failed password
-   * counts towards the lockout.
+   * organization context. The password or the code travels in the body only. Not retried: a
+   * failed password or code counts towards a lockout.
    *
    * @param {string} sessionId - Id of the session (a UUID), as the introspection returned it.
-   * @param {ReauthenticationRequest} request - The password of the account.
+   * @param {ReauthenticationRequest} request - The password of the account, or a code of its
+   * authenticator app.
    * @returns {Promise<RecentAuthentication>} The window of recent authentication of the session.
    */
   public async reauthenticate(
@@ -923,6 +1146,264 @@ export class IdentityServiceClient {
       ),
       200,
       RevokeOtherSessionsInternalResponse,
+    );
+  }
+
+  /**
+   * Method getTwoStepVerification
+   *
+   * @description
+   * `GET /internal/v1/users/{userId}/two-step-verification` as the user of the current
+   * organization context, retried once on a connection error or a `503` (`GET` is idempotent).
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @returns {Promise<TwoStepVerification>} The two-step verification of the account, without any
+   * secret.
+   */
+  public async getTwoStepVerification(userId: string): Promise<TwoStepVerification> {
+    return expectBody(
+      'getTwoStepVerificationInternal',
+      await answered(
+        'getTwoStepVerificationInternal',
+        this.routes.getTwoStepVerificationInternal(userId),
+      ),
+      200,
+      GetTwoStepVerificationInternalResponse,
+    );
+  }
+
+  /**
+   * Method disableTwoStepVerification
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/disable` as the user of the current
+   * organization context. Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {TwoStepChange} change - Session of the request and browser.
+   * @returns {Promise<void>} Resolves once two-step verification is off, or was already.
+   */
+  public async disableTwoStepVerification(userId: string, change: TwoStepChange): Promise<void> {
+    expectStatus(
+      'disableTwoStepVerificationInternal',
+      await answered(
+        'disableTwoStepVerificationInternal',
+        this.routes.disableTwoStepVerificationInternal(userId, change),
+      ),
+      204,
+    );
+  }
+
+  /**
+   * Method startAuthenticatorAppSetup
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/authenticator-app/setup` as the user of
+   * the current organization context. Not retried: each start replaces the pending setup. The
+   * answer holds the TOTP secret, returned once: never logged.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {SessionReference} reference - Session of the request.
+   * @returns {Promise<AuthenticatorAppSetup>} The secret, its `otpauth://` URI and its expiry.
+   */
+  public async startAuthenticatorAppSetup(
+    userId: string,
+    reference: SessionReference,
+  ): Promise<AuthenticatorAppSetup> {
+    return expectBody(
+      'startAuthenticatorAppSetupInternal',
+      await answered(
+        'startAuthenticatorAppSetupInternal',
+        this.routes.startAuthenticatorAppSetupInternal(userId, reference),
+      ),
+      200,
+      StartAuthenticatorAppSetupInternalResponse,
+    );
+  }
+
+  /**
+   * Method confirmAuthenticatorAppSetup
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/authenticator-app/setup/confirmation`
+   * as the user of the current organization context. The code travels in the body only. Not
+   * retried. The answer may hold the backup codes, returned once: never logged.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {AuthenticatorAppConfirmation} confirmation - Session of the request, code, browser.
+   * @returns {Promise<AuthenticatorAppConfigured>} The two-step verification of the account and
+   * its new backup codes, `null` for a reconfiguration.
+   */
+  public async confirmAuthenticatorAppSetup(
+    userId: string,
+    confirmation: AuthenticatorAppConfirmation,
+  ): Promise<AuthenticatorAppConfigured> {
+    return expectBody(
+      'confirmAuthenticatorAppSetupInternal',
+      await answered(
+        'confirmAuthenticatorAppSetupInternal',
+        this.routes.confirmAuthenticatorAppSetupInternal(userId, confirmation),
+      ),
+      200,
+      ConfirmAuthenticatorAppSetupInternalResponse,
+    );
+  }
+
+  /**
+   * Method regenerateBackupCodes
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/backup-codes/regenerate` as the user
+   * of the current organization context. Not retried: each call replaces the codes. The answer
+   * holds the codes, returned once: never logged.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {TwoStepChange} change - Session of the request and browser.
+   * @returns {Promise<BackupCodes>} The new backup codes.
+   */
+  public async regenerateBackupCodes(userId: string, change: TwoStepChange): Promise<BackupCodes> {
+    return expectBody(
+      'regenerateBackupCodesInternal',
+      await answered(
+        'regenerateBackupCodesInternal',
+        this.routes.regenerateBackupCodesInternal(userId, change),
+      ),
+      200,
+      RegenerateBackupCodesInternalResponse,
+    );
+  }
+
+  /**
+   * Method startSecurityKeyRegistration
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/security-keys/registration` as the
+   * user of the current organization context. Not retried: each start replaces the pending
+   * registration. The options keep the members the contract does not list, for the browser.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {SessionReference} reference - Session of the request.
+   * @returns {Promise<SecurityKeyRegistration>} The WebAuthn creation options and their expiry.
+   */
+  public async startSecurityKeyRegistration(
+    userId: string,
+    reference: SessionReference,
+  ): Promise<SecurityKeyRegistration> {
+    return expectBody(
+      'startSecurityKeyRegistrationInternal',
+      await answered(
+        'startSecurityKeyRegistrationInternal',
+        this.routes.startSecurityKeyRegistrationInternal(userId, reference),
+      ),
+      200,
+      StartSecurityKeyRegistrationInternalResponse,
+    );
+  }
+
+  /**
+   * Method addSecurityKey
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/security-keys` as the user of the
+   * current organization context. The WebAuthn answer travels in the body only. Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {SecurityKeyAddition} addition - Session of the request, name, answer of the browser,
+   * browser.
+   * @returns {Promise<SecurityKey>} The key registered.
+   */
+  public async addSecurityKey(userId: string, addition: SecurityKeyAddition): Promise<SecurityKey> {
+    return expectBody(
+      'addSecurityKeyInternal',
+      await answered(
+        'addSecurityKeyInternal',
+        this.routes.addSecurityKeyInternal(userId, addition),
+      ),
+      201,
+      AddSecurityKeyInternalResponse,
+    );
+  }
+
+  /**
+   * Method removeSecurityKey
+   *
+   * @description
+   * `POST /internal/v1/users/{userId}/two-step-verification/security-keys/{securityKeyId}/remove`
+   * as the user of the current organization context. Not retried.
+   *
+   * @param {string} userId - Id of the account (a UUID), as the introspection returned it.
+   * @param {string} securityKeyId - Id of the key (a UUID), from the public path.
+   * @param {TwoStepChange} change - Session of the request and browser.
+   * @returns {Promise<void>} Resolves once the key is removed.
+   */
+  public async removeSecurityKey(
+    userId: string,
+    securityKeyId: string,
+    change: TwoStepChange,
+  ): Promise<void> {
+    expectStatus(
+      'removeSecurityKeyInternal',
+      await answered(
+        'removeSecurityKeyInternal',
+        this.routes.removeSecurityKeyInternal(userId, securityKeyId, change),
+      ),
+      204,
+    );
+  }
+
+  /**
+   * Method getAuthenticationPolicy
+   *
+   * @description
+   * `GET /internal/v1/organization/authentication-policy` as the user of the current organization
+   * context, which carries the current organization of the session; retried once on a connection
+   * error or a `503` (`GET` is idempotent).
+   *
+   * @returns {Promise<AuthenticationPolicy>} The policy of the organization of the context.
+   */
+  public async getAuthenticationPolicy(): Promise<AuthenticationPolicy> {
+    return expectBody(
+      'getAuthenticationPolicyInternal',
+      await answered(
+        'getAuthenticationPolicyInternal',
+        this.routes.getAuthenticationPolicyInternal(),
+      ),
+      200,
+      GetAuthenticationPolicyInternalResponse,
+    );
+  }
+
+  /**
+   * Method updateAuthenticationPolicy
+   *
+   * @description
+   * `PATCH /internal/v1/organization/authentication-policy?sessionId=` as the user of the current
+   * organization context, with the `If-Match` of the public request relayed unchanged. Not
+   * retried: `PATCH` is not declared idempotent.
+   *
+   * @param {string} sessionId - Id of the session (a UUID), as the introspection returned it,
+   * whose recent authentication identity-service checks.
+   * @param {AuthenticationPolicyPatch} patch - JSON Merge Patch of the policy.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<AuthenticationPolicy>} The policy after the change.
+   */
+  public async updateAuthenticationPolicy(
+    sessionId: string,
+    patch: AuthenticationPolicyPatch,
+    ifMatch: string | undefined,
+  ): Promise<AuthenticationPolicy> {
+    return expectBody(
+      'updateAuthenticationPolicyInternal',
+      await answered(
+        'updateAuthenticationPolicyInternal',
+        this.routes.updateAuthenticationPolicyInternal(
+          patch,
+          { sessionId },
+          ifMatchHeader(ifMatch),
+        ),
+      ),
+      200,
+      UpdateAuthenticationPolicyInternalResponse,
     );
   }
   // #endregion

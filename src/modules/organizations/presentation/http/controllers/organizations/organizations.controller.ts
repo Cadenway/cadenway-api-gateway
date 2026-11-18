@@ -120,12 +120,16 @@ const UPDATE_PROBLEMS: AcceptedProblems = {
  * Constant SWITCH_PROBLEMS
  *
  * @description
- * Client errors of identity-service that `PUT /v1/session/organization` answers as they are.
+ * Client errors of identity-service that `PUT /v1/session/organization` answers as they are: an
+ * organization whose authentication policy requires two-step verification for the role of the
+ * caller, who has none (`403 organization.mfa-required`, `details.organizationId`; nothing
+ * changes), and one the caller does not belong to, or not yet in the copy of the memberships.
  *
  * @type {AcceptedProblems}
  */
 const SWITCH_PROBLEMS: AcceptedProblems = {
   400: INVALID_REQUEST,
+  403: ['organization.mfa-required'],
   404: ['organization.not-found'],
 };
 

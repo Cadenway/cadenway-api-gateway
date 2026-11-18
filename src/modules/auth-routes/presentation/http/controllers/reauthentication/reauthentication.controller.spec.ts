@@ -29,6 +29,16 @@ import {
 const PASSWORD: string = 'atelier-nord-sprint-14-secret';
 
 /**
+ * Constant CODE
+ *
+ * @description
+ * Code of the authenticator app confirmed by the re-authentication: a secret too.
+ *
+ * @type {string}
+ */
+const CODE: string = '261845';
+
+/**
  * Function inSeconds
  *
  * @description
@@ -229,6 +239,138 @@ const CASES: readonly RouteCase[] = [
     status: 401,
     code: 'auth.session-required',
   },
+  {
+    name: 'POST /v1/auth/reauthentication confirms a code of the authenticator app, with no password member',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { code: CODE },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockResolvedValue({
+        authenticatedAt: '2026-11-09T13:12:00Z',
+        expiresAt: '2026-11-09T13:22:00Z',
+      }),
+    status: 200,
+    check: (_response, { identity }) => {
+      expect(identity.reauthenticate).toHaveBeenCalledWith(CAMILLE_ORGANIZATION_SESSION.sessionId, {
+        code: CODE,
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication sends both members as the browser sent them, for identity-service to refuse',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { password: PASSWORD, code: CODE },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockRejectedValue(
+        identityProblem(400, 'request.invalid', {
+          issues: [{ in: 'body', path: '', code: 'custom', message: 'One of password or code' }],
+        }),
+      ),
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { identity }) => {
+      expect(identity.reauthenticate).toHaveBeenCalledWith(CAMILLE_ORGANIZATION_SESSION.sessionId, {
+        password: PASSWORD,
+        code: CODE,
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication refuses a code that is not 6 digits before identity-service',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { code: '26184' },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { identity }) => {
+      expect(identity.reauthenticate).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication relays 403 auth.reauthentication-required for a password of a two-step account',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { password: PASSWORD },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockRejectedValue(
+        identityProblem(403, 'auth.reauthentication-required', {
+          methods: ['authenticator-app'],
+        }),
+      ),
+    status: 403,
+    code: 'auth.reauthentication-required',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Confirmez votre identité pour continuer.',
+        status: 403,
+        code: 'auth.reauthentication-required',
+        details: { methods: ['authenticator-app'] },
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication relays 409 auth.two-step-not-enabled for a code without an app',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { code: CODE },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockRejectedValue(identityProblem(409, 'auth.two-step-not-enabled')),
+    status: 409,
+    code: 'auth.two-step-not-enabled',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'Activez d’abord la vérification en deux étapes.',
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication relays 422 auth.two-step-code-invalid with the attempts left',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { code: CODE },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockRejectedValue(
+        identityProblem(422, 'auth.two-step-code-invalid', { remainingAttempts: 4 }),
+      ),
+    status: 422,
+    code: 'auth.two-step-code-invalid',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Code incorrect ou déjà utilisé.',
+        status: 422,
+        code: 'auth.two-step-code-invalid',
+        details: { remainingAttempts: 4 },
+      });
+    },
+  },
+  {
+    name: 'POST /v1/auth/reauthentication relays 429 auth.two-step-locked with Retry-After',
+    method: 'post',
+    path: '/v1/auth/reauthentication',
+    url: '/v1/auth/reauthentication',
+    body: { code: CODE },
+    arrange: ({ identity }) =>
+      identity.reauthenticate.mockRejectedValue(
+        identityProblem(429, 'auth.two-step-locked', { lockedUntil: inSeconds(900) }),
+      ),
+    status: 429,
+    code: 'auth.two-step-locked',
+    check: (response) => {
+      expectRetryAfterAtMost(response, 900);
+      expect(response.body).toMatchObject({
+        title: 'Trop de tentatives échouées : réessayez dans 15 minutes.',
+      });
+    },
+  },
 ];
 
 describe('POST /v1/auth/reauthentication', () => {
@@ -288,11 +430,17 @@ describe('POST /v1/auth/reauthentication', () => {
       status: 400,
     });
 
+    identity.reauthenticate.mockRejectedValueOnce(
+      identityProblem(422, 'auth.two-step-code-invalid', { remainingAttempts: 4 }),
+    );
+    await runRouteCase(application, identity, { ...confirm, body: { code: CODE }, status: 422 });
+
     expect(application.logLines.length).toBeGreaterThan(0);
     expect(application.logLines.join('\n')).not.toContain(PASSWORD);
+    expect(application.logLines.join('\n')).not.toContain(CODE);
     expect(identity.reauthenticate).toHaveBeenLastCalledWith(
       CAMILLE_ORGANIZATION_SESSION.sessionId,
-      { password: PASSWORD },
+      { code: CODE },
     );
   });
 });

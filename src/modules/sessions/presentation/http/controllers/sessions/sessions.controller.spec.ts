@@ -85,6 +85,23 @@ const PAGE: { items: Record<string, unknown>[]; nextCursor: string | null } = {
 };
 
 /**
+ * Constant PAGE_WITH_INACTIVITY
+ *
+ * @description
+ * The page of the open sessions as identity-service answers it from the contracts 0.8.0 on: each
+ * session with the inactivity of the policy of its current organization.
+ *
+ * @type {{ items: Record<string, unknown>[]; nextCursor: string | null }}
+ */
+const PAGE_WITH_INACTIVITY: { items: Record<string, unknown>[]; nextCursor: string | null } = {
+  items: PAGE.items.map((item: Record<string, unknown>, index: number) => ({
+    ...item,
+    inactivityTimeoutMinutes: index === 0 ? 60 : 720,
+  })),
+  nextCursor: null,
+};
+
+/**
  * Constant CASES
  *
  * @description
@@ -421,6 +438,42 @@ describe('routes of the open sessions', () => {
 
   it('exercises every status each session route declares', () => {
     expectEveryDeclaredStatus(CASES);
+  });
+
+  describe('GET /v1/sessions and the inactivity of each session', () => {
+    it('passes inactivityTimeoutMinutes on, session by session', async () => {
+      identity.listUserSessions.mockResolvedValue(PAGE_WITH_INACTIVITY as never);
+
+      const response = await runRouteCase(application, identity, {
+        name: 'inactivity',
+        method: 'get',
+        path: '/v1/sessions',
+        url: '/v1/sessions',
+        status: 200,
+      });
+
+      expect(response.body).toEqual(PAGE_WITH_INACTIVITY);
+    });
+
+    it('leaves inactivityTimeoutMinutes out while identity-service does not send it', async () => {
+      identity.listUserSessions.mockResolvedValue(PAGE as never);
+
+      const response = await runRouteCase(application, identity, {
+        name: 'no inactivity',
+        method: 'get',
+        path: '/v1/sessions',
+        url: '/v1/sessions',
+        status: 200,
+      });
+
+      const items: readonly Record<string, unknown>[] = (
+        response.body as { items: Record<string, unknown>[] }
+      ).items;
+      expect(items).toHaveLength(2);
+      for (const item of items) {
+        expect(item).not.toHaveProperty('inactivityTimeoutMinutes');
+      }
+    });
   });
 
   it.each(CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(

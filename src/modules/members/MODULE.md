@@ -32,3 +32,9 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - `role` of the list is a comma-separated query parameter (`role=owner,admin`); `limit` is read
   from its text before the validator of the contract checks it.
 - `If-Match` is relayed unchanged; the `ETag` of an answer is its `version`.
+- `twoStepVerificationEnabled` (column "Deux étapes") is passed on as organization-service sends
+  it: present for the owner and the admins, absent for anyone else. The gateway decides nothing
+  about who sees it.
+- A session or a token whose organization is withheld for want of two-step verification gets
+  `403 organization.mfa-required` from the credential guard, before the scope and the
+  organization checks.

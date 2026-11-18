@@ -157,6 +157,34 @@ function servedRoutes(): readonly ServedRoute[] {
 }
 
 /**
+ * Function describedCodes
+ *
+ * @description
+ * Lists the codes a response declares in the list of its description, the backquoted codes
+ * before the colon of a list item, never a code named in passing elsewhere: a
+ * response may declare a code it gives no example of (`PolicyWriteForbidden` of
+ * `organizations.yaml` declares `organization.not-selected` only in its description).
+ *
+ * @param {PublicSpec} spec - The spec.
+ * @param {string} pointer - Pointer of the response, which may be a reference.
+ * @returns {readonly string[]} The codes.
+ */
+function describedCodes(spec: PublicSpec, pointer: string): readonly string[] {
+  const description: unknown = resolveNode(spec, pointer).node.description;
+  if (typeof description !== 'string') {
+    return [];
+  }
+  return description
+    .split('\n')
+    .filter((line: string) => line.trimStart().startsWith('- `'))
+    .flatMap((line: string) =>
+      [...(line.split(':', 1)[0] ?? '').matchAll(/`([a-z-]+(?:\.[a-z-]+)+)`/gu)].map(
+        (match) => match[1] ?? '',
+      ),
+    );
+}
+
+/**
  * Function problemCodes
  *
  * @description
@@ -200,7 +228,7 @@ function problemCodes(spec: PublicSpec, pointer: string): readonly string[] {
  * @description
  * Lists every operation of the public specs the gateway serves, with its security: the
  * `security` of the operation (or of the document), and `organization` when its `403` declares
- * `organization.not-selected`.
+ * `organization.not-selected`, in an example or in its description.
  *
  * @returns {readonly ContractOperation[]} The operations.
  */
@@ -223,9 +251,10 @@ function contractOperations(): readonly ContractOperation[] {
         const security: unknown = operation.security ?? spec.document.security;
         const responses: unknown = operation.responses;
         const escaped: string = path.replaceAll('~', '~0').replaceAll('/', '~1');
+        const forbiddenPointer = `/paths/${escaped}/${method}/responses/403`;
         const forbidden: readonly string[] =
           isNode(responses) && isNode(responses['403'])
-            ? problemCodes(spec, `/paths/${escaped}/${method}/responses/403`)
+            ? [...problemCodes(spec, forbiddenPointer), ...describedCodes(spec, forbiddenPointer)]
             : [];
         operations.push({
           key: `${method} ${path}`,
@@ -249,7 +278,29 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(40);
+    expect(operations).toHaveLength(55);
+  });
+
+  it('declares organization.mfa-required on every operation that acts on the current organization', () => {
+    for (const spec of PUBLIC_SPECS) {
+      const paths: unknown = spec.document.paths;
+      for (const [path, item] of Object.entries(isNode(paths) ? paths : {})) {
+        for (const method of SPEC_METHODS.values()) {
+          const operation: unknown = isNode(item) ? item[method] : undefined;
+          const escaped: string = path.replaceAll('~', '~0').replaceAll('/', '~1');
+          const pointer = `/paths/${escaped}/${method}/responses/403`;
+          if (!isNode(operation) || !isNode(operation.responses)) {
+            continue;
+          }
+          const declared: readonly string[] = isNode(operation.responses['403'])
+            ? [...problemCodes(spec, pointer), ...describedCodes(spec, pointer)]
+            : [];
+          if (declared.includes('organization.not-selected')) {
+            expect(declared, `${method} ${path}`).toContain('organization.mfa-required');
+          }
+        }
+      }
+    }
   });
 
   it.each(operations.map((operation: ContractOperation) => [operation.key, operation] as const))(

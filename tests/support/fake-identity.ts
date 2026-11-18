@@ -185,6 +185,21 @@ export function createFakeIdentity(): FakeIdentity {
     scheduleAccountDeletion: vi.fn(unexpected),
     listUserSessions: vi.fn(unexpected),
     revokeOtherSessions: vi.fn(unexpected),
+    inspectSignInChallenge: vi.fn(unexpected),
+    answerSignInChallengeWithAuthenticatorApp: vi.fn(unexpected),
+    answerSignInChallengeWithBackupCode: vi.fn(unexpected),
+    getSignInChallengeSecurityKeyOptions: vi.fn(unexpected),
+    answerSignInChallengeWithSecurityKey: vi.fn(unexpected),
+    getTwoStepVerification: vi.fn(unexpected),
+    disableTwoStepVerification: vi.fn(unexpected),
+    startAuthenticatorAppSetup: vi.fn(unexpected),
+    confirmAuthenticatorAppSetup: vi.fn(unexpected),
+    regenerateBackupCodes: vi.fn(unexpected),
+    startSecurityKeyRegistration: vi.fn(unexpected),
+    addSecurityKey: vi.fn(unexpected),
+    removeSecurityKey: vi.fn(unexpected),
+    getAuthenticationPolicy: vi.fn(unexpected),
+    updateAuthenticationPolicy: vi.fn(unexpected),
   };
 }
 

@@ -23,9 +23,10 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   security of the account send identity-service the session the introspection returned
   (`sessionId` in the body), and answer its `404 session.not-found` the same way: the session
   ended after its introspection.
-- `403 auth.reauthentication-required` of identity-service (change of address, deletion) is
-  forwarded with its `details.methods` and its French title; the gateway decides nothing about
-  the recent authentication.
+- `403 auth.reauthentication-required` of identity-service (change of address, deletion, and the
+  password change of an account with two-step verification, which needs a recent two-step proof
+  before the current password is checked) is forwarded with its `details.methods` and its French
+  title; the gateway decides nothing about the recent authentication.
 - The deletion clears the session cookie on its `202`: identity-service has revoked every session
   of the account. A refused deletion leaves the cookie. Its internal body holds only the
   introspected session, so an internal `400` is a defect, answered `503 upstream.failed`.

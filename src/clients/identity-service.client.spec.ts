@@ -69,6 +69,17 @@ interface RecordedCall {
    * @readonly
    */
   readonly principal: InternalPrincipal;
+
+  /**
+   * Property ifMatch
+   *
+   * @description
+   * The `If-Match` header of the call, `null` without one.
+   *
+   * @type {string | null}
+   * @readonly
+   */
+  readonly ifMatch: string | null;
   // #endregion
 }
 
@@ -153,6 +164,7 @@ describe('IdentityServiceClient', () => {
         url: input instanceof Request ? input.url : input.toString(),
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
         principal: await verifier.verify(authorization.replace(/^Bearer /u, '')),
+        ifMatch: headers.get('If-Match'),
       });
       return answer();
     };
@@ -285,7 +297,7 @@ describe('IdentityServiceClient', () => {
         client: { ipAddress: '86.247.12.30', userAgent: null },
       });
 
-      expect(issued).toEqual(ISSUED);
+      expect(issued).toEqual({ outcome: 'signed-in', session: ISSUED });
       expect(calls[0]?.url).toBe(
         'http://identity-service.test:3010/internal/v1/auth/sign-in/code/verification',
       );
@@ -882,6 +894,353 @@ describe('IdentityServiceClient', () => {
         status: 403,
         code: 'auth.reauthentication-required',
         details: { methods: ['password'], service: IDENTITY_SERVICE },
+      });
+    });
+  });
+
+  describe('the two-step verification', () => {
+    const user: OrganizationContext = {
+      organizationId: null,
+      actor: { type: 'user', id: CAMILLE.id },
+      role: null,
+      scopes: [],
+    };
+    const owner: OrganizationContext = {
+      organizationId: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b2f',
+      actor: { type: 'user', id: CAMILLE.id },
+      role: 'owner',
+      scopes: ['tasks:read', 'tasks:write', 'members:read', 'webhooks:manage'],
+    };
+    const browser: { ipAddress: string; userAgent: string | null } = {
+      ipAddress: '192.0.2.14',
+      userAgent: 'Firefox',
+    };
+    const base = 'http://identity-service.test:3010/internal/v1';
+    const challenge: Record<string, unknown> = {
+      token: 'ChallengeTokenOfCamilleSecret0000000000000',
+      expiresAt: '2026-11-09T07:52:00Z',
+      email: CAMILLE.email,
+      name: CAMILLE.name,
+      primaryMethod: 'authenticator-app',
+      methods: ['authenticator-app', 'security-key', 'backup-code'],
+      securityKeys: [{ name: 'YubiKey 5C NFC' }],
+      backupCodesRemaining: 7,
+      lockedUntil: null,
+    };
+    const state: Record<string, unknown> = {
+      enabled: true,
+      primaryMethod: 'authenticator-app',
+      methods: ['authenticator-app'],
+      authenticatorApp: { configuredAt: '2026-03-03T10:15:00Z' },
+      securityKeys: [],
+      backupCodes: { remaining: 7, total: 10, generatedAt: '2026-03-03T10:15:00Z' },
+      requiredBy: [],
+    };
+    const policy: Record<string, unknown> = {
+      twoStepVerificationRequiredFor: 'admins',
+      sessionInactivityTimeoutMinutes: 720,
+      membersWithoutTwoStepVerification: { admins: 0, everyone: 7 },
+      version: 2,
+    };
+
+    it('answers the 202 of a sign-in as the challenge, validated as the inspection answers it, with the device token in the body', async () => {
+      answer.mockReturnValue(json(202, { ...challenge, internalNote: 'not public' }));
+
+      await expect(
+        client.signInWithPassword({
+          email: CAMILLE.email,
+          password: 'atelier-nord-sprint-14',
+          client: browser,
+          trustedDeviceToken: 'trusted-device-token',
+        }),
+      ).resolves.toEqual({ outcome: 'challenge', challenge });
+      expect(calls[0]).toMatchObject({
+        url: `${base}/auth/sign-in`,
+        body: { trustedDeviceToken: 'trusted-device-token' },
+        principal: { actor: { type: 'anonymous', id: null } },
+      });
+      expect(calls[0]?.url).not.toContain('trusted-device-token');
+    });
+
+    it('answers a 202 challenge outside the contract as 503 upstream.failed, never quoting its token', async () => {
+      answer.mockReturnValue(json(202, { ...challenge, token: 'short-secret' }));
+
+      const failure: unknown = await client
+        .signInWithCode({ email: CAMILLE.email, code: '482913', client: browser })
+        .catch((error: unknown) => error);
+
+      expect((failure as ProblemException).problem).toMatchObject({
+        status: 503,
+        code: 'upstream.failed',
+      });
+      expect(String((failure as ProblemException).cause)).toContain('token');
+      expect(String((failure as ProblemException).cause)).not.toContain('short-secret');
+    });
+
+    it('answers a sign-in status the operation does not declare as 503 upstream.failed', async () => {
+      answer.mockReturnValue(json(201, challenge));
+
+      await expect(
+        client.signInWithPassword({ email: CAMILLE.email, password: 'x', client: browser }),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    });
+
+    it('passes the withheld organization of both introspections on', async () => {
+      const withheld = { organizationId: owner.organizationId, code: 'organization.mfa-required' };
+      answer
+        .mockReturnValueOnce(json(200, { ...ACTIVE_SESSION, withheldOrganization: withheld }))
+        .mockReturnValueOnce(
+          json(200, {
+            active: true,
+            tokenType: 'api-token',
+            apiTokenId: '019a6c30-7a8b-7c9d-8e0f-1a2b3c4d5e91',
+            userId: CAMILLE.id,
+            organizationId: owner.organizationId,
+            role: 'member',
+            scopes: [],
+            expiresAt: null,
+            withheldOrganization: withheld,
+          }),
+        );
+
+      await expect(client.introspect('cookie-token')).resolves.toEqual({
+        ...CAMILLE_SESSION,
+        withheldOrganization: withheld,
+      });
+      await expect(client.introspectApiToken('cw_pat_token')).resolves.toMatchObject({
+        scopes: [],
+        withheldOrganization: withheld,
+      });
+    });
+
+    it('runs the challenge as the actor anonymous, secrets in the bodies only, never retried', async () => {
+      const session: Record<string, unknown> = {
+        ...ISSUED,
+        trustedDevice: {
+          token: 'TrustedDeviceTokenOfCamille0000000000000000',
+          expiresAt: '2026-12-09T07:42:00Z',
+        },
+      };
+      const options: Record<string, unknown> = {
+        options: { challenge: 'WebAuthnChallenge000000', hints: ['security-key'] },
+        expiresAt: '2026-11-09T07:47:00Z',
+      };
+      const credential = {
+        id: 'credential-id',
+        rawId: 'credential-id',
+        type: 'public-key',
+        response: { clientDataJSON: 'c', authenticatorData: 'a', signature: 's' },
+        futureMember: true,
+      };
+      answer
+        .mockReturnValueOnce(json(200, challenge))
+        .mockReturnValueOnce(json(200, session))
+        .mockReturnValueOnce(json(200, session))
+        .mockReturnValueOnce(json(200, options))
+        .mockReturnValueOnce(json(200, session))
+        .mockReturnValueOnce(new Response(null, { status: 503 }));
+      const token = 'ChallengeTokenOfCamilleSecret0000000000000';
+
+      await expect(client.inspectSignInChallenge({ token })).resolves.toEqual(challenge);
+      await expect(
+        client.answerSignInChallengeWithAuthenticatorApp({
+          token,
+          code: '261845',
+          trustDevice: true,
+          client: browser,
+        }),
+      ).resolves.toEqual(session);
+      await expect(
+        client.answerSignInChallengeWithBackupCode({
+          token,
+          code: '4F7K-2M9Q',
+          trustDevice: false,
+          client: browser,
+        }),
+      ).resolves.toEqual(session);
+      await expect(client.getSignInChallengeSecurityKeyOptions({ token })).resolves.toEqual(
+        options,
+      );
+      await expect(
+        client.answerSignInChallengeWithSecurityKey({
+          token,
+          credential,
+          trustDevice: true,
+          client: browser,
+        }),
+      ).resolves.toEqual(session);
+      await expect(
+        client.answerSignInChallengeWithAuthenticatorApp({
+          token,
+          code: '261845',
+          trustDevice: false,
+          client: browser,
+        }),
+      ).rejects.toMatchObject({ problem: { status: 503 } });
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        `POST ${base}/auth/sign-in/challenge/inspection`,
+        `POST ${base}/auth/sign-in/challenge/authenticator-app`,
+        `POST ${base}/auth/sign-in/challenge/backup-code`,
+        `POST ${base}/auth/sign-in/challenge/security-key/options`,
+        `POST ${base}/auth/sign-in/challenge/security-key`,
+        `POST ${base}/auth/sign-in/challenge/authenticator-app`,
+      ]);
+      expect(calls[4]?.body).toEqual({ token, credential, trustDevice: true, client: browser });
+      expect(calls.every((call) => call.principal.actor.type === 'anonymous')).toBe(true);
+      expect(calls.some((call) => call.url.includes(token))).toBe(false);
+    });
+
+    it('calls the two-step verification of the user of the context, retrying the read only', async () => {
+      const change = { sessionId: CAMILLE_SESSION.sessionId, client: browser };
+      // Five 503 in a row would open the circuit breaker: the last calls are refused instead.
+      const refused = (): Response =>
+        json(
+          403,
+          {
+            status: 403,
+            code: 'auth.reauthentication-required',
+            details: { methods: ['password'] },
+          },
+          'application/problem+json',
+        );
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(json(200, state))
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(refused())
+        .mockReturnValueOnce(refused())
+        .mockReturnValueOnce(refused())
+        .mockReturnValueOnce(refused());
+      const keyId = '019a6c52-1d2e-7f3a-8b4c-5d6e7f8a9b01';
+      const attempts: (() => Promise<unknown>)[] = [
+        () => client.disableTwoStepVerification(CAMILLE.id, change),
+        () =>
+          client.startAuthenticatorAppSetup(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+        () =>
+          client.confirmAuthenticatorAppSetup(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+            code: '261845',
+            client: browser,
+          }),
+        () => client.regenerateBackupCodes(CAMILLE.id, change),
+        () =>
+          client.startSecurityKeyRegistration(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+          }),
+        () =>
+          client.addSecurityKey(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+            name: 'YubiKey 5C NFC',
+            credential: {
+              id: 'credential-id',
+              rawId: 'credential-id',
+              type: 'public-key',
+              response: { clientDataJSON: 'c', attestationObject: 'o' },
+            },
+            client: browser,
+          }),
+        () => client.removeSecurityKey(CAMILLE.id, keyId, change),
+      ];
+
+      await expect(
+        runWithOrganizationContext(user, () => client.getTwoStepVerification(CAMILLE.id)),
+      ).resolves.toEqual(state);
+      for (const attempt of attempts) {
+        await expect(runWithOrganizationContext(user, attempt)).rejects.toBeInstanceOf(
+          ProblemException,
+        );
+      }
+
+      const prefix = `${base}/users/${CAMILLE.id}/two-step-verification`;
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        `GET ${prefix}`,
+        `GET ${prefix}`,
+        `POST ${prefix}/disable`,
+        `POST ${prefix}/authenticator-app/setup`,
+        `POST ${prefix}/authenticator-app/setup/confirmation`,
+        `POST ${prefix}/backup-codes/regenerate`,
+        `POST ${prefix}/security-keys/registration`,
+        `POST ${prefix}/security-keys`,
+        `POST ${prefix}/security-keys/${keyId}/remove`,
+      ]);
+      expect(calls[2]?.body).toEqual(change);
+      expect(calls[8]?.body).toEqual(change);
+      expect(calls.every((call) => call.principal.actor.id === CAMILLE.id)).toBe(true);
+      expect(calls.some((call) => call.url.includes('261845'))).toBe(false);
+    });
+
+    it('answers the secrets of a setup and the creation options of a key, keeping the WebAuthn members the contract does not list', async () => {
+      const setup = {
+        secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        otpauthUri: 'otpauth://totp/Cadenway:camille?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+        expiresAt: '2026-11-09T13:35:00Z',
+      };
+      const registration = {
+        options: {
+          challenge: 'WebAuthnChallenge000000',
+          rp: { id: 'cadenway.com', name: 'Cadenway' },
+          user: { id: 'handle', name: CAMILLE.email, displayName: CAMILLE.name },
+          pubKeyCredParams: [{ type: 'public-key', alg: -8 }],
+          authenticatorSelection: { residentKey: 'preferred' },
+          attestation: 'none',
+        },
+        expiresAt: '2026-11-09T13:26:00Z',
+      };
+      answer
+        .mockReturnValueOnce(json(200, setup))
+        .mockReturnValueOnce(json(200, registration))
+        .mockReturnValueOnce(json(200, { ...setup, secret: 'not-base32' }));
+
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.startAuthenticatorAppSetup(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+        ),
+      ).resolves.toEqual(setup);
+      await expect(
+        runWithOrganizationContext(user, () =>
+          client.startSecurityKeyRegistration(CAMILLE.id, {
+            sessionId: CAMILLE_SESSION.sessionId,
+          }),
+        ),
+      ).resolves.toEqual(registration);
+      const failure: unknown = await runWithOrganizationContext(user, () =>
+        client.startAuthenticatorAppSetup(CAMILLE.id, { sessionId: CAMILLE_SESSION.sessionId }),
+      ).catch((error: unknown) => error);
+      expect((failure as ProblemException).problem).toMatchObject({ code: 'upstream.failed' });
+      expect(String((failure as ProblemException).cause)).not.toContain('not-base32');
+    });
+
+    it('reads the policy in the organization of the context, and changes it with the session in the query and If-Match, never retried', async () => {
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 503 }))
+        .mockReturnValueOnce(json(200, policy))
+        .mockReturnValueOnce(new Response(null, { status: 503 }));
+
+      await expect(
+        runWithOrganizationContext(owner, () => client.getAuthenticationPolicy()),
+      ).resolves.toEqual(policy);
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.updateAuthenticationPolicy(
+            CAMILLE_SESSION.sessionId,
+            { twoStepVerificationRequiredFor: 'everyone' },
+            '"2"',
+          ),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503 } });
+
+      expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+        `GET ${base}/organization/authentication-policy`,
+        `GET ${base}/organization/authentication-policy`,
+        `PATCH ${base}/organization/authentication-policy?sessionId=${CAMILLE_SESSION.sessionId}`,
+      ]);
+      expect(calls[2]).toMatchObject({
+        body: { twoStepVerificationRequiredFor: 'everyone' },
+        ifMatch: '"2"',
+        principal: { organizationId: owner.organizationId, actor: { id: CAMILLE.id } },
       });
     });
   });

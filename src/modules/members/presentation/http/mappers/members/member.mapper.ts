@@ -12,7 +12,8 @@ import type { MemberPage } from '../../../../application/models/members/member-p
  * @description
  * Maps a member to `Member` of `openapi/public/members.yaml`, member by member, so that a member
  * organization-service adds later never reaches the applications before the public contract
- * declares it.
+ * declares it. `twoStepVerificationEnabled` is passed on as organization-service sends it: present
+ * for the owner and the admins, absent for anyone else.
  *
  * @param {Member} member - The member.
  * @returns {PublicMember} The public member.
@@ -26,6 +27,9 @@ export function toMember(member: Member): PublicMember {
     role: member.role,
     joinedAt: member.joinedAt,
     version: member.version,
+    ...(member.twoStepVerificationEnabled === undefined
+      ? {}
+      : { twoStepVerificationEnabled: member.twoStepVerificationEnabled }),
   };
 }
 

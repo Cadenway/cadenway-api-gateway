@@ -496,6 +496,63 @@ describe('routes of /v1/members', () => {
     expectEveryDeclaredStatus(CASES);
   });
 
+  describe('the column "Deux étapes" of the members', () => {
+    it('passes twoStepVerificationEnabled on, member by member, when organization-service sends it', async () => {
+      const page: typeof PAGE = {
+        ...PAGE,
+        items: [
+          { ...CAMILLE_MEMBER, twoStepVerificationEnabled: true },
+          { ...INES, twoStepVerificationEnabled: false },
+        ],
+      };
+      application.organization.listMembers.mockResolvedValue(page);
+
+      const response = await runRouteCase(application, identity, {
+        name: 'column',
+        method: 'get',
+        path: '/v1/members',
+        url: '/v1/members',
+        status: 200,
+      });
+
+      expect(response.body).toEqual(page);
+    });
+
+    it('passes twoStepVerificationEnabled on for one member too', async () => {
+      application.organization.getMember.mockResolvedValue({
+        ...INES,
+        twoStepVerificationEnabled: false,
+      });
+
+      const response = await runRouteCase(application, identity, {
+        name: 'member',
+        method: 'get',
+        path: '/v1/members/{memberId}',
+        url: MEMBER_URL,
+        status: 200,
+      });
+
+      expect(response.body).toMatchObject({ id: INES.id, twoStepVerificationEnabled: false });
+    });
+
+    it('leaves twoStepVerificationEnabled out when organization-service does not send it, as for a member or a guest', async () => {
+      application.organization.listMembers.mockResolvedValue({ ...PAGE });
+
+      const response = await runRouteCase(application, identity, {
+        name: 'no column',
+        method: 'get',
+        path: '/v1/members',
+        url: '/v1/members',
+        credential: 'members-token',
+        status: 200,
+      });
+
+      for (const item of (response.body as { items: Record<string, unknown>[] }).items) {
+        expect(item).not.toHaveProperty('twoStepVerificationEnabled');
+      }
+    });
+  });
+
   it.each(CASES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const))(
     '%s',
     async (_name, routeCase) => {

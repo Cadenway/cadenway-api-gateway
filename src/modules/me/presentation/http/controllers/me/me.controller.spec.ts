@@ -681,6 +681,31 @@ const SECURITY_CASES: readonly RouteCase[] = [
     code: 'auth.api-token-not-accepted',
   },
   {
+    name: 'PUT /v1/me/password relays 403 auth.reauthentication-required of an account with two-step verification',
+    method: 'put',
+    path: '/v1/me/password',
+    url: '/v1/me/password',
+    body: { currentPassword: CURRENT_PASSWORD, newPassword: NEW_PASSWORD },
+    arrange: ({ identity }) =>
+      identity.changePassword.mockRejectedValue(
+        identityProblem(403, 'auth.reauthentication-required', {
+          methods: ['authenticator-app'],
+        }),
+      ),
+    status: 403,
+    code: 'auth.reauthentication-required',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Confirmez votre identité pour continuer.',
+        status: 403,
+        code: 'auth.reauthentication-required',
+        details: { methods: ['authenticator-app'] },
+      });
+      expect(response.headers['cache-control']).toBe('no-store');
+    },
+  },
+  {
     name: 'PUT /v1/me/password refuses a cookie request from another origin before the introspection',
     method: 'put',
     path: '/v1/me/password',

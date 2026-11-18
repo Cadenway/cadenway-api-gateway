@@ -17,9 +17,51 @@ export function createIdentityAuthAdapter(client: IdentityServiceClient): Identi
     signUp: (request) => client.signUp(request),
     resendSignUpCode: (request) => client.resendSignUpCode(request),
     verifySignUp: (request) => client.verifySignUp(request),
-    signInWithPassword: (request) => client.signInWithPassword(request),
+    signInWithPassword: (request) =>
+      client.signInWithPassword({
+        email: request.email,
+        password: request.password,
+        ...(request.rememberMe === undefined ? {} : { rememberMe: request.rememberMe }),
+        client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
+        ...(request.trustedDeviceToken === undefined
+          ? {}
+          : { trustedDeviceToken: request.trustedDeviceToken }),
+      }),
     requestSignInCode: (request) => client.requestSignInCode(request),
-    signInWithCode: (request) => client.signInWithCode(request),
+    signInWithCode: (request) =>
+      client.signInWithCode({
+        email: request.email,
+        code: request.code,
+        ...(request.rememberMe === undefined ? {} : { rememberMe: request.rememberMe }),
+        client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
+        ...(request.trustedDeviceToken === undefined
+          ? {}
+          : { trustedDeviceToken: request.trustedDeviceToken }),
+      }),
+    inspectSignInChallenge: (request) => client.inspectSignInChallenge({ token: request.token }),
+    answerSignInChallengeWithAuthenticatorApp: (request) =>
+      client.answerSignInChallengeWithAuthenticatorApp({
+        token: request.token,
+        code: request.code,
+        trustDevice: request.trustDevice,
+        client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
+      }),
+    answerSignInChallengeWithBackupCode: (request) =>
+      client.answerSignInChallengeWithBackupCode({
+        token: request.token,
+        code: request.code,
+        trustDevice: request.trustDevice,
+        client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
+      }),
+    getSignInChallengeSecurityKeyOptions: (request) =>
+      client.getSignInChallengeSecurityKeyOptions({ token: request.token }),
+    answerSignInChallengeWithSecurityKey: (request) =>
+      client.answerSignInChallengeWithSecurityKey({
+        token: request.token,
+        credential: request.credential,
+        trustDevice: request.trustDevice,
+        client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
+      }),
     revokeSession: (sessionId) => client.revokeSession(sessionId),
     requestPasswordReset: (request) =>
       client.requestPasswordReset({
@@ -35,6 +77,10 @@ export function createIdentityAuthAdapter(client: IdentityServiceClient): Identi
         closeOtherSessions: request.closeOtherSessions,
         client: { ipAddress: request.client.ipAddress, userAgent: request.client.userAgent },
       }),
-    reauthenticate: (sessionId, password) => client.reauthenticate(sessionId, { password }),
+    reauthenticate: (request) =>
+      client.reauthenticate(request.sessionId, {
+        ...(request.password === undefined ? {} : { password: request.password }),
+        ...(request.code === undefined ? {} : { code: request.code }),
+      }),
   };
 }
