@@ -40,8 +40,7 @@ const INTERNAL_ACCESS_CODES: ReadonlySet<string> = new Set<string>([
  * Members of `details` that say when a refused request can succeed, in the order they are read:
  * `lockedUntil` of `auth.account-locked`, `resendAvailableAt` of `auth.code-throttled`,
  * `auth.reset-throttled` and `invitation.resend-throttled`, and `nextAvailableAt` of
- * `invitation.daily-limit-reached`. The
- * internal HTTP client does not carry the headers of a problem, so `Retry-After` is derived from
+ * `invitation.daily-limit-reached` and `access-request.limit-reached`. The internal HTTP client does not carry the headers of a problem, so `Retry-After` is derived from
  * them.
  *
  * @type {readonly string[]}

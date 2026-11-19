@@ -7,13 +7,13 @@ Identity client exported by the shared clients module.
 
 ## Public entry points
 
-| Entry point                        | Consumers                                                                                                               |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| auth.module                        | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks |
-| public/session/csrf-guard          | auth-routes                                                                                                             |
-| public/credential/credential-guard | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks |
-| public/session/verify-session      | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks |
-| public/api-token/verify-api-token  | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks |
+| Entry point                        | Consumers                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| auth.module                        | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash |
+| public/session/csrf-guard          | auth-routes                                                                                                                                      |
+| public/credential/credential-guard | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash |
+| public/session/verify-session      | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash |
+| public/api-token/verify-api-token  | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash |
 
 `CredentialGuard` is published for the route modules; the `VerifySession` and `VerifyApiToken`
 providers are exported because a module that applies the guard instantiates it in its own
