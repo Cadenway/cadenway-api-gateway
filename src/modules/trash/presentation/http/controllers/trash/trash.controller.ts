@@ -129,6 +129,40 @@ const EMPTY_TRASH_PROBLEMS: AcceptedProblems = {
 };
 
 /**
+ * Constant TRASH_TASK_BODY
+ *
+ * @description
+ * Validator of the body of `POST /v1/tasks/{taskKey}/trash`: an empty object, with no other
+ * member (`additionalProperties: false` of `EmptyRequest`, which the generated validator does not
+ * enforce).
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const TRASH_TASK_BODY: z.ZodType<Record<string, never>> = TrashTaskBody.strict();
+
+/**
+ * Constant RESTORE_TRASH_ENTRY_BODY
+ *
+ * @description
+ * Validator of the body of `POST /v1/trash/entries/{entryId}/restore`: the empty object of
+ * `EmptyRequest`, with no other member.
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const RESTORE_TRASH_ENTRY_BODY: z.ZodType<Record<string, never>> = RestoreTrashEntryBody.strict();
+
+/**
+ * Constant EMPTY_TRASH_BODY
+ *
+ * @description
+ * Validator of the body of `POST /v1/trash/empty`: the empty object of `EmptyRequest`, with no
+ * other member.
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const EMPTY_TRASH_BODY: z.ZodType<Record<string, never>> = EmptyTrashBody.strict();
+
+/**
  * Class TrashController
  *
  * @description
@@ -241,7 +275,7 @@ export class TrashController {
    * `POST /v1/tasks/{taskKey}/trash`: moves a task and its subtasks to the trash, with the optional `If-Match` relayed unchanged. `200` with the trash entry.
    *
    * @param {z.output<typeof TrashTaskParams>} params - The path parameters.
-   * @param {z.output<typeof TrashTaskBody>} body - The empty body, validated.
+   * @param {z.output<typeof TRASH_TASK_BODY>} body - The empty body, validated.
    * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
    * @returns {Promise<z.output<typeof TrashTaskResponse>>} The answer, mapped to the public contract.
    */
@@ -254,7 +288,7 @@ export class TrashController {
   })
   public async trashTask(
     @Param(new ZodValidationPipe(TrashTaskParams)) params: z.output<typeof TrashTaskParams>,
-    @Body(new ZodValidationPipe(TrashTaskBody)) body: z.output<typeof TrashTaskBody>,
+    @Body(new ZodValidationPipe(TRASH_TASK_BODY)) body: z.output<typeof TRASH_TASK_BODY>,
     @Headers('if-match') ifMatch: string | undefined,
   ): Promise<z.output<typeof TrashTaskResponse>> {
     return conformBody(
@@ -301,7 +335,7 @@ export class TrashController {
    * `POST /v1/trash/entries/{entryId}/restore`: brings an entry back to its list. `200` with what came back.
    *
    * @param {z.output<typeof RestoreTrashEntryParams>} params - The path parameters.
-   * @param {z.output<typeof RestoreTrashEntryBody>} body - The empty body, validated.
+   * @param {z.output<typeof RESTORE_TRASH_ENTRY_BODY>} body - The empty body, validated.
    * @returns {Promise<z.output<typeof RestoreTrashEntryResponse>>} The answer, mapped to the public contract.
    */
   @Post('trash/entries/:entryId/restore')
@@ -314,8 +348,8 @@ export class TrashController {
   public async restoreTrashEntry(
     @Param(new ZodValidationPipe(RestoreTrashEntryParams))
     params: z.output<typeof RestoreTrashEntryParams>,
-    @Body(new ZodValidationPipe(RestoreTrashEntryBody))
-    body: z.output<typeof RestoreTrashEntryBody>,
+    @Body(new ZodValidationPipe(RESTORE_TRASH_ENTRY_BODY))
+    body: z.output<typeof RESTORE_TRASH_ENTRY_BODY>,
   ): Promise<z.output<typeof RestoreTrashEntryResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -356,7 +390,7 @@ export class TrashController {
    * @description
    * `POST /v1/trash/empty`: takes every entry the caller may restore out of the trash. `202` with the count of the entries taken out.
    *
-   * @param {z.output<typeof EmptyTrashBody>} body - The empty body, validated.
+   * @param {z.output<typeof EMPTY_TRASH_BODY>} body - The empty body, validated.
    * @returns {Promise<z.output<typeof EmptyTrashResponse>>} The answer, mapped to the public contract.
    */
   @Post('trash/empty')
@@ -367,7 +401,7 @@ export class TrashController {
     organization: true,
   })
   public async emptyTrash(
-    @Body(new ZodValidationPipe(EmptyTrashBody)) body: z.output<typeof EmptyTrashBody>,
+    @Body(new ZodValidationPipe(EMPTY_TRASH_BODY)) body: z.output<typeof EMPTY_TRASH_BODY>,
   ): Promise<z.output<typeof EmptyTrashResponse>> {
     return conformBody(
       TASK_SERVICE,

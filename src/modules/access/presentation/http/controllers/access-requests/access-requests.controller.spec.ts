@@ -107,7 +107,7 @@ const ROUTES: readonly TaskRoute[] = [
     status: 200,
     body: {},
     calledWith: [ACCESS_REQUEST_ID, {}],
-    invalid: { url: '/v1/access-requests/not-a-uuid/refusal' },
+    invalid: { body: { reason: 'Pas maintenant.' } },
     check: (response) => {
       expect(response.body).toEqual(
         responseExample('post', '/v1/access-requests/{accessRequestId}/refusal', 200),
@@ -118,9 +118,22 @@ const ROUTES: readonly TaskRoute[] = [
 
 /**
  * Cases the matrix does not cover: a request for a task without a message, the gateway's own
- * `429` on the request, an undeclared `429` and the details of a relayed `409`.
+ * `429` on the request, an undeclared `429`, the details of a relayed `409` and a refusal of a
+ * request whose id is not a UUID.
  */
 const EXPLICIT_CASES: readonly RouteCase[] = [
+  {
+    name: 'POST /v1/access-requests/{accessRequestId}/refusal refuses an id that is not a UUID before any call',
+    method: 'post',
+    path: '/v1/access-requests/{accessRequestId}/refusal',
+    url: '/v1/access-requests/not-a-uuid/refusal',
+    body: {},
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { task }) => {
+      expect(task.refuseAccessRequest).not.toHaveBeenCalled();
+    },
+  },
   {
     name: 'POST /v1/access-requests relays a request for a task without a message and answers 202 with no body',
     method: 'post',

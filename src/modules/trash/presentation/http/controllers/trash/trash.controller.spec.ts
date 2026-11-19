@@ -57,7 +57,7 @@ const ROUTES: readonly TaskRoute[] = [
     body: {},
     headers: { 'If-Match': '"12"' },
     calledWith: [TASK_KEY, {}, '"12"'],
-    invalid: { url: '/v1/tasks/cad-482/trash' },
+    invalid: { body: { reason: 'x' } },
     check: (response) => {
       expect(response.headers.etag).toBeUndefined();
       expect(response.headers.location).toBeUndefined();
@@ -82,7 +82,7 @@ const ROUTES: readonly TaskRoute[] = [
     status: 200,
     body: {},
     calledWith: [ENTRY_ID, {}],
-    invalid: { url: '/v1/trash/entries/not-a-uuid/restore' },
+    invalid: { body: { reason: 'x' } },
     check: (response) => {
       expect(response.headers.etag).toBeUndefined();
       expect(response.headers.location).toBeUndefined();
@@ -111,7 +111,7 @@ const ROUTES: readonly TaskRoute[] = [
     status: 202,
     body: {},
     calledWith: [{}],
-    invalid: { body: [] },
+    invalid: { body: { reason: 'x' } },
     check: (response) => {
       expect(response.headers.etag).toBeUndefined();
       expect(response.headers.location).toBeUndefined();
@@ -149,6 +149,27 @@ describe('routes of /v1/tasks/{taskKey}/trash and /v1/trash', () => {
     '%s',
     async (_name, routeCase) => {
       await runRouteCase(application, identity, routeCase);
+    },
+  );
+
+  it.each([
+    ['post', '/v1/tasks/{taskKey}/trash', '/v1/tasks/cad-482/trash'],
+    ['post', '/v1/trash/entries/{entryId}/restore', '/v1/trash/entries/not-a-uuid/restore'],
+  ] as const)(
+    'refuses %s %s with a path outside its contract before any call',
+    async (method, path, url) => {
+      await runRouteCase(application, identity, {
+        name: 'path outside the contract',
+        method,
+        path,
+        url,
+        body: {},
+        status: 400,
+        code: 'request.invalid',
+      });
+
+      expect(application.task.trashTask).not.toHaveBeenCalled();
+      expect(application.task.restoreTrashEntry).not.toHaveBeenCalled();
     },
   );
 

@@ -31,6 +31,9 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   a body, the emptying `202` with `entryCount`. No success answer of the contract declares an
   `ETag` or a `Location`, and no body has a top-level `version`, so none is set. The optional
   `If-Match` of the deletion is relayed unchanged; the other routes declare none.
+- The `EmptyRequest` bodies of the deletion, the restoration and the emptying are checked with
+  `.strict()`: the contract declares `additionalProperties: false`, which the generated validator
+  does not enforce, so a body with any member answers `400 request.invalid` before any call.
 - The `details` of `404 task.trashed` (the entry the task is in), of `409 task.archived` (`key`)
   and of `403 access.role-insufficient` (`role`, `requiredRole`) are relayed without
   `details.service`.

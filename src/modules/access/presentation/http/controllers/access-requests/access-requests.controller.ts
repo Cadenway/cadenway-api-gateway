@@ -117,6 +117,19 @@ const REFUSE_ACCESS_REQUEST_PROBLEMS: AcceptedProblems = {
 };
 
 /**
+ * Constant REFUSE_ACCESS_REQUEST_BODY
+ *
+ * @description
+ * Validator of the body of the refusal: an empty object, with no other member
+ * (`EmptyRequest`, `additionalProperties: false` in the contract, which the generated validator
+ * does not enforce).
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const REFUSE_ACCESS_REQUEST_BODY: z.ZodType<Record<string, never>> =
+  RefuseAccessRequestBody.strict();
+
+/**
  * Class AccessRequestsController
  *
  * @description
@@ -309,7 +322,7 @@ export class AccessRequestsController {
    * request, `refused`.
    *
    * @param {z.output<typeof RefuseAccessRequestParams>} params - The path parameters.
-   * @param {z.output<typeof RefuseAccessRequestBody>} body - The empty body, validated.
+   * @param {z.output<typeof REFUSE_ACCESS_REQUEST_BODY>} body - The empty body, validated.
    * @returns {Promise<z.output<typeof RefuseAccessRequestResponse>>} The answer, mapped to the public contract.
    */
   @Post('access-requests/:accessRequestId/refusal')
@@ -322,8 +335,8 @@ export class AccessRequestsController {
   public async refuseAccessRequest(
     @Param(new ZodValidationPipe(RefuseAccessRequestParams))
     params: z.output<typeof RefuseAccessRequestParams>,
-    @Body(new ZodValidationPipe(RefuseAccessRequestBody))
-    body: z.output<typeof RefuseAccessRequestBody>,
+    @Body(new ZodValidationPipe(REFUSE_ACCESS_REQUEST_BODY))
+    body: z.output<typeof REFUSE_ACCESS_REQUEST_BODY>,
   ): Promise<z.output<typeof RefuseAccessRequestResponse>> {
     return conformBody(
       TASK_SERVICE,
