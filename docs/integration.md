@@ -14,7 +14,9 @@ implemented (see [Account security routes](#account-security-routes)) and covere
 tests and `tests/account-security.int-spec.ts`; the task core routes of `spaces.yaml`, `lists.yaml`
 and `tasks.yaml` and the client of task-service are implemented (see
 [Task core routes](#task-core-routes)) and covered by the route tests, the client tests and
-`tests/tasks.int-spec.ts`.
+`tests/tasks.int-spec.ts`; the sharing, access request, archive, trash and deletion routes are
+implemented (see [Access, archive and trash routes](#access-archive-and-trash-routes)) and covered
+by the route tests, the client tests and `tests/task-access-lifecycle.int-spec.ts`.
 
 ## Public and internal boundaries
 
@@ -342,6 +344,25 @@ request → auth guard (token) → scope guard → organization context → rate
   and each later secondary part (attachments, development links, comments) is read in parallel
   within 800 ms and named in `partial` when it cannot be read. None exists yet: `partial` is
   `[]`.
+
+### Access, archive and trash routes
+
+- The 23 routes of phase P3b-1 follow the task core rules above: the 10 of
+  `openapi/public/access.yaml` (grants of spaces and lists, access requests), the 6 of
+  `archives.yaml`, the 5 of `trash.yaml`, `DELETE /v1/spaces/{spaceId}` and
+  `DELETE /v1/lists/{listId}`. Reads need `tasks:read` and writes `tasks:write`; there is no
+  sharing scope.
+- task-service decides every role and state: `403 access.role-insufficient`,
+  `403 space.manage-forbidden`, `409 task.archived` and `404 task.trashed` (with the trash entry
+  in `details`, the detail aggregate included) are relayed as each public operation declares
+  them, on the task core routes too.
+- A grant change answers the `ETag` task-service gives for the version of the space or the list;
+  `POST /v1/access-requests` answers `202` without a body, and its
+  `429 access-request.limit-reached` gets `Retry-After` from `details.nextAvailableAt`.
+- Empty request bodies (`EmptyRequest`) refuse any member, as the contract declares.
+- The internal routes `GET /internal/v1/lists/{listId}/access` and
+  `GET /internal/v1/tasks/{taskKey}/access` belong to cadenway-realtime-gateway: the client of the
+  gateway has no method for them, and its tests check it.
 
 ### An aggregate
 

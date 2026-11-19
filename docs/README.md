@@ -9,9 +9,9 @@ logs, OpenTelemetry, `application/problem+json` errors, the request deadline, th
 signer, the public-edge HTTP settings (security headers, cookies, one trusted proxy hop, CORS for
 the allowed origins) and the health routes, whose readiness checks Redis. It serves every route
 of `openapi/public/auth.yaml`, `organizations.yaml`, `members.yaml`, `api-tokens.yaml`,
-`spaces.yaml`, `lists.yaml` and `tasks.yaml` through the clients of identity-service,
-organization-service and task-service generated from their internal contracts (phases P2a, P2b and
-P3a of the integration plan). It authenticates the session cookie and the
+`spaces.yaml`, `lists.yaml`, `tasks.yaml`, `access.yaml`, `archives.yaml` and `trash.yaml` through
+the clients of identity-service, organization-service and task-service generated from their
+internal contracts (phases P2a, P2b, P3a and P3b-1 of the integration plan). It authenticates the session cookie and the
 personal API token by introspecting them on every request, enforces the security requirement and
 the organization scope of each operation, and limits each session or token to 600 requests per
 minute on Redis, each client address to 60 requests without a credential and 10 failed bearer
