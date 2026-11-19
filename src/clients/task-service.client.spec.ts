@@ -8,13 +8,20 @@ import {
   type InternalPrincipal,
   type OrganizationContext,
 } from '@cadenway/nest-common';
+import { readFileSync } from 'node:fs';
+
 import { http, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ATELIER_NORD_ID, CAMILLE } from '../../tests/support/fake-identity.js';
-import { taskDetailCore } from '../../tests/support/fake-task.js';
-import { responseExample } from '../../tests/support/public-contract.js';
+import {
+  createFakeTask,
+  taskDetailCore,
+  type FakeTask,
+  type TaskServiceMethod,
+} from '../../tests/support/fake-task.js';
+import { responseExample, type SpecMethod } from '../../tests/support/public-contract.js';
 import {
   GATEWAY_ISSUER,
   generateSigningKeys,
@@ -36,6 +43,14 @@ const CAMILLE_IN_ATELIER_NORD: OrganizationContext = {
   role: 'owner',
   scopes: ['tasks:read', 'tasks:write'],
 };
+
+/**
+ * Ids of the space, the list, the access request and the trash entry of the calls.
+ */
+const SPACE_ID = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01';
+const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
+const ACCESS_REQUEST_ID = '019a7e00-1a2b-7c3d-8e4f-5a6b7c8d9e21';
+const ENTRY_ID = '019a7f00-1a2b-7c3d-8e4f-5a6b7c8d9e31';
 
 /**
  * A call task-service received.
@@ -503,5 +518,583 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     expect(
       calls.map((call: ReceivedCall) => `${call.method} ${call.url.split('?')[0] ?? ''}`),
     ).toEqual(routes.map(([method, internalPath]) => `${method.toUpperCase()} ${internalPath}`));
+  });
+
+  /**
+   * Builds the answer of a public example, which the internal contract shares.
+   *
+   * @param method - Method of the public operation.
+   * @param path - Path of the public operation.
+   * @param status - Success status of the operation.
+   * @param headers - Further headers.
+   * @returns A function building the answer.
+   */
+  function example(
+    method: SpecMethod,
+    path: string,
+    status = 200,
+    headers: Record<string, string> = {},
+  ): () => Response {
+    return () => json(responseExample(method, path, status), status, headers);
+  }
+
+  /**
+   * Builds an answer without a body.
+   *
+   * @param status - The status.
+   * @param headers - Further headers.
+   * @returns A function building the answer.
+   */
+  function empty(status: number, headers: Record<string, string> = {}): () => Response {
+    return () => new Response(null, { status, headers });
+  }
+
+  /**
+   * Answers `503 service.unavailable`.
+   *
+   * @returns The answer.
+   */
+  function unavailable(): Response {
+    return json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503);
+  }
+
+  it('sends every deletion, grant, access request, archive and trash call to its internal path, and none to an access check', async () => {
+    const routes: readonly [
+      'get' | 'post' | 'put' | 'delete',
+      string,
+      () => Response,
+      () => Promise<unknown>,
+    ][] = [
+      [
+        'delete',
+        `/internal/v1/spaces/${SPACE_ID}`,
+        empty(204),
+        () => client.deleteSpace(SPACE_ID, '"3"'),
+      ],
+      [
+        'delete',
+        `/internal/v1/lists/${LIST_ID}`,
+        empty(204),
+        () => client.deleteList(LIST_ID, undefined),
+      ],
+      [
+        'get',
+        `/internal/v1/spaces/${SPACE_ID}/grants`,
+        example('get', '/v1/spaces/{spaceId}/grants'),
+        () => client.listSpaceGrants(SPACE_ID, { limit: 20 }),
+      ],
+      [
+        'put',
+        `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        example('put', '/v1/spaces/{spaceId}/grants/{userId}', 200, { ETag: '"8"' }),
+        () => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      ],
+      [
+        'delete',
+        `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        empty(204, { ETag: '"9"' }),
+        () => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined),
+      ],
+      [
+        'get',
+        `/internal/v1/lists/${LIST_ID}/grants`,
+        example('get', '/v1/lists/{listId}/grants'),
+        () => client.listListGrants(LIST_ID, { limit: 20 }),
+      ],
+      [
+        'put',
+        `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        example('put', '/v1/lists/{listId}/grants/{userId}', 200, { ETag: '"4"' }),
+        () => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'comment' }, undefined),
+      ],
+      [
+        'delete',
+        `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        empty(204, { ETag: '"5"' }),
+        () => client.removeListGrant(LIST_ID, CAMILLE.id, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/access-requests',
+        empty(202),
+        () => client.createAccessRequest({ spaceId: SPACE_ID, message: null }),
+      ],
+      [
+        'get',
+        '/internal/v1/access-requests',
+        example('get', '/v1/access-requests'),
+        () => client.listAccessRequests({ limit: 20 }),
+      ],
+      [
+        'post',
+        `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/approval`,
+        example('post', '/v1/access-requests/{accessRequestId}/approval'),
+        () => client.approveAccessRequest(ACCESS_REQUEST_ID, { role: 'view' }),
+      ],
+      [
+        'post',
+        `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/refusal`,
+        example('post', '/v1/access-requests/{accessRequestId}/refusal'),
+        () => client.refuseAccessRequest(ACCESS_REQUEST_ID, {}),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/archive`,
+        example('post', '/v1/lists/{listId}/archive'),
+        () => client.archiveList(LIST_ID, {}, undefined),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/unarchive`,
+        example('post', '/v1/lists/{listId}/unarchive'),
+        () => client.unarchiveList(LIST_ID, {}, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/archive',
+        example('post', '/v1/tasks/{taskKey}/archive'),
+        () => client.archiveTask('CAD-482', {}, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/unarchive',
+        example('post', '/v1/tasks/{taskKey}/unarchive'),
+        () => client.unarchiveTask('CAD-482', {}, undefined),
+      ],
+      [
+        'get',
+        '/internal/v1/archives/lists',
+        example('get', '/v1/archives/lists'),
+        () => client.listArchivedLists({ limit: 20 }),
+      ],
+      [
+        'get',
+        '/internal/v1/archives/tasks',
+        example('get', '/v1/archives/tasks'),
+        () => client.listArchivedTasks({ limit: 20 }),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/trash',
+        example('post', '/v1/tasks/{taskKey}/trash'),
+        () => client.trashTask('CAD-482', {}, undefined),
+      ],
+      [
+        'get',
+        '/internal/v1/trash/entries',
+        example('get', '/v1/trash/entries'),
+        () => client.listTrash({ limit: 20 }),
+      ],
+      [
+        'delete',
+        `/internal/v1/trash/entries/${ENTRY_ID}`,
+        empty(204),
+        () => client.purgeTrashEntry(ENTRY_ID),
+      ],
+      [
+        'post',
+        `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
+        example('post', '/v1/trash/entries/{entryId}/restore'),
+        () => client.restoreTrashEntry(ENTRY_ID, {}),
+      ],
+      [
+        'post',
+        '/internal/v1/trash/empty',
+        example('post', '/v1/trash/empty', 202),
+        () => client.emptyTrash({}),
+      ],
+    ];
+    for (const [method, internalPath, reply] of routes) {
+      answer(method, internalPath, reply);
+    }
+
+    for (const [, , , call] of routes) {
+      await asCamille(call);
+    }
+
+    const sent: readonly string[] = calls.map(
+      (call: ReceivedCall) => `${call.method} ${call.url.split('?')[0] ?? ''}`,
+    );
+    expect(sent).toEqual(
+      routes.map(([method, internalPath]) => `${method.toUpperCase()} ${internalPath}`),
+    );
+    expect(sent.filter((line: string) => line.endsWith('/access'))).toEqual([]);
+  });
+
+  it('exposes no access check of a list or a task, which task-service reserves to the realtime gateway', () => {
+    const methods: readonly string[] = Object.getOwnPropertyNames(TaskServiceClient.prototype);
+    const source: string = readFileSync(
+      new URL('./task-service.client.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(methods.filter((name: string) => /^check|Access$/u.test(name))).toEqual([]);
+    expect(source).not.toContain('checkListAccessInternal');
+    expect(source).not.toContain('checkTaskAccessInternal');
+  });
+
+  it('answers a success status other than the contract declares as 503 upstream.failed', async () => {
+    const cases: readonly ['delete' | 'post', string, () => Promise<unknown>][] = [
+      ['delete', `/internal/v1/spaces/${SPACE_ID}`, () => client.deleteSpace(SPACE_ID, undefined)],
+      ['delete', `/internal/v1/lists/${LIST_ID}`, () => client.deleteList(LIST_ID, undefined)],
+      [
+        'post',
+        '/internal/v1/access-requests',
+        () => client.createAccessRequest({ spaceId: SPACE_ID }),
+      ],
+      ['delete', `/internal/v1/trash/entries/${ENTRY_ID}`, () => client.purgeTrashEntry(ENTRY_ID)],
+      ['post', '/internal/v1/trash/empty', () => client.emptyTrash({})],
+    ];
+    for (const [method, internalPath] of cases) {
+      answer(method, internalPath, () => json({ entryCount: 2 }, 200));
+    }
+
+    for (const [, , call] of cases) {
+      await expect(asCamille(call)).rejects.toMatchObject({
+        problem: { status: 503, code: 'upstream.failed', details: { service: TASK_SERVICE } },
+      });
+    }
+  });
+
+  it('resolves an access request with nothing and the emptying of the trash with its validated count', async () => {
+    answer('post', '/internal/v1/access-requests', empty(202));
+    answer('post', '/internal/v1/trash/empty', () => json({ entryCount: 2, extra: true }, 202));
+
+    await expect(
+      asCamille(() => client.createAccessRequest({ taskKey: 'DIR-12', message: null })),
+    ).resolves.toBeUndefined();
+    await expect(asCamille(() => client.emptyTrash({}))).resolves.toEqual({ entryCount: 2 });
+    expect(calls.map((call: ReceivedCall) => call.body)).toEqual([
+      { taskKey: 'DIR-12', message: null },
+      {},
+    ]);
+  });
+
+  it('refuses to send a grant, an approval, an access request or a page outside the internal contract, without calling', async () => {
+    const cases: readonly [() => Promise<unknown>, string][] = [
+      [() => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'owner' }, undefined), 'role'],
+      [() => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'admin' }, undefined), 'role'],
+      [() => client.approveAccessRequest(ACCESS_REQUEST_ID, {}), 'role'],
+      [() => client.createAccessRequest({ spaceId: 'not-an-id' }), 'spaceId'],
+      [() => client.listAccessRequests({ listId: 'not-an-id' }), 'listId'],
+      [() => client.listSpaceGrants(SPACE_ID, { limit: 101 }), 'limit'],
+      [() => client.listListGrants(LIST_ID, { limit: 0 }), 'limit'],
+      [() => client.listArchivedLists({ limit: 0 }), 'limit'],
+      [() => client.listArchivedTasks({ limit: 101 }), 'limit'],
+      [() => client.listTrash({ limit: 0 }), 'limit'],
+    ];
+
+    for (const [call, member] of cases) {
+      await expect(asCamille(async () => call())).rejects.toThrow(
+        `outside the internal contract: ${member}`,
+      );
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('relays the filters of the access requests and the empty body of an action with its If-Match', async () => {
+    answer('get', '/internal/v1/access-requests', example('get', '/v1/access-requests'));
+    answer(
+      'post',
+      '/internal/v1/tasks/CAD-482/archive',
+      example('post', '/v1/tasks/{taskKey}/archive'),
+    );
+
+    await asCamille(() => client.listAccessRequests({ spaceId: SPACE_ID, limit: 20 }));
+    await asCamille(() => client.archiveTask('CAD-482', {}, '"12"'));
+
+    expect(calls[0]?.url).toBe(`/internal/v1/access-requests?spaceId=${SPACE_ID}&limit=20`);
+    expect(calls[1]).toMatchObject({ body: {}, ifMatch: '"12"' });
+  });
+
+  it('never retries an archive, a restoration, a move to the trash, a deletion or a grant carrying If-Match', async () => {
+    const cases: readonly ['post' | 'put' | 'delete', string, () => Promise<unknown>][] = [
+      ['delete', `/internal/v1/spaces/${SPACE_ID}`, () => client.deleteSpace(SPACE_ID, '"3"')],
+      ['delete', `/internal/v1/lists/${LIST_ID}`, () => client.deleteList(LIST_ID, '"3"')],
+      [
+        'put',
+        `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        () => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'view' }, '"3"'),
+      ],
+      [
+        'delete',
+        `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        () => client.removeListGrant(LIST_ID, CAMILLE.id, '"3"'),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/archive`,
+        () => client.archiveList(LIST_ID, {}, '"3"'),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/unarchive`,
+        () => client.unarchiveList(LIST_ID, {}, '"3"'),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/unarchive',
+        () => client.unarchiveTask('CAD-482', {}, '"3"'),
+      ],
+      ['post', '/internal/v1/tasks/CAD-482/trash', () => client.trashTask('CAD-482', {}, '"3"')],
+    ];
+    for (const [method, internalPath] of cases) {
+      answer(method, internalPath, unavailable);
+    }
+
+    for (const [, , call] of cases) {
+      // A fresh breaker for each case: five failures in a row would open it.
+      client = new TaskServiceClient(
+        new InternalHttpClient({ service: TASK_SERVICE, baseUrl: BASE_URL, signer }),
+      );
+      await expect(asCamille(call)).rejects.toMatchObject({
+        problem: { status: 503, code: 'upstream.unavailable' },
+      });
+    }
+    expect(calls.map((call: ReceivedCall) => call.ifMatch)).toEqual(cases.map(() => '"3"'));
+  });
+
+  it('retries a PUT or a DELETE without If-Match once after a 503, and never a POST without Idempotency-Key', async () => {
+    const attempts = new Map<string, number>();
+    /**
+     * Answers 503 on the first attempt at a path, then what `reply` builds.
+     *
+     * @param path - The path.
+     * @param reply - The answer of the second attempt.
+     * @returns The answer of the handler.
+     */
+    const second =
+      (path: string, reply: () => Response): (() => Response) =>
+      () => {
+        const attempt: number = (attempts.get(path) ?? 0) + 1;
+        attempts.set(path, attempt);
+        return attempt === 1 ? unavailable() : reply();
+      };
+    const grant = `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`;
+    const entry = `/internal/v1/trash/entries/${ENTRY_ID}`;
+    answer(
+      'put',
+      grant,
+      second(grant, example('put', '/v1/spaces/{spaceId}/grants/{userId}', 200, { ETag: '"8"' })),
+    );
+    answer('delete', grant, second(grant, empty(204, { ETag: '"9"' })));
+    answer('delete', entry, second(entry, empty(204)));
+    answer('post', '/internal/v1/access-requests', unavailable);
+    answer('post', `${entry}/restore`, unavailable);
+    answer('post', '/internal/v1/trash/empty', unavailable);
+    answer('post', `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/approval`, unavailable);
+
+    await expect(
+      asCamille(() => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined)),
+    ).resolves.toMatchObject({ version: 8 });
+    attempts.clear();
+    await expect(
+      asCamille(() => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined)),
+    ).resolves.toBe(9);
+    await expect(asCamille(() => client.purgeTrashEntry(ENTRY_ID))).resolves.toBeUndefined();
+    const posts: readonly (() => Promise<unknown>)[] = [
+      () => client.createAccessRequest({ spaceId: SPACE_ID }),
+      () => client.restoreTrashEntry(ENTRY_ID, {}),
+      () => client.emptyTrash({}),
+      () => client.approveAccessRequest(ACCESS_REQUEST_ID, { role: 'view' }),
+    ];
+    for (const call of posts) {
+      await expect(asCamille(call)).rejects.toMatchObject({
+        problem: { status: 503, code: 'upstream.unavailable' },
+      });
+    }
+
+    expect(calls.map((call: ReceivedCall) => `${call.method} ${call.url}`)).toEqual([
+      `PUT ${grant}`,
+      `PUT ${grant}`,
+      `DELETE ${grant}`,
+      `DELETE ${grant}`,
+      `DELETE ${entry}`,
+      `DELETE ${entry}`,
+      'POST /internal/v1/access-requests',
+      `POST ${entry}/restore`,
+      'POST /internal/v1/trash/empty',
+      `POST /internal/v1/access-requests/${ACCESS_REQUEST_ID}/approval`,
+    ]);
+  });
+
+  it('reads the version of the space or the list from the strong ETag of a grant', async () => {
+    const spaceGrant: unknown = responseExample('put', '/v1/spaces/{spaceId}/grants/{userId}', 200);
+    const listGrant: unknown = responseExample('put', '/v1/lists/{listId}/grants/{userId}', 200);
+    answer('put', `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`, () =>
+      json(spaceGrant, 200, { ETag: '"8"' }),
+    );
+    answer('put', `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`, () =>
+      json(listGrant, 200, { ETag: '"4"' }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+      empty(204, { ETag: '"9"' }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+      empty(204, { ETag: '"5"' }),
+    );
+
+    await expect(
+      asCamille(() => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, '"7"')),
+    ).resolves.toEqual({ grant: spaceGrant, version: 8 });
+    await expect(
+      asCamille(() => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'comment' }, '"3"')),
+    ).resolves.toEqual({ grant: listGrant, version: 4 });
+    await expect(
+      asCamille(() => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, '"8"')),
+    ).resolves.toBe(9);
+    await expect(asCamille(() => client.removeListGrant(LIST_ID, CAMILLE.id, '"4"'))).resolves.toBe(
+      5,
+    );
+    expect(calls.map((call: ReceivedCall) => call.ifMatch)).toEqual(['"7"', '"3"', '"8"', '"4"']);
+    expect(calls.slice(0, 2).map((call: ReceivedCall) => call.body)).toEqual([
+      { role: 'edit' },
+      { role: 'comment' },
+    ]);
+  });
+
+  it('answers a grant without a strong ETag as 503 upstream.failed', async () => {
+    let etag: Record<string, string> = {};
+    answer('put', `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`, () =>
+      json(responseExample('put', '/v1/spaces/{spaceId}/grants/{userId}', 200), 200, etag),
+    );
+    answer('put', `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`, () =>
+      json(responseExample('put', '/v1/lists/{listId}/grants/{userId}', 200), 200, etag),
+    );
+    answer(
+      'delete',
+      `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+      () => new Response(null, { status: 204, headers: etag }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+      () => new Response(null, { status: 204, headers: etag }),
+    );
+    const grantCalls: readonly (() => Promise<unknown>)[] = [
+      () => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      () => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      () => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined),
+      () => client.removeListGrant(LIST_ID, CAMILLE.id, undefined),
+    ];
+
+    const invalid: readonly Record<string, string>[] = [{}, { ETag: 'W/"8"' }, { ETag: '8' }];
+    for (const headers of invalid) {
+      etag = headers;
+      for (const call of grantCalls) {
+        await expect(asCamille(call)).rejects.toMatchObject({
+          problem: { status: 503, code: 'upstream.failed', details: { service: TASK_SERVICE } },
+        });
+      }
+    }
+  });
+
+  it('keeps the access members of a space and a list through the internal validation', async () => {
+    const space: unknown = responseExample('get', '/v1/spaces/{spaceId}', 200);
+    const list: unknown = responseExample('get', '/v1/lists/{listId}', 200);
+    answer('get', `/internal/v1/spaces/${SPACE_ID}`, () => json(space));
+    answer('get', `/internal/v1/lists/${LIST_ID}`, () => json(list));
+
+    const read: unknown = await asCamille(() => client.getSpace(SPACE_ID));
+    const readList: unknown = await asCamille(() => client.getList(LIST_ID));
+
+    expect(read).toEqual(space);
+    expect(read).toHaveProperty('callerRole');
+    expect(read).toHaveProperty('callerCanManage');
+    expect(readList).toEqual(list);
+    for (const member of ['organizationAccess', 'archivedAt', 'archivedBy', 'callerRole']) {
+      expect(readList).toHaveProperty(member);
+    }
+  });
+
+  it('keeps the archive and trash members of every answer through the internal validation', async () => {
+    const cases: readonly [
+      'get' | 'post',
+      string,
+      string,
+      () => Promise<unknown>,
+      readonly string[],
+    ][] = [
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/archive`,
+        '/v1/lists/{listId}/archive',
+        () => client.archiveList(LIST_ID, {}, undefined),
+        ['archivedAt', 'archivedBy', 'organizationAccess', 'callerRole'],
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/archive',
+        '/v1/tasks/{taskKey}/archive',
+        () => client.archiveTask('CAD-482', {}, undefined),
+        ['archivedAt', 'archivedBy'],
+      ],
+      [
+        'get',
+        '/internal/v1/archives/lists',
+        '/v1/archives/lists',
+        () => client.listArchivedLists({}),
+        ['items.0.list.archivedAt', 'items.0.list.archivedBy', 'items.0.taskCount'],
+      ],
+      [
+        'get',
+        '/internal/v1/archives/tasks',
+        '/v1/archives/tasks',
+        () => client.listArchivedTasks({}),
+        ['items.0.archivedAt', 'items.0.archivedBy', 'items.0.subtaskCount'],
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/trash',
+        '/v1/tasks/{taskKey}/trash',
+        () => client.trashTask('CAD-482', {}, undefined),
+        ['parentKey', 'subtaskCount', 'list.state', 'trashedAt', 'trashedBy', 'purgeAt'],
+      ],
+      [
+        'get',
+        '/internal/v1/trash/entries',
+        '/v1/trash/entries',
+        () => client.listTrash({}),
+        ['items.0.trashedAt', 'items.0.trashedBy', 'items.0.purgeAt', 'items.0.list.state'],
+      ],
+      [
+        'post',
+        `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
+        '/v1/trash/entries/{entryId}/restore',
+        () => client.restoreTrashEntry(ENTRY_ID, {}),
+        ['subtaskCount', 'detached', 'listRestored', 'spaceRestored'],
+      ],
+    ];
+    for (const [method, internalPath, publicPath] of cases) {
+      answer(method, internalPath, example(method, publicPath));
+    }
+
+    for (const [method, , publicPath, call, members] of cases) {
+      const read: unknown = await asCamille(call);
+      expect(read).toEqual(responseExample(method, publicPath, 200));
+      for (const member of members) {
+        expect(read).toHaveProperty(member.split('.'));
+      }
+    }
+  });
+
+  it('builds a fake of task-service whose every call answers an example the internal contract accepts', async () => {
+    const fake: FakeTask = createFakeTask();
+    const names = Object.keys(fake) as TaskServiceMethod[];
+
+    await expect(
+      Promise.all(
+        names.map((name: TaskServiceMethod) => (fake[name] as unknown as () => Promise<unknown>)()),
+      ),
+    ).resolves.toHaveLength(names.length);
+    expect([...names].sort()).toEqual(
+      Object.getOwnPropertyNames(TaskServiceClient.prototype)
+        .filter((name: string) => name !== 'constructor')
+        .sort(),
+    );
   });
 });
