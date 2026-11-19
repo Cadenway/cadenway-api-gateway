@@ -36,6 +36,12 @@ export interface TaskRoute {
   };
   /** Further checks of the success answer (headers, body). */
   readonly check?: (response: request.Response, fakes: CaseFakes) => void;
+  /**
+   * Codes the public operation declares but its internal operation does not: task-service never
+   * answers them there, so the route answers them `503 upstream.failed` like any undeclared client
+   * error, and the matrix checks that instead of their relay.
+   */
+  readonly notRelayed?: readonly string[];
 }
 
 /**
@@ -69,9 +75,10 @@ const RELAYED_STATUSES: readonly ProblemStatus[] = [400, 403, 404, 409, 412, 422
 
 /**
  * Builds the cases of one route: the success with a session and with a token, the guards (no
- * credential, a token without the scope, a session without organization, the rate limit), the
- * validation of the request, every client error the public operation declares relayed with its
- * code, an undeclared one and an unavailable task-service answered as `503`.
+ * credential, a token without the scope, a session without organization, a session request from
+ * another site for a change, the rate limit), the validation of the request, every client error
+ * the public operation declares relayed with its code (but those of `notRelayed`), an undeclared
+ * one and an unavailable task-service answered as `503`.
  *
  * @param route - The route.
  * @returns Its cases.
@@ -178,9 +185,29 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
       code: 'upstream.unavailable',
     },
   ];
+  if (route.method !== 'get') {
+    cases.push({
+      ...base,
+      name: `${label} refuses a session request from another site before any call`,
+      origin: 'https://evil.test',
+      status: 403,
+      code: 'auth.csrf-rejected',
+      check: notCalled,
+    });
+  }
   for (const status of RELAYED_STATUSES) {
     for (const code of declaredProblemCodes(route.method, route.path, status)) {
       if (GUARD_CODES.has(code)) {
+        continue;
+      }
+      if (route.notRelayed?.includes(code) === true) {
+        cases.push({
+          ...base,
+          name: `${label} answers ${String(status)} ${code}, which its internal operation does not declare, as 503 upstream.failed`,
+          arrange: ({ task }) => task[route.call].mockRejectedValue(taskProblem(status, code)),
+          status: 503,
+          code: 'upstream.failed',
+        });
         continue;
       }
       cases.push({

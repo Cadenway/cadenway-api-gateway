@@ -413,6 +413,18 @@ const LIST_TASK_ACTIVITY_QUERY = ListTaskActivityQueryParams.extend({
 });
 
 /**
+ * Constant ASSIGN_TASK_BODY
+ *
+ * @description
+ * Validator of the body of `PUT /v1/tasks/{taskKey}/assignees/{userId}`: an empty object, with no
+ * other member. The contract's `EmptyRequest` declares `additionalProperties: false`, which the
+ * generated validator does not enforce, so a body with any member answers `400 request.invalid`.
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const ASSIGN_TASK_BODY: z.ZodType<Record<string, never>> = AssignTaskBody.strict();
+
+/**
  * Class TasksController
  *
  * @description
@@ -1014,7 +1026,7 @@ export class TasksController {
    * `PUT /v1/tasks/{taskKey}/assignees/{userId}`: assigns a member, with `If-Match` relayed unchanged. The empty body is checked and not relayed.
    *
    * @param {z.output<typeof AssignTaskParams>} params - The path parameters.
-   * @param {z.output<typeof AssignTaskBody>} body - The body, validated.
+   * @param {z.output<typeof ASSIGN_TASK_BODY>} body - The empty body, validated.
    * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
    * @returns {Promise<z.output<typeof AssignTaskResponse>>} The answer, mapped to the public contract.
    */
@@ -1026,7 +1038,7 @@ export class TasksController {
   })
   public async assignTask(
     @Param(new ZodValidationPipe(AssignTaskParams)) params: z.output<typeof AssignTaskParams>,
-    @Body(new ZodValidationPipe(AssignTaskBody)) body: z.output<typeof AssignTaskBody>,
+    @Body(new ZodValidationPipe(ASSIGN_TASK_BODY)) body: z.output<typeof ASSIGN_TASK_BODY>,
     @Headers('if-match') ifMatch: string | undefined,
   ): Promise<z.output<typeof AssignTaskResponse>> {
     return conformBody(

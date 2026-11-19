@@ -397,6 +397,12 @@ Every error leaves as `application/problem+json` (RFC 9457): `type`, `title`, `s
 - The response carries `X-Request-Id`, the reference the webapp displays.
 - The error filter comes from `@cadenway/nest-common`; an internal problem document is translated to
   the public contract, never forwarded.
+- Known limit: the `details` of a relayed problem are forwarded as task-service, identity-service or
+  organization-service sent them, without `service` but without a check of their members (the
+  public `Problem.details` is an open object). Today the internal and public `details` of every
+  relayed code are declared identical; an allow-list of the declared members per code in
+  `src/problems/` would keep a member a service adds later from reaching the applications before
+  the public contract declares it.
 
 ## Auth Tokens
 

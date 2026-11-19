@@ -37,6 +37,11 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - The `details` of `404 task.trashed` (the entry the task is in), of `409 task.archived` (`key`)
   and of `403 access.role-insufficient` (`role`, `requiredRole`) are relayed without
   `details.service`.
+- Each route relays the codes both its public and its internal operation declare. The public
+  `403 access.role-insufficient` of the restoration, the erasure and the emptying is not declared
+  by their internal operations (an entry the caller may not manage is not found), so it is never
+  relayed there: task-service answering it would be `503 upstream.failed`.
 - task-service serves the trash routes, and the deletion of a list or a space that sends their
-  tasks here, only once its PR 3 (trash and deletion) is merged and deployed. Until then a
-  `404` or a `503` on these routes comes from task-service, not from the gateway.
+  tasks here, only once its PR 3 (trash and deletion) is merged and deployed. Until then these
+  routes answer `503 upstream.failed`: task-service answers its unknown route with a `404` whose
+  code no public operation declares.

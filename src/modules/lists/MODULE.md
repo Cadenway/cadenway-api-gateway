@@ -39,6 +39,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - The deletion answers `204` without a body nor an `ETag`, as the contract declares, with
   `If-Match` relayed unchanged; `403 access.role-insufficient`, `404` and `412` are relayed.
   task-service deletes the list, archived or not, and moves its tasks to the trash afterwards; the
-  gateway decides nothing about either.
+  gateway decides nothing about either. task-service serves the deletion once its PR 3 (trash and
+  deletion) is merged and deployed; until then the route answers `503 upstream.failed`.
 - The counts relay the `today` of the caller; `kind` and `actorId` of the activity are
   comma-separated query parameters, split before the public validator checks them.

@@ -269,7 +269,7 @@ const ROUTES: readonly TaskRoute[] = [
     body: {},
     headers: { 'If-Match': '"12"' },
     calledWith: [TASK_KEY, INES_ID, '"12"'],
-    invalid: { url: `/v1/tasks/${TASK_KEY}/assignees/ines` },
+    invalid: { body: { role: 'reviewer' } },
     check: expectTaskEtag,
   },
   {

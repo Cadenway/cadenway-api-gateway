@@ -50,4 +50,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - The deletion answers `204` without a body nor an `ETag`, as the contract declares, with
   `If-Match` relayed unchanged; `403 space.manage-forbidden`, `404` and `412` are relayed.
   task-service deletes the lists with the space and moves its tasks to the trash afterwards; the
-  gateway decides nothing about either.
+  gateway decides nothing about either. task-service serves the deletion once its PR 3 (trash and
+  deletion) is merged and deployed; until then the route answers `503 upstream.failed`.

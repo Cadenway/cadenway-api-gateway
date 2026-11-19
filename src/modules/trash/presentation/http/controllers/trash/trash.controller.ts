@@ -88,13 +88,14 @@ const LIST_TRASH_PROBLEMS: AcceptedProblems = {
  *
  * @description
  * Client errors of task-service that `POST /v1/trash/entries/{entryId}/restore` answers as they
- * are: the codes its public operation declares. Any other is `503 upstream.failed`.
+ * are: the codes both its public and its internal operation declare. The internal operation
+ * declares no `403 access.role-insufficient` (an entry the caller may not restore is not found),
+ * so that public code is never relayed. Any other is `503 upstream.failed`.
  *
  * @type {AcceptedProblems}
  */
 const RESTORE_TRASH_ENTRY_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  403: ['access.role-insufficient'],
   404: ['trash-entry.not-found', 'organization.not-found'],
 };
 
@@ -103,13 +104,14 @@ const RESTORE_TRASH_ENTRY_PROBLEMS: AcceptedProblems = {
  *
  * @description
  * Client errors of task-service that `DELETE /v1/trash/entries/{entryId}` answers as they
- * are: the codes its public operation declares. Any other is `503 upstream.failed`.
+ * are: the codes both its public and its internal operation declare (not the public
+ * `403 access.role-insufficient`, which the internal operation does not declare). Any other is
+ * `503 upstream.failed`.
  *
  * @type {AcceptedProblems}
  */
 const PURGE_TRASH_ENTRY_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  403: ['access.role-insufficient'],
   404: ['trash-entry.not-found', 'organization.not-found'],
 };
 
@@ -118,13 +120,14 @@ const PURGE_TRASH_ENTRY_PROBLEMS: AcceptedProblems = {
  *
  * @description
  * Client errors of task-service that `POST /v1/trash/empty` answers as they
- * are: the codes its public operation declares. Any other is `503 upstream.failed`.
+ * are: the codes both its public and its internal operation declare (not the public
+ * `403 access.role-insufficient`, which the internal operation does not declare). Any other is
+ * `503 upstream.failed`.
  *
  * @type {AcceptedProblems}
  */
 const EMPTY_TRASH_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  403: ['access.role-insufficient'],
   404: ['organization.not-found'],
 };
 
