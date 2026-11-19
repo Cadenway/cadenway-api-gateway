@@ -332,6 +332,22 @@ function withHeaders(
 }
 
 /**
+ * Function sentOnce
+ *
+ * @description
+ * The request options of a mutation of task-service that is never retried (`idempotent: false`),
+ * whatever its method: every change but a creation with an `Idempotency-Key`. A `PUT` or a
+ * `DELETE` repeated after a lost answer would undo what another actor changed in between: a grant
+ * revoked, then given again by the repeat; an assignee removed, then assigned again.
+ *
+ * @param {InternalRequestInit} init - The options to send once, such as those of `withHeaders`.
+ * @returns {InternalRequestInit} The same options, never retried.
+ */
+function sentOnce(init: InternalRequestInit = {}): InternalRequestInit {
+  return { ...init, idempotent: false };
+}
+
+/**
  * Class TaskServiceClient
  *
  * @description
@@ -347,13 +363,15 @@ function withHeaders(
  *   success after it is answered; a mismatching answer is `503 upstream.failed`.
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call, and the circuit breaker of
- *   task-service. Idempotent are: every `GET`; a creation with an `Idempotency-Key`; without
- *   `If-Match`, the `PUT` and `DELETE` of an assignee, the `PUT` and `DELETE` of a grant and the
- *   `DELETE` of a space or a list; the `DELETE` of a trash entry, which declares no `If-Match`.
- *   A repeated `DELETE` leaves the same state, though its answer can then be `404`. Never retried
- *   are a call with `If-Match` and every `POST` without an `Idempotency-Key`: an access request,
- *   its approval and its refusal, an archive and its restoration, a move to the trash, the
- *   restoration of an entry and the emptying of the trash.
+ *   task-service. Retried are every `GET` and a creation with an `Idempotency-Key`, which
+ *   task-service replays. Every other mutation is sent once (`sentOnce`), with or without
+ *   `If-Match`: the `PATCH` of a space, a list, a task or a checklist item; the `DELETE` of a space
+ *   or a list; the `PUT` and `DELETE` of an assignee and of a grant; the addition and removal of a
+ *   label; an access request, its approval and its refusal; an archive and its restoration; a move
+ *   to the trash, the erasure and the restoration of an entry and the emptying of the trash. A
+ *   change retried after its answer was lost could undo what another actor changed in between,
+ *   such as a grant revoked then given again, and a repeat of a change that succeeded under
+ *   `If-Match` would answer `412 request.version-mismatch`.
  * - `If-Match` and `Idempotency-Key` are relayed unchanged; task-service checks the version and
  *   replays a creation.
  * - The access checks of a list and a task (`GET /internal/v1/lists/{listId}/access` and
@@ -465,7 +483,8 @@ export class TaskServiceClient {
    * Method updateSpace
    *
    * @description
-   * `PATCH /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} spaceId - Id of the space.
    * @param {unknown} patch - JSON Merge Patch of the space.
@@ -485,7 +504,7 @@ export class TaskServiceClient {
       this.routes.updateSpaceInternal(
         spaceId,
         toRequest(operation, UpdateSpaceInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -495,7 +514,8 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request: `204`
-   * without `ETag`. Its lists go with it and its tasks move to the trash.
+   * without `ETag`. Its lists go with it and its tasks move to the trash. Never retried, with or
+   * without `If-Match`.
    *
    * @param {string} spaceId - Id of the space.
    * @param {string | undefined} ifMatch - `If-Match` of the public request.
@@ -506,7 +526,7 @@ export class TaskServiceClient {
     return acknowledged(
       operation,
       204,
-      this.routes.deleteSpaceInternal(spaceId, withHeaders('If-Match', ifMatch)),
+      this.routes.deleteSpaceInternal(spaceId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
   }
 
@@ -613,7 +633,8 @@ export class TaskServiceClient {
    * Method updateList
    *
    * @description
-   * `PATCH /internal/v1/lists/{listId}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/lists/{listId}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} listId - Id of the list.
    * @param {unknown} patch - JSON Merge Patch of the list.
@@ -633,7 +654,7 @@ export class TaskServiceClient {
       this.routes.updateListInternal(
         listId,
         toRequest(operation, UpdateListInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -643,7 +664,7 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/lists/{listId}`, with the `If-Match` of the public request: `204`
-   * without `ETag`.
+   * without `ETag`. Never retried, with or without `If-Match`.
    *
    * @param {string} listId - Id of the list.
    * @param {string | undefined} ifMatch - `If-Match` of the public request.
@@ -654,7 +675,7 @@ export class TaskServiceClient {
     return acknowledged(
       operation,
       204,
-      this.routes.deleteListInternal(listId, withHeaders('If-Match', ifMatch)),
+      this.routes.deleteListInternal(listId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
   }
 
@@ -813,7 +834,8 @@ export class TaskServiceClient {
    * Method updateTask
    *
    * @description
-   * `PATCH /internal/v1/tasks/{taskKey}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/tasks/{taskKey}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} patch - JSON Merge Patch of the task.
@@ -833,7 +855,7 @@ export class TaskServiceClient {
       this.routes.updateTaskInternal(
         taskKey,
         toRequest(operation, UpdateTaskInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -969,7 +991,7 @@ export class TaskServiceClient {
    *
    * @description
    * `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}`, with the `If-Match`
-   * of the public request.
+   * of the public request. Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} checklistItemId - Id of the item.
@@ -992,7 +1014,7 @@ export class TaskServiceClient {
         taskKey,
         checklistItemId,
         toRequest(operation, UpdateChecklistItemInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1002,7 +1024,8 @@ export class TaskServiceClient {
    *
    * @description
    * `PUT /internal/v1/tasks/{taskKey}/assignees/{userId}`, with the `If-Match` of the public
-   * request.
+   * request. Never retried, with or without `If-Match`: a repeat after a lost answer would assign
+   * again an account another actor unassigned in between.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} userId - Account to assign.
@@ -1022,7 +1045,7 @@ export class TaskServiceClient {
         taskKey,
         userId,
         EMPTY_REQUEST,
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1032,7 +1055,8 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/tasks/{taskKey}/assignees/{userId}`, with the `If-Match` of the public
-   * request: `204` with the `ETag` of the task.
+   * request: `204` with the `ETag` of the task. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would unassign an account another actor assigned in between.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} userId - Account to unassign.
@@ -1049,7 +1073,7 @@ export class TaskServiceClient {
     const answer: GeneratedAnswer = await answered(
       TASK_SERVICE,
       operation,
-      this.routes.unassignTaskInternal(taskKey, userId, withHeaders('If-Match', ifMatch)),
+      this.routes.unassignTaskInternal(taskKey, userId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
     expectStatus(TASK_SERVICE, operation, answer, 204);
     return versionOf(operation, answer);
@@ -1060,6 +1084,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/labels/add`, with the `If-Match` of the public request.
+   * Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} change - The label.
@@ -1079,7 +1104,7 @@ export class TaskServiceClient {
       this.routes.addTaskLabelInternal(
         taskKey,
         toRequest(operation, AddTaskLabelInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1089,6 +1114,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/labels/remove`, with the `If-Match` of the public request.
+   * Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} change - The label.
@@ -1108,7 +1134,7 @@ export class TaskServiceClient {
       this.routes.removeTaskLabelInternal(
         taskKey,
         toRequest(operation, RemoveTaskLabelInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1239,7 +1265,9 @@ export class TaskServiceClient {
    *
    * @description
    * `PUT /internal/v1/spaces/{spaceId}/grants/{userId}`, with the `If-Match` of the public
-   * request: `200` with the grant and the `ETag` of the space.
+   * request: `200` with the grant and the `ETag` of the space. Never retried, with or without
+   * `If-Match`: a repeat after a lost answer would give again a grant another manager revoked in
+   * between.
    *
    * @param {string} spaceId - Id of the space.
    * @param {string} userId - Account given the role.
@@ -1262,7 +1290,7 @@ export class TaskServiceClient {
         spaceId,
         userId,
         toRequest(operation, SetSpaceGrantInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
     const grant: z.output<typeof SetSpaceGrantInternalResponse> = expectBody(
@@ -1280,7 +1308,8 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/spaces/{spaceId}/grants/{userId}`, with the `If-Match` of the public
-   * request: `204` with the `ETag` of the space.
+   * request: `204` with the `ETag` of the space. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would revoke a grant another manager gave in between.
    *
    * @param {string} spaceId - Id of the space.
    * @param {string} userId - Account whose grant is removed.
@@ -1297,7 +1326,11 @@ export class TaskServiceClient {
     const answer: GeneratedAnswer = await answered(
       TASK_SERVICE,
       operation,
-      this.routes.removeSpaceGrantInternal(spaceId, userId, withHeaders('If-Match', ifMatch)),
+      this.routes.removeSpaceGrantInternal(
+        spaceId,
+        userId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
     );
     expectStatus(TASK_SERVICE, operation, answer, 204);
     return versionOf(operation, answer);
@@ -1334,7 +1367,8 @@ export class TaskServiceClient {
    *
    * @description
    * `PUT /internal/v1/lists/{listId}/grants/{userId}`, with the `If-Match` of the public request:
-   * `200` with the grant and the `ETag` of the list.
+   * `200` with the grant and the `ETag` of the list. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would give again a grant another manager revoked in between.
    *
    * @param {string} listId - Id of the list.
    * @param {string} userId - Account given the role.
@@ -1357,7 +1391,7 @@ export class TaskServiceClient {
         listId,
         userId,
         toRequest(operation, SetListGrantInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
     const grant: z.output<typeof SetListGrantInternalResponse> = expectBody(
@@ -1375,7 +1409,8 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/lists/{listId}/grants/{userId}`, with the `If-Match` of the public
-   * request: `204` with the `ETag` of the list.
+   * request: `204` with the `ETag` of the list. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would revoke a grant another manager gave in between.
    *
    * @param {string} listId - Id of the list.
    * @param {string} userId - Account whose grant is removed.
@@ -1392,7 +1427,11 @@ export class TaskServiceClient {
     const answer: GeneratedAnswer = await answered(
       TASK_SERVICE,
       operation,
-      this.routes.removeListGrantInternal(listId, userId, withHeaders('If-Match', ifMatch)),
+      this.routes.removeListGrantInternal(
+        listId,
+        userId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
     );
     expectStatus(TASK_SERVICE, operation, answer, 204);
     return versionOf(operation, answer);
@@ -1415,6 +1454,7 @@ export class TaskServiceClient {
       202,
       this.routes.createAccessRequestInternal(
         toRequest(operation, CreateAccessRequestInternalBody, creation),
+        sentOnce(),
       ),
     );
   }
@@ -1465,6 +1505,7 @@ export class TaskServiceClient {
       this.routes.approveAccessRequestInternal(
         accessRequestId,
         toRequest(operation, ApproveAccessRequestInternalBody, approval),
+        sentOnce(),
       ),
     );
   }
@@ -1492,6 +1533,7 @@ export class TaskServiceClient {
       this.routes.refuseAccessRequestInternal(
         accessRequestId,
         toRequest(operation, RefuseAccessRequestInternalBody, refusal),
+        sentOnce(),
       ),
     );
   }
@@ -1500,7 +1542,8 @@ export class TaskServiceClient {
    * Method archiveList
    *
    * @description
-   * `POST /internal/v1/lists/{listId}/archive`, with the `If-Match` of the public request.
+   * `POST /internal/v1/lists/{listId}/archive`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} listId - Id of the list.
    * @param {unknown} body - The empty body (`EmptyRequest`).
@@ -1520,7 +1563,7 @@ export class TaskServiceClient {
       this.routes.archiveListInternal(
         listId,
         toRequest(operation, ArchiveListInternalBody, body),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1530,6 +1573,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/lists/{listId}/unarchive`, with the `If-Match` of the public request.
+   * Never retried.
    *
    * @param {string} listId - Id of the list.
    * @param {unknown} body - The empty body (`EmptyRequest`).
@@ -1550,7 +1594,7 @@ export class TaskServiceClient {
       this.routes.unarchiveListInternal(
         listId,
         toRequest(operation, UnarchiveListInternalBody, body),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1560,7 +1604,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/archive`, with the `If-Match` of the public request: the
-   * task and its subtasks at every level.
+   * task and its subtasks at every level. Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} body - The empty body (`EmptyRequest`).
@@ -1580,7 +1624,7 @@ export class TaskServiceClient {
       this.routes.archiveTaskInternal(
         taskKey,
         toRequest(operation, ArchiveTaskInternalBody, body),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1590,7 +1634,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/unarchive`, with the `If-Match` of the public request:
-   * the archive the task belongs to, from its root.
+   * the archive the task belongs to, from its root. Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} body - The empty body (`EmptyRequest`).
@@ -1611,7 +1655,7 @@ export class TaskServiceClient {
       this.routes.unarchiveTaskInternal(
         taskKey,
         toRequest(operation, UnarchiveTaskInternalBody, body),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1669,7 +1713,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/trash`, with the `If-Match` of the public request: the task
-   * and its subtasks at every level, as one entry.
+   * and its subtasks at every level, as one entry. Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} body - The empty body (`EmptyRequest`).
@@ -1689,7 +1733,7 @@ export class TaskServiceClient {
       this.routes.trashTaskInternal(
         taskKey,
         toRequest(operation, TrashTaskInternalBody, body),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1718,6 +1762,7 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/trash/entries/{entryId}`: `204`. The contract declares no `If-Match`.
+   * Never retried, like every change but a creation with an `Idempotency-Key`.
    *
    * @param {string} entryId - Id of the entry.
    * @returns {Promise<void>} Once the entry is erased.
@@ -1726,7 +1771,7 @@ export class TaskServiceClient {
     return acknowledged(
       'purgeTrashEntryInternal',
       204,
-      this.routes.purgeTrashEntryInternal(entryId),
+      this.routes.purgeTrashEntryInternal(entryId, sentOnce()),
     );
   }
 
@@ -1753,6 +1798,7 @@ export class TaskServiceClient {
       this.routes.restoreTrashEntryInternal(
         entryId,
         toRequest(operation, RestoreTrashEntryInternalBody, body),
+        sentOnce(),
       ),
     );
   }
@@ -1773,7 +1819,10 @@ export class TaskServiceClient {
       operation,
       202,
       EmptyTrashInternalResponse,
-      this.routes.emptyTrashInternal(toRequest(operation, EmptyTrashInternalBody, body)),
+      this.routes.emptyTrashInternal(
+        toRequest(operation, EmptyTrashInternalBody, body),
+        sentOnce(),
+      ),
     );
   }
   // #endregion
