@@ -3,7 +3,14 @@ import type request from 'supertest';
 import { expect } from 'vitest';
 
 import { taskProblem, type TaskServiceMethod } from './fake-task.js';
-import { declaredProblemCodes, type SpecMethod } from './public-contract.js';
+import {
+  declaredProblemCodes,
+  isNode,
+  resolveNode,
+  specOf,
+  type PublicSpec,
+  type SpecMethod,
+} from './public-contract.js';
 import type { CaseFakes, RouteCase } from './route-cases.js';
 
 /**
@@ -74,11 +81,40 @@ const GUARD_CODES: ReadonlySet<string> = new Set<string>([
 const RELAYED_STATUSES: readonly ProblemStatus[] = [400, 403, 404, 409, 412, 422];
 
 /**
+ * Blank `If-Match` values a client may send. Node.js strips the optional whitespace around a
+ * header value, so both reach the gateway as `""`: the second shows that the wire form of spaces
+ * and tabs is refused too.
+ */
+const BLANK_IF_MATCH: readonly { readonly label: string; readonly value: string }[] = [
+  { label: 'an empty If-Match', value: '' },
+  { label: 'an If-Match of spaces and tabs only', value: ' \t ' },
+];
+
+/**
+ * Tells whether the public operation marks its request body required
+ * (`requestBody.required: true`), as the installed spec declares it.
+ *
+ * @param method - Method of the operation.
+ * @param path - Path of the operation, as the spec writes it.
+ * @returns Whether a request of the operation must carry a body.
+ */
+function requiresBody(method: SpecMethod, path: string): boolean {
+  const spec: PublicSpec = specOf(path);
+  const pointer = `/paths/${path.replaceAll('~', '~0').replaceAll('/', '~1')}/${method}`;
+  const operation = resolveNode(spec, pointer).node;
+  if (!isNode(operation.requestBody)) {
+    return false;
+  }
+  return resolveNode(spec, `${pointer}/requestBody`).node.required === true;
+}
+
+/**
  * Builds the cases of one route: the success with a session and with a token, the guards (no
  * credential, a token without the scope, a session without organization, a session request from
- * another site for a change, the rate limit), the validation of the request, every client error
- * the public operation declares relayed with its code (but those of `notRelayed`), an undeclared
- * one and an unavailable task-service answered as `503`.
+ * another site for a change, the rate limit), the validation of the request (a blank `If-Match`
+ * where the route relays one, a zero-byte body where the operation requires a body), every client
+ * error the public operation declares relayed with its code (but those of `notRelayed`), an
+ * undeclared one and an unavailable task-service answered as `503`.
  *
  * @param route - The route.
  * @returns Its cases.
@@ -193,6 +229,40 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
       status: 403,
       code: 'auth.csrf-rejected',
       check: notCalled,
+    });
+  }
+  if (route.headers?.['If-Match'] !== undefined) {
+    for (const blank of BLANK_IF_MATCH) {
+      cases.push({
+        ...base,
+        name: `${label} refuses ${blank.label} before any call`,
+        headers: { ...route.headers, 'If-Match': blank.value },
+        status: 400,
+        code: 'request.invalid',
+        check: (response, fakes) => {
+          expect((response.body as ProblemBody).details).toEqual({
+            issues: [expect.objectContaining({ in: 'header', path: 'If-Match' })],
+          });
+          notCalled(response, fakes);
+        },
+      });
+    }
+  }
+  if (requiresBody(route.method, route.path)) {
+    cases.push({
+      method: route.method,
+      path: route.path,
+      url: route.url,
+      name: `${label} refuses a zero-byte body before any call`,
+      headers: { ...route.headers, 'Content-Type': 'application/json', 'Content-Length': '0' },
+      status: 400,
+      code: 'request.invalid',
+      check: (response, fakes) => {
+        expect((response.body as ProblemBody).details).toEqual({
+          issues: [{ in: 'body', path: '', code: 'required', message: 'Expected a JSON body.' }],
+        });
+        notCalled(response, fakes);
+      },
     });
   }
   for (const status of RELAYED_STATUSES) {

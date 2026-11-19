@@ -39,8 +39,9 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - Each route relays the client errors its public operation declares (`<OPERATION>_PROBLEMS`), with
   the French titles of `PROBLEM_TITLES`; any other is `503 upstream.failed`. An actor task-service
   does not know yet answers `404 organization.not-found`, relayed.
-- `Idempotency-Key` (1 to 255 characters) and `If-Match` are relayed unchanged; the `ETag` of an
-  answer is the `version` of the space. The creation answers `201` with
+- `Idempotency-Key` (1 to 255 characters) and `If-Match` are relayed unchanged; a blank
+  `If-Match` or a zero-byte required body answers `400 request.invalid` before any call. The
+  `ETag` of an answer is the `version` of the space. The creation answers `201` with
   `Location: /v1/spaces/<spaceId>` and the `ETag` of the space.
 - The overview relays the `today` of the caller, the day its counts are computed on.
 - `callerRole` and `callerCanManage` of a space, and `organizationAccess`, `archivedAt`,

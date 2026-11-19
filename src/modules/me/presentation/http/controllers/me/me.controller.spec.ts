@@ -280,6 +280,23 @@ const PROFILE_CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'PATCH /v1/me refuses a blank If-Match before any call',
+    method: 'patch',
+    path: '/v1/me',
+    url: '/v1/me',
+    credential: 'session-without-organization',
+    body: { displayName: 'camille' },
+    headers: { 'If-Match': '' },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { identity }) => {
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'If-Match' }] },
+      });
+      expect(identity.updateUser).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'PATCH /v1/me answers an older identity-service without the profile fields with their defaults',
     method: 'patch',
     path: '/v1/me',

@@ -11,7 +11,6 @@ import {
 } from '@cadenway/contracts/validators/public/access';
 import { ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Get,
   HttpCode,
@@ -31,6 +30,7 @@ import {
   relayUpstream,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { ApproveAccessRequest } from '../../../../application/use-cases/commands/access-requests/approve-access-request/approve-access-request.use-case.js';
@@ -243,7 +243,7 @@ export class AccessRequestsController {
     organization: true,
   })
   public async createAccessRequest(
-    @Body(new ZodValidationPipe(CreateAccessRequestBody))
+    @RequiredBody(CreateAccessRequestBody)
     body: z.output<typeof CreateAccessRequestBody>,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
@@ -301,7 +301,7 @@ export class AccessRequestsController {
   public async approveAccessRequest(
     @Param(new ZodValidationPipe(ApproveAccessRequestParams))
     params: z.output<typeof ApproveAccessRequestParams>,
-    @Body(new ZodValidationPipe(ApproveAccessRequestBody))
+    @RequiredBody(ApproveAccessRequestBody)
     body: z.output<typeof ApproveAccessRequestBody>,
   ): Promise<z.output<typeof ApproveAccessRequestResponse>> {
     return conformBody(
@@ -335,7 +335,7 @@ export class AccessRequestsController {
   public async refuseAccessRequest(
     @Param(new ZodValidationPipe(RefuseAccessRequestParams))
     params: z.output<typeof RefuseAccessRequestParams>,
-    @Body(new ZodValidationPipe(REFUSE_ACCESS_REQUEST_BODY))
+    @RequiredBody(REFUSE_ACCESS_REQUEST_BODY)
     body: z.output<typeof REFUSE_ACCESS_REQUEST_BODY>,
   ): Promise<z.output<typeof RefuseAccessRequestResponse>> {
     return conformBody(

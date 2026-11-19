@@ -16,7 +16,6 @@ import {
 } from '@cadenway/contracts/validators/public/spaces';
 import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -38,7 +37,11 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
+import {
+  IfMatchHeader,
+  toRequestHeader,
+} from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { ListSpaces } from '../../../../application/use-cases/queries/spaces/list-spaces/list-spaces.use-case.js';
@@ -315,7 +318,7 @@ export class SpacesController {
     organization: true,
   })
   public async createSpace(
-    @Body(new ZodValidationPipe(CreateSpaceBody)) body: z.output<typeof CreateSpaceBody>,
+    @RequiredBody(CreateSpaceBody) body: z.output<typeof CreateSpaceBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateSpaceResponse>> {
@@ -382,8 +385,8 @@ export class SpacesController {
   })
   public async updateSpace(
     @Param(new ZodValidationPipe(UpdateSpaceParams)) params: z.output<typeof UpdateSpaceParams>,
-    @Body(new ZodValidationPipe(UpdateSpaceBody)) body: z.output<typeof UpdateSpaceBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(UpdateSpaceBody) body: z.output<typeof UpdateSpaceBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateSpaceResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -416,7 +419,7 @@ export class SpacesController {
   })
   public async deleteSpace(
     @Param(new ZodValidationPipe(DeleteSpaceParams)) params: z.output<typeof DeleteSpaceParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<void> {
     await relayProblems(DELETE_SPACE_PROBLEMS, () =>
       this.spaceDeletion.execute(params.spaceId, ifMatch),

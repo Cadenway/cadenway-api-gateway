@@ -30,7 +30,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - Credentials, scopes, organization context, opaque relay and problem translation as in
   [spaces](../spaces/MODULE.md#decisions).
 - The creation answers `201` with `Location: /v1/lists/<listId>` and the `ETag` of the list;
-  `Idempotency-Key` and `If-Match` are relayed unchanged.
+  `Idempotency-Key` and `If-Match` are relayed unchanged; a blank `If-Match` or a zero-byte
+  required body answers `400 request.invalid` before any call.
 - `organizationAccess` of a creation or a change is relayed unchanged in the body; the
   `organizationAccess`, `archivedAt`, `archivedBy` and `callerRole` of a list come from
   task-service and reach the answer through the public validator, an archived list read by its id

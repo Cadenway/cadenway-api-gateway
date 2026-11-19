@@ -13,11 +13,9 @@ import {
 } from '@cadenway/contracts/validators/public/trash';
 import { ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Inject,
   Param,
@@ -32,6 +30,8 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { EmptyTrash } from '../../../../application/use-cases/commands/trash/empty-trash/empty-trash.use-case.js';
@@ -291,8 +291,8 @@ export class TrashController {
   })
   public async trashTask(
     @Param(new ZodValidationPipe(TrashTaskParams)) params: z.output<typeof TrashTaskParams>,
-    @Body(new ZodValidationPipe(TRASH_TASK_BODY)) body: z.output<typeof TRASH_TASK_BODY>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(TRASH_TASK_BODY) body: z.output<typeof TRASH_TASK_BODY>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof TrashTaskResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -351,7 +351,7 @@ export class TrashController {
   public async restoreTrashEntry(
     @Param(new ZodValidationPipe(RestoreTrashEntryParams))
     params: z.output<typeof RestoreTrashEntryParams>,
-    @Body(new ZodValidationPipe(RESTORE_TRASH_ENTRY_BODY))
+    @RequiredBody(RESTORE_TRASH_ENTRY_BODY)
     body: z.output<typeof RESTORE_TRASH_ENTRY_BODY>,
   ): Promise<z.output<typeof RestoreTrashEntryResponse>> {
     return conformBody(
@@ -404,7 +404,7 @@ export class TrashController {
     organization: true,
   })
   public async emptyTrash(
-    @Body(new ZodValidationPipe(EMPTY_TRASH_BODY)) body: z.output<typeof EMPTY_TRASH_BODY>,
+    @RequiredBody(EMPTY_TRASH_BODY) body: z.output<typeof EMPTY_TRASH_BODY>,
   ): Promise<z.output<typeof EmptyTrashResponse>> {
     return conformBody(
       TASK_SERVICE,

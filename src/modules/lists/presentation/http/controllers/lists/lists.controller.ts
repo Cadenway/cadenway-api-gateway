@@ -21,7 +21,6 @@ import {
 } from '@cadenway/contracts/validators/public/lists';
 import { ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -43,8 +42,12 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import {
+  IfMatchHeader,
+  toRequestHeader,
+} from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { CreateList } from '../../../../application/use-cases/commands/lists/create-list/create-list.use-case.js';
@@ -338,7 +341,7 @@ export class ListsController {
   })
   public async createList(
     @Param(new ZodValidationPipe(CreateListParams)) params: z.output<typeof CreateListParams>,
-    @Body(new ZodValidationPipe(CreateListBody)) body: z.output<typeof CreateListBody>,
+    @RequiredBody(CreateListBody) body: z.output<typeof CreateListBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateListResponse>> {
@@ -435,8 +438,8 @@ export class ListsController {
   })
   public async updateList(
     @Param(new ZodValidationPipe(UpdateListParams)) params: z.output<typeof UpdateListParams>,
-    @Body(new ZodValidationPipe(UpdateListBody)) body: z.output<typeof UpdateListBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(UpdateListBody) body: z.output<typeof UpdateListBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateListResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -469,7 +472,7 @@ export class ListsController {
   })
   public async deleteList(
     @Param(new ZodValidationPipe(DeleteListParams)) params: z.output<typeof DeleteListParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<void> {
     await relayProblems(DELETE_LIST_PROBLEMS, () =>
       this.listDeletion.execute(params.listId, ifMatch),

@@ -379,6 +379,22 @@ const CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'PATCH /v1/organization refuses a blank If-Match before any call',
+    method: 'patch',
+    path: '/v1/organization',
+    url: '/v1/organization',
+    body: { defaultLanguage: 'en' },
+    headers: { 'If-Match': '' },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { organization }) => {
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'If-Match' }] },
+      });
+      expect(organization.updateOrganization).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'PATCH /v1/organization refuses a description longer than 280 characters',
     method: 'patch',
     path: '/v1/organization',

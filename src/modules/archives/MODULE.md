@@ -30,9 +30,10 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - Credentials, scopes, organization context, opaque relay and problem translation as in
   [spaces](../spaces/MODULE.md#decisions).
 - The four actions answer `200` with the list or the task and its `ETag`, the `version` of the
-  body; `If-Match` is optional, checked against the public header validator and relayed
-  unchanged. Their body is the empty object of `EmptyRequest`, refused with any other member, and
-  relayed.
+  body; `If-Match` is optional, refused blank with `400 request.invalid` by the shared
+  `@IfMatchHeader()` and otherwise relayed unchanged. Their body is the empty object of
+  `EmptyRequest`, required (a zero-byte body answers `400 request.invalid`), refused with any
+  other member, and relayed.
 - `403 access.role-insufficient` and `404 task.trashed` are relayed with their `details` (the
   roles; the trash entry of the task).
 - The listings relay `cursor` and `limit`; they carry no `ETag`.

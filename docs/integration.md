@@ -295,7 +295,7 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
   `404 organization.not-found` (the caller left the organization) answers the
   `404 member.not-found` or `404 invitation.not-found` the operation declares. On the choice of
   organization, `404 session.not-found` answers `401 auth.session-expired`. `ETag` comes from the
-  `version` of the answer; `If-Match` is relayed unchanged.
+  `version` of the answer; `If-Match` is relayed unchanged unless blank (see Gateway Patterns).
 - **Invitation emails.** organization-service limits them; the gateway relays its refusals with
   their French titles, their `details` and `Retry-After`, the seconds until the instant of the
   details, rounded up:
@@ -325,6 +325,18 @@ Source: `cw-gateway-patterns` ([Claude](../.claude/skills/cw-gateway-patterns/SK
 request → auth guard (token) → scope guard → organization context → rate limit
         → controller → internal client(s) → mapping to openapi/public → response
 ```
+
+- Every route that relays `If-Match` reads it with `@IfMatchHeader()` (`src/presentation/http/`):
+  an absent header stays absent, a present but blank one (empty, or spaces and tabs, which Node.js
+  strips to empty) answers `400 request.invalid` with an issue `{ in: header, path: If-Match }`
+  before any call, since the owning service would take it for an absent one; any other value is
+  relayed unchanged.
+- Every task-domain route whose operation marks `requestBody.required: true` reads its body with
+  `@RequiredBody(validator)`: a request declaring `Content-Length: 0`, which the JSON parser of
+  `@cadenway/nest-common` hands on as `{}`, answers `400 request.invalid` with an issue
+  `{ in: body, path: '', code: required }` before any call, while a literal `{}` still reaches the
+  validator. Known limit: an empty chunked body also arrives as `{}` and cannot be told apart in
+  the gateway; that belongs to the parser of cadenway-service-kit.
 
 ### Task core routes
 

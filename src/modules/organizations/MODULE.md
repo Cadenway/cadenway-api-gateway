@@ -45,4 +45,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   relays `403 auth.reauthentication-required`, `403 organization.role-forbidden`,
   `409 auth.two-step-not-enabled` and `412 request.version-mismatch`.
 - The creation answers `201` with `Location: /v1/organization` and the `ETag` of the organization;
-  the other answers carry the `ETag` of their `version`. `If-Match` is relayed unchanged.
+  the other answers carry the `ETag` of their `version`. `If-Match` is relayed unchanged; a
+  blank one answers `400 request.invalid` before any call.

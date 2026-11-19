@@ -16,11 +16,9 @@ import {
 } from '@cadenway/contracts/validators/public/access';
 import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Inject,
   Param,
@@ -37,6 +35,8 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import type { VersionedGrant } from '../../../../application/models/grants/versioned-grant.model.js';
@@ -343,8 +343,8 @@ export class GrantsController {
   })
   public async setSpaceGrant(
     @Param(new ZodValidationPipe(SetSpaceGrantParams)) params: z.output<typeof SetSpaceGrantParams>,
-    @Body(new ZodValidationPipe(SetSpaceGrantBody)) body: z.output<typeof SetSpaceGrantBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(SetSpaceGrantBody) body: z.output<typeof SetSpaceGrantBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof SetSpaceGrantResponse>> {
     const changed: VersionedGrant = await relayProblems(SET_SPACE_GRANT_PROBLEMS, () =>
@@ -382,7 +382,7 @@ export class GrantsController {
   public async removeSpaceGrant(
     @Param(new ZodValidationPipe(RemoveSpaceGrantParams))
     params: z.output<typeof RemoveSpaceGrantParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     const version: number = await relayProblems(REMOVE_SPACE_GRANT_PROBLEMS, () =>
@@ -444,8 +444,8 @@ export class GrantsController {
   })
   public async setListGrant(
     @Param(new ZodValidationPipe(SetListGrantParams)) params: z.output<typeof SetListGrantParams>,
-    @Body(new ZodValidationPipe(SetListGrantBody)) body: z.output<typeof SetListGrantBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(SetListGrantBody) body: z.output<typeof SetListGrantBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof SetListGrantResponse>> {
     const changed: VersionedGrant = await relayProblems(SET_LIST_GRANT_PROBLEMS, () =>
@@ -483,7 +483,7 @@ export class GrantsController {
   public async removeListGrant(
     @Param(new ZodValidationPipe(RemoveListGrantParams))
     params: z.output<typeof RemoveListGrantParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     const version: number = await relayProblems(REMOVE_LIST_GRANT_PROBLEMS, () =>

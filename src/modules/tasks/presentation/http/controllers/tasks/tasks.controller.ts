@@ -46,7 +46,6 @@ import {
 } from '@cadenway/contracts/validators/public/tasks';
 import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -69,8 +68,12 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import {
+  IfMatchHeader,
+  toRequestHeader,
+} from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import type { TaskDetail } from '../../../../application/models/details/task-detail.model.js';
@@ -720,7 +723,7 @@ export class TasksController {
   })
   public async createTask(
     @Param(new ZodValidationPipe(CreateTaskParams)) params: z.output<typeof CreateTaskParams>,
-    @Body(new ZodValidationPipe(CreateTaskBody)) body: z.output<typeof CreateTaskBody>,
+    @RequiredBody(CreateTaskBody) body: z.output<typeof CreateTaskBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateTaskResponse>> {
@@ -818,8 +821,8 @@ export class TasksController {
   })
   public async updateTask(
     @Param(new ZodValidationPipe(UpdateTaskParams)) params: z.output<typeof UpdateTaskParams>,
-    @Body(new ZodValidationPipe(UpdateTaskBody)) body: z.output<typeof UpdateTaskBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(UpdateTaskBody) body: z.output<typeof UpdateTaskBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateTaskResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -918,7 +921,7 @@ export class TasksController {
   })
   public async createSubtask(
     @Param(new ZodValidationPipe(CreateSubtaskParams)) params: z.output<typeof CreateSubtaskParams>,
-    @Body(new ZodValidationPipe(CreateSubtaskBody)) body: z.output<typeof CreateSubtaskBody>,
+    @RequiredBody(CreateSubtaskBody) body: z.output<typeof CreateSubtaskBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateSubtaskResponse>> {
@@ -960,7 +963,7 @@ export class TasksController {
   public async addChecklistItem(
     @Param(new ZodValidationPipe(AddChecklistItemParams))
     params: z.output<typeof AddChecklistItemParams>,
-    @Body(new ZodValidationPipe(AddChecklistItemBody)) body: z.output<typeof AddChecklistItemBody>,
+    @RequiredBody(AddChecklistItemBody) body: z.output<typeof AddChecklistItemBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof AddChecklistItemResponse>> {
@@ -1005,9 +1008,9 @@ export class TasksController {
   public async updateChecklistItem(
     @Param(new ZodValidationPipe(UpdateChecklistItemParams))
     params: z.output<typeof UpdateChecklistItemParams>,
-    @Body(new ZodValidationPipe(UpdateChecklistItemBody))
+    @RequiredBody(UpdateChecklistItemBody)
     body: z.output<typeof UpdateChecklistItemBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateChecklistItemResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -1038,8 +1041,8 @@ export class TasksController {
   })
   public async assignTask(
     @Param(new ZodValidationPipe(AssignTaskParams)) params: z.output<typeof AssignTaskParams>,
-    @Body(new ZodValidationPipe(ASSIGN_TASK_BODY)) body: z.output<typeof ASSIGN_TASK_BODY>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(ASSIGN_TASK_BODY) body: z.output<typeof ASSIGN_TASK_BODY>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof AssignTaskResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -1071,7 +1074,7 @@ export class TasksController {
   })
   public async unassignTask(
     @Param(new ZodValidationPipe(UnassignTaskParams)) params: z.output<typeof UnassignTaskParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     const version: number = await relayProblems(UNASSIGN_TASK_PROBLEMS, () =>
@@ -1100,8 +1103,8 @@ export class TasksController {
   })
   public async addTaskLabel(
     @Param(new ZodValidationPipe(AddTaskLabelParams)) params: z.output<typeof AddTaskLabelParams>,
-    @Body(new ZodValidationPipe(AddTaskLabelBody)) body: z.output<typeof AddTaskLabelBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(AddTaskLabelBody) body: z.output<typeof AddTaskLabelBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof AddTaskLabelResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -1134,8 +1137,8 @@ export class TasksController {
   public async removeTaskLabel(
     @Param(new ZodValidationPipe(RemoveTaskLabelParams))
     params: z.output<typeof RemoveTaskLabelParams>,
-    @Body(new ZodValidationPipe(RemoveTaskLabelBody)) body: z.output<typeof RemoveTaskLabelBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(RemoveTaskLabelBody) body: z.output<typeof RemoveTaskLabelBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof RemoveTaskLabelResponse>> {
     return conformBody(
       TASK_SERVICE,

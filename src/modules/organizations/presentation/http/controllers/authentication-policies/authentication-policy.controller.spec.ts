@@ -226,6 +226,22 @@ const PATCH_CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'PATCH refuses an If-Match of spaces only before any call',
+    method: 'patch',
+    path: PATH,
+    url: PATH,
+    body: { twoStepVerificationRequiredFor: 'admins' },
+    headers: { 'If-Match': '   ' },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { identity }) => {
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'If-Match' }] },
+      });
+      expect(identity.updateAuthenticationPolicy).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'PATCH sends only the members of the patch, and no If-Match when there is none',
     method: 'patch',
     path: PATH,

@@ -450,6 +450,44 @@ describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
     expect((response.body as { details?: unknown }).details).toEqual({ key: TASK_KEY });
   });
 
+  it.each([
+    {
+      method: 'patch' as const,
+      path: '/v1/tasks/{taskKey}/checklist-items/{checklistItemId}',
+      url: `/v1/tasks/${TASK_KEY}/checklist-items/${ITEM_ID}`,
+      body: { done: true },
+      call: 'updateChecklistItem' as const,
+      ifMatch: '',
+    },
+    {
+      method: 'post' as const,
+      path: '/v1/tasks/{taskKey}/labels/remove',
+      url: `/v1/tasks/${TASK_KEY}/labels/remove`,
+      body: { name: 'Front' },
+      call: 'removeTaskLabel' as const,
+      ifMatch: ' \t ',
+    },
+  ])(
+    'refuses a blank If-Match on $method $path before any call',
+    async ({ method, path, url, body, call, ifMatch }) => {
+      const response = await runRouteCase(application, identity, {
+        name: `blank If-Match on ${path}`,
+        method,
+        path,
+        url,
+        body,
+        headers: { 'If-Match': ifMatch },
+        status: 400,
+        code: 'request.invalid',
+      });
+
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'If-Match' }] },
+      });
+      expect(application.task[call]).not.toHaveBeenCalled();
+    },
+  );
+
   it('reads an archived task with archivedAt and archivedBy', async () => {
     application.task.getTask.mockResolvedValue(
       GetTaskInternalResponse.parse({

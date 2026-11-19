@@ -15,7 +15,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Inject,
   Patch,
@@ -35,6 +34,7 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import {
   verifiedSessionOf,
   type RequestSession,
@@ -384,7 +384,7 @@ export class OrganizationsController {
   public async updateCurrentOrganization(
     @Body(new ZodValidationPipe(UpdateCurrentOrganizationBody))
     body: z.output<typeof UpdateCurrentOrganizationBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<Organization> {
     return toOrganization(
       await this.relay(UPDATE_PROBLEMS, () =>

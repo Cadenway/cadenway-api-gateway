@@ -1,10 +1,8 @@
 import {
   ArchiveListBody,
-  ArchiveListHeader,
   ArchiveListParams,
   ArchiveListResponse,
   ArchiveTaskBody,
-  ArchiveTaskHeader,
   ArchiveTaskParams,
   ArchiveTaskResponse,
   ListArchivedListsQueryParams,
@@ -12,27 +10,14 @@ import {
   ListArchivedTasksQueryParams,
   ListArchivedTasksResponse,
   UnarchiveListBody,
-  UnarchiveListHeader,
   UnarchiveListParams,
   UnarchiveListResponse,
   UnarchiveTaskBody,
-  UnarchiveTaskHeader,
   UnarchiveTaskParams,
   UnarchiveTaskResponse,
 } from '@cadenway/contracts/validators/public/archives';
 import { ZodValidationPipe } from '@cadenway/nest-common';
-import {
-  Body,
-  Controller,
-  Get,
-  Headers,
-  HttpCode,
-  Inject,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, HttpCode, Inject, Param, Post, Query, UseGuards } from '@nestjs/common';
 import type { z } from 'zod';
 
 import { conformBody } from '../../../../../../problems/upstream-answer.js';
@@ -40,7 +25,8 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { ArchiveList } from '../../../../application/use-cases/commands/lists/archive-list/archive-list.use-case.js';
@@ -286,7 +272,7 @@ export class ArchivesController {
    *
    * @param {z.output<typeof ArchiveListParams>} params - The path parameters.
    * @param {Record<string, never>} body - The empty body, validated.
-   * @param {string | undefined} ifMatchHeader - `If-Match` of the request.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, never blank.
    * @returns {Promise<z.output<typeof ArchiveListResponse>>} The answer, mapped to the public contract.
    */
   @Post('lists/:listId/archive')
@@ -298,14 +284,9 @@ export class ArchivesController {
   })
   public async archiveList(
     @Param(new ZodValidationPipe(ArchiveListParams)) params: z.output<typeof ArchiveListParams>,
-    @Body(new ZodValidationPipe(ARCHIVE_LIST_BODY)) body: Record<string, never>,
-    @Headers('if-match') ifMatchHeader: string | undefined,
+    @RequiredBody(ARCHIVE_LIST_BODY) body: Record<string, never>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof ArchiveListResponse>> {
-    const ifMatch: string | undefined = toRequestHeader(
-      'If-Match',
-      ArchiveListHeader.shape['If-Match'],
-      ifMatchHeader,
-    );
     return conformBody(
       TASK_SERVICE,
       'archiveList',
@@ -325,7 +306,7 @@ export class ArchivesController {
    *
    * @param {z.output<typeof UnarchiveListParams>} params - The path parameters.
    * @param {Record<string, never>} body - The empty body, validated.
-   * @param {string | undefined} ifMatchHeader - `If-Match` of the request.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, never blank.
    * @returns {Promise<z.output<typeof UnarchiveListResponse>>} The answer, mapped to the public contract.
    */
   @Post('lists/:listId/unarchive')
@@ -337,14 +318,9 @@ export class ArchivesController {
   })
   public async unarchiveList(
     @Param(new ZodValidationPipe(UnarchiveListParams)) params: z.output<typeof UnarchiveListParams>,
-    @Body(new ZodValidationPipe(UNARCHIVE_LIST_BODY)) body: Record<string, never>,
-    @Headers('if-match') ifMatchHeader: string | undefined,
+    @RequiredBody(UNARCHIVE_LIST_BODY) body: Record<string, never>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UnarchiveListResponse>> {
-    const ifMatch: string | undefined = toRequestHeader(
-      'If-Match',
-      UnarchiveListHeader.shape['If-Match'],
-      ifMatchHeader,
-    );
     return conformBody(
       TASK_SERVICE,
       'unarchiveList',
@@ -365,7 +341,7 @@ export class ArchivesController {
    *
    * @param {z.output<typeof ArchiveTaskParams>} params - The path parameters.
    * @param {Record<string, never>} body - The empty body, validated.
-   * @param {string | undefined} ifMatchHeader - `If-Match` of the request.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, never blank.
    * @returns {Promise<z.output<typeof ArchiveTaskResponse>>} The answer, mapped to the public contract.
    */
   @Post('tasks/:taskKey/archive')
@@ -377,14 +353,9 @@ export class ArchivesController {
   })
   public async archiveTask(
     @Param(new ZodValidationPipe(ArchiveTaskParams)) params: z.output<typeof ArchiveTaskParams>,
-    @Body(new ZodValidationPipe(ARCHIVE_TASK_BODY)) body: Record<string, never>,
-    @Headers('if-match') ifMatchHeader: string | undefined,
+    @RequiredBody(ARCHIVE_TASK_BODY) body: Record<string, never>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof ArchiveTaskResponse>> {
-    const ifMatch: string | undefined = toRequestHeader(
-      'If-Match',
-      ArchiveTaskHeader.shape['If-Match'],
-      ifMatchHeader,
-    );
     return conformBody(
       TASK_SERVICE,
       'archiveTask',
@@ -405,7 +376,7 @@ export class ArchivesController {
    *
    * @param {z.output<typeof UnarchiveTaskParams>} params - The path parameters.
    * @param {Record<string, never>} body - The empty body, validated.
-   * @param {string | undefined} ifMatchHeader - `If-Match` of the request.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, never blank.
    * @returns {Promise<z.output<typeof UnarchiveTaskResponse>>} The answer, mapped to the public contract.
    */
   @Post('tasks/:taskKey/unarchive')
@@ -417,14 +388,9 @@ export class ArchivesController {
   })
   public async unarchiveTask(
     @Param(new ZodValidationPipe(UnarchiveTaskParams)) params: z.output<typeof UnarchiveTaskParams>,
-    @Body(new ZodValidationPipe(UNARCHIVE_TASK_BODY)) body: Record<string, never>,
-    @Headers('if-match') ifMatchHeader: string | undefined,
+    @RequiredBody(UNARCHIVE_TASK_BODY) body: Record<string, never>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UnarchiveTaskResponse>> {
-    const ifMatch: string | undefined = toRequestHeader(
-      'If-Match',
-      UnarchiveTaskHeader.shape['If-Match'],
-      ifMatchHeader,
-    );
     return conformBody(
       TASK_SERVICE,
       'unarchiveTask',
