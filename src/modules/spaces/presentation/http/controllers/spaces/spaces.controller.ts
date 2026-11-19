@@ -2,6 +2,7 @@ import {
   CreateSpaceBody,
   CreateSpaceHeader,
   CreateSpaceResponse,
+  DeleteSpaceParams,
   GetSpaceOverviewParams,
   GetSpaceOverviewQueryParams,
   GetSpaceOverviewResponse,
@@ -17,8 +18,10 @@ import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
+  HttpCode,
   Inject,
   Param,
   Patch,
@@ -42,6 +45,7 @@ import { ListSpaces } from '../../../../application/use-cases/queries/spaces/lis
 import { CreateSpace } from '../../../../application/use-cases/commands/spaces/create-space/create-space.use-case.js';
 import { GetSpace } from '../../../../application/use-cases/queries/spaces/get-space/get-space.use-case.js';
 import { UpdateSpace } from '../../../../application/use-cases/commands/spaces/update-space/update-space.use-case.js';
+import { DeleteSpace } from '../../../../application/use-cases/commands/spaces/delete-space/delete-space.use-case.js';
 import { GetSpaceOverview } from '../../../../application/use-cases/queries/spaces/get-space-overview/get-space-overview.use-case.js';
 
 /**
@@ -111,11 +115,27 @@ const GET_SPACE_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_SPACE_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  403: ['space.visibility-forbidden'],
+  403: ['space.visibility-forbidden', 'access.role-insufficient'],
   404: ['space.not-found', 'organization.not-found'],
   409: ['space.prefix-taken'],
   412: ['request.version-mismatch'],
   422: ['space.status-required'],
+};
+
+/**
+ * Constant DELETE_SPACE_PROBLEMS
+ *
+ * @description
+ * Client errors of task-service that `DELETE /v1/spaces/{spaceId}` answers as they
+ * are: the codes its public operation declares. Any other is `503 upstream.failed`.
+ *
+ * @type {AcceptedProblems}
+ */
+const DELETE_SPACE_PROBLEMS: AcceptedProblems = {
+  400: ['request.invalid'],
+  403: ['space.manage-forbidden'],
+  404: ['space.not-found', 'organization.not-found'],
+  412: ['request.version-mismatch'],
 };
 
 /**
@@ -136,7 +156,7 @@ const GET_SPACE_OVERVIEW_PROBLEMS: AcceptedProblems = {
  * Class SpacesController
  *
  * @description
- * The space routes of `openapi/public/spaces.yaml`: list, create, read and change the spaces of the current organization, and the overview of one.
+ * The space routes of `openapi/public/spaces.yaml`: list, create, read, change and delete the spaces of the current organization, and the overview of one.
  *
  * Every route accepts the session cookie or a personal API token with `tasks:read` (reads) or
  * `tasks:write` (writes, spaces and lists included), on the current organization:
@@ -195,6 +215,17 @@ export class SpacesController {
   private readonly spaceChange: UpdateSpace;
 
   /**
+   * Property spaceDeletion
+   *
+   * @description
+   * Use case `DeleteSpace`.
+   *
+   * @type {DeleteSpace}
+   * @readonly
+   */
+  private readonly spaceDeletion: DeleteSpace;
+
+  /**
    * Property overviewReading
    *
    * @description
@@ -217,6 +248,7 @@ export class SpacesController {
    * @param {CreateSpace} spaceCreation - Use case `CreateSpace`.
    * @param {GetSpace} spaceReading - Use case `GetSpace`.
    * @param {UpdateSpace} spaceChange - Use case `UpdateSpace`.
+   * @param {DeleteSpace} spaceDeletion - Use case `DeleteSpace`.
    * @param {GetSpaceOverview} overviewReading - Use case `GetSpaceOverview`.
    * @constructor
    */
@@ -225,12 +257,14 @@ export class SpacesController {
     @Inject(CreateSpace) spaceCreation: CreateSpace,
     @Inject(GetSpace) spaceReading: GetSpace,
     @Inject(UpdateSpace) spaceChange: UpdateSpace,
+    @Inject(DeleteSpace) spaceDeletion: DeleteSpace,
     @Inject(GetSpaceOverview) overviewReading: GetSpaceOverview,
   ) {
     this.spaceListing = spaceListing;
     this.spaceCreation = spaceCreation;
     this.spaceReading = spaceReading;
     this.spaceChange = spaceChange;
+    this.spaceDeletion = spaceDeletion;
     this.overviewReading = overviewReading;
   }
   // #endregion
@@ -358,6 +392,34 @@ export class SpacesController {
       await relayProblems(UPDATE_SPACE_PROBLEMS, () =>
         this.spaceChange.execute(params.spaceId, body, ifMatch),
       ),
+    );
+  }
+
+  /**
+   * Method deleteSpace
+   *
+   * @description
+   * `DELETE /v1/spaces/{spaceId}`: deletes a space with its lists, `If-Match` relayed unchanged.
+   * `204` without a body nor an `ETag`, as the contract declares; task-service moves its tasks to
+   * the trash afterwards.
+   *
+   * @param {z.output<typeof DeleteSpaceParams>} params - The path parameters.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
+   * @returns {Promise<void>} Resolves once the space is deleted.
+   */
+  @Delete('spaces/:spaceId')
+  @HttpCode(204)
+  @CredentialGuard.requires({
+    operationId: 'deleteSpace',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
+    organization: true,
+  })
+  public async deleteSpace(
+    @Param(new ZodValidationPipe(DeleteSpaceParams)) params: z.output<typeof DeleteSpaceParams>,
+    @Headers('if-match') ifMatch: string | undefined,
+  ): Promise<void> {
+    await relayProblems(DELETE_SPACE_PROBLEMS, () =>
+      this.spaceDeletion.execute(params.spaceId, ifMatch),
     );
   }
 

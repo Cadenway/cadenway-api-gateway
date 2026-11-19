@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import type { SpaceRegistry } from './application/ports/outbound/task-service/spaces/space-registry.port.js';
 import { CreateSpace } from './application/use-cases/commands/spaces/create-space/create-space.use-case.js';
+import { DeleteSpace } from './application/use-cases/commands/spaces/delete-space/delete-space.use-case.js';
 import { UpdateSpace } from './application/use-cases/commands/spaces/update-space/update-space.use-case.js';
 import { GetSpaceOverview } from './application/use-cases/queries/spaces/get-space-overview/get-space-overview.use-case.js';
 import { GetSpace } from './application/use-cases/queries/spaces/get-space/get-space.use-case.js';
@@ -46,6 +47,11 @@ const PROVIDERS: readonly FactoryProvider[] = [
     provide: UpdateSpace,
     inject: [SPACE_REGISTRY],
     useFactory: (registry: SpaceRegistry): UpdateSpace => new UpdateSpace(registry),
+  },
+  {
+    provide: DeleteSpace,
+    inject: [SPACE_REGISTRY],
+    useFactory: (registry: SpaceRegistry): DeleteSpace => new DeleteSpace(registry),
   },
   {
     provide: GetSpaceOverview,

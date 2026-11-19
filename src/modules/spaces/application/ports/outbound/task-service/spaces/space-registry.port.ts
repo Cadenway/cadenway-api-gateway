@@ -69,6 +69,19 @@ export interface SpaceRegistry {
   ): Promise<TaskServiceDocument>;
 
   /**
+   * Method deleteSpace
+   *
+   * @description
+   * `DELETE /internal/v1/spaces/{spaceId}`. Deletes a space with its lists; task-service then moves
+   * its tasks to the trash. `204` without `ETag`.
+   *
+   * @param {string} spaceId - Id of the space.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<void>} Once task-service deleted the space.
+   */
+  deleteSpace(spaceId: string, ifMatch: string | undefined): Promise<void>;
+
+  /**
    * Method getSpaceOverview
    *
    * @description

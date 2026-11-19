@@ -43,6 +43,18 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   [spaces](../spaces/MODULE.md#decisions). A client error task-service declares internally but
   the public operation does not (`task.list-invalid` on a creation, for example) is
   `503 upstream.failed`.
+- Roles, the trash and archives are decided by task-service, never by the gateway, which reads
+  no role and no state of a task. Every write, the creation of a task included, relays
+  `403 access.role-insufficient` (the caller lacks `edit` on the list, `details.role` and
+  `details.requiredRole`). Every route of a task key, reads and writes, the detail and
+  `/checklist-items/{checklistItemId}` included, relays `404 task.trashed` beside
+  `404 task.not-found`: task-service answers the first to a caller who could change the list of
+  a task in the trash, the second to anyone else. `409 task.archived` (`details.key`) is relayed
+  by the changes of a task (`PATCH`, assignees, labels, checklist item) and by the creation of a
+  subtask or a checklist item, with `idempotency.request-in-progress` there. An archived task
+  reads normally: `GET /v1/tasks/{taskKey}` and the detail answer it with `archivedAt` and
+  `archivedBy`. The archive, unarchive and trash routes of a task belong to the `archives` and
+  `trash` modules.
 - A task is named by its key in every path. `assignee=me` is relayed for task-service to resolve;
   the array filters (`status`, `priority`, `assignee`, `label`, `kind`) are comma-separated.
 - `GET /v1/me/tasks` and `GET /v1/me/home` call task-service with the user of the verified
@@ -54,7 +66,11 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   HTTP client: a repeat after a change that succeeded would answer `412`.
 - The detail (`GetTaskDetail`, bound in `composition/`) reads the core of task-service and the
   secondary parts in parallel. The core is the main part: its failure fails the detail. A
-  secondary part that fails or takes more than 800 ms is named in `partial` and left out. In this
+  secondary part that fails or takes more than 800 ms is named in `partial` and left out. A task
+  in the trash fails the core with `404 task.trashed`: the detail answers that public problem with
+  its `details` (`key`, `name`, `entryId`, `rootKey`, `trashedAt`, `trashedBy`, `purgeAt`, without
+  `service`), never a `503` or a partial detail. `list.callerRole` of the core is relayed as
+  task-service answers it. In this
   version no part is bound, so `partial` is `[]`; a later part (attachments, development links,
   comments) is one more `TaskDetailPart` adapter and one more member of the public mapping. The
   `ETag` of the detail is the version of the task.

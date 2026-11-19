@@ -1,3 +1,7 @@
+import {
+  GetTaskDetailInternalResponse,
+  GetTaskInternalResponse,
+} from '@cadenway/contracts/validators/internal/task-service';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -7,7 +11,9 @@ import {
 } from '../../../../../../../tests/support/fake-identity.js';
 import {
   ADDED_CHECKLIST_ITEM_ID,
+  internalExample,
   taskDetailCore,
+  taskProblem,
   UNASSIGNED_VERSION,
 } from '../../../../../../../tests/support/fake-task.js';
 import {
@@ -66,6 +72,27 @@ const SUBTASK_CREATION = {
   status: 'todo',
   priority: 'moyenne',
   labels: [],
+};
+
+/**
+ * `details` of `404 task.trashed`, as the example of `TaskNotFound` in the contract writes them.
+ */
+const TRASHED_DETAILS = {
+  key: 'CAD-452',
+  name: 'Ancien écran de connexion',
+  entryId: '019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01',
+  rootKey: 'CAD-452',
+  trashedAt: '2026-11-06T16:20:00Z',
+  trashedBy: { type: 'user', id: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30' },
+  purgeAt: '2026-12-06T16:20:00Z',
+};
+
+/**
+ * When and by whom the archived task of the cases was archived.
+ */
+const ARCHIVED = {
+  archivedAt: '2026-11-05T10:00:00Z',
+  archivedBy: { type: 'user', id: CAMILLE.id },
 };
 
 /**
@@ -375,6 +402,97 @@ describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
     });
 
     expect((response.body as { details?: unknown }).details).toEqual({ service: 'task-service' });
+  });
+
+  it('answers the 404 task.trashed of task-service on the detail with its details, never a 503 or a partial detail', async () => {
+    application.task.getTaskDetail.mockRejectedValue(
+      taskProblem(404, 'task.trashed', TRASHED_DETAILS),
+    );
+
+    const response = await runRouteCase(application, identity, {
+      name: 'detail of a task in the trash',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}/detail',
+      url: '/v1/tasks/CAD-452/detail',
+      status: 404,
+      code: 'task.trashed',
+    });
+
+    expect(response.body).toMatchObject({
+      title: 'Cette tâche a été supprimée',
+      status: 404,
+      code: 'task.trashed',
+      details: TRASHED_DETAILS,
+    });
+    expect((response.body as { details: Record<string, unknown> }).details).not.toHaveProperty(
+      'service',
+    );
+    expect(response.body).not.toHaveProperty('partial');
+    expect(application.task.getTaskDetail).toHaveBeenCalledWith('CAD-452');
+  });
+
+  it('relays 409 task.archived of a change with the key of the archived task', async () => {
+    application.task.updateTask.mockRejectedValue(
+      taskProblem(409, 'task.archived', { key: TASK_KEY }),
+    );
+
+    const response = await runRouteCase(application, identity, {
+      name: 'change of an archived task',
+      method: 'patch',
+      path: '/v1/tasks/{taskKey}',
+      url: `/v1/tasks/${TASK_KEY}`,
+      body: { priority: 'basse' },
+      headers: { 'If-Match': '"12"' },
+      status: 409,
+      code: 'task.archived',
+    });
+
+    expect((response.body as { details?: unknown }).details).toEqual({ key: TASK_KEY });
+  });
+
+  it('reads an archived task with archivedAt and archivedBy', async () => {
+    application.task.getTask.mockResolvedValue(
+      GetTaskInternalResponse.parse({
+        ...internalExample(GetTaskInternalResponse, 'get', '/v1/tasks/{taskKey}'),
+        ...ARCHIVED,
+      }),
+    );
+
+    const response = await runRouteCase(application, identity, {
+      name: 'archived task',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}',
+      url: `/v1/tasks/${TASK_KEY}`,
+      status: 200,
+      check: expectTaskEtag,
+    });
+
+    expect(response.body).toMatchObject(ARCHIVED);
+  });
+
+  it('reads the detail of an archived task with archivedAt, archivedBy and the callerRole of its list', async () => {
+    const core = taskDetailCore();
+    application.task.getTaskDetail.mockResolvedValue(
+      GetTaskDetailInternalResponse.parse({
+        ...core,
+        task: { ...core.task, ...ARCHIVED },
+        list: { ...core.list, callerRole: 'comment' },
+      }),
+    );
+
+    const response = await runRouteCase(application, identity, {
+      name: 'detail of an archived task',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}/detail',
+      url: `/v1/tasks/${TASK_KEY}/detail`,
+      status: 200,
+    });
+
+    expect(response.body).toMatchObject({
+      task: ARCHIVED,
+      list: { callerRole: 'comment' },
+      partial: [],
+    });
   });
 
   it('drops a member of an answer the public contract does not declare', async () => {

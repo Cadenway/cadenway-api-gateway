@@ -9,8 +9,8 @@ import type { TaskServiceDocument } from '../../../../models/task-service/task-s
  * of the whole detail.
  *
  * It resolves with an answer that matched the internal contract, and rejects with a
- * `ProblemException`: the client error of task-service (`404 task.not-found`,
- * `404 organization.not-found`), or `503 upstream.*`.
+ * `ProblemException`: the client error of task-service (`404 task.not-found`, `404 task.trashed`
+ * with its `details`, `404 organization.not-found`), or `503 upstream.*`.
  */
 export interface TaskDetailCoreSource {
   // #region Methods

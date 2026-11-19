@@ -1,9 +1,9 @@
 # Spaces
 
 Owns the space routes of `openapi/public/spaces.yaml` on the current organization: list, create,
-read and change the spaces, and the overview of one. task-service owns the spaces and decides
-every rule (who sees a space, who changes its visibility, prefixes, statuses); the gateway decides
-none.
+read, change and delete the spaces, and the overview of one. task-service owns the spaces and
+decides every rule (who sees a space, the role of the caller on it, who manages it, prefixes,
+statuses, deletion); the gateway decides none.
 
 ## Public entry points
 
@@ -21,6 +21,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 | `POST /v1/spaces`                   | `POST /internal/v1/spaces`                   | `tasks:write` |
 | `GET /v1/spaces/{spaceId}`          | `GET /internal/v1/spaces/{spaceId}`          | `tasks:read`  |
 | `PATCH /v1/spaces/{spaceId}`        | `PATCH /internal/v1/spaces/{spaceId}`        | `tasks:write` |
+| `DELETE /v1/spaces/{spaceId}`       | `DELETE /internal/v1/spaces/{spaceId}`       | `tasks:write` |
 | `GET /v1/spaces/{spaceId}/overview` | `GET /internal/v1/spaces/{spaceId}/overview` | `tasks:read`  |
 
 ## Decisions
@@ -42,3 +43,11 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   answer is the `version` of the space. The creation answers `201` with
   `Location: /v1/spaces/<spaceId>` and the `ETag` of the space.
 - The overview relays the `today` of the caller, the day its counts are computed on.
+- `callerRole` and `callerCanManage` of a space, and `organizationAccess`, `archivedAt`,
+  `archivedBy` and `callerRole` of the first list of a creation, come from task-service and reach
+  the answer through the public validator; the gateway reads none of them. A change task-service
+  refuses answers `403 access.role-insufficient` or `403 space.visibility-forbidden`, relayed.
+- The deletion answers `204` without a body nor an `ETag`, as the contract declares, with
+  `If-Match` relayed unchanged; `403 space.manage-forbidden`, `404` and `412` are relayed.
+  task-service deletes the lists with the space and moves its tasks to the trash afterwards; the
+  gateway decides nothing about either.

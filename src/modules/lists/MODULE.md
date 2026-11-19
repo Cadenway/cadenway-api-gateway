@@ -1,9 +1,9 @@
 # Lists
 
 Owns the list and sprint routes of `openapi/public/lists.yaml` on the current organization:
-create and list the lists of a space, read and change a list, its counts and its activity.
-task-service owns the lists and decides every rule (sprint dates, who sees a list); the gateway
-decides none.
+create and list the lists of a space, read, change and delete a list, its counts and its activity.
+task-service owns the lists and decides every rule (sprint dates, who sees a list, the role of the
+caller on it, its switch "Accès de l’organisation", deletion); the gateway decides none.
 
 ## Public entry points
 
@@ -21,6 +21,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 | `GET /v1/spaces/{spaceId}/lists`  | `GET /internal/v1/spaces/{spaceId}/lists`  | `tasks:read`  |
 | `GET /v1/lists/{listId}`          | `GET /internal/v1/lists/{listId}`          | `tasks:read`  |
 | `PATCH /v1/lists/{listId}`        | `PATCH /internal/v1/lists/{listId}`        | `tasks:write` |
+| `DELETE /v1/lists/{listId}`       | `DELETE /internal/v1/lists/{listId}`       | `tasks:write` |
 | `GET /v1/lists/{listId}/counts`   | `GET /internal/v1/lists/{listId}/counts`   | `tasks:read`  |
 | `GET /v1/lists/{listId}/activity` | `GET /internal/v1/lists/{listId}/activity` | `tasks:read`  |
 
@@ -30,5 +31,14 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   [spaces](../spaces/MODULE.md#decisions).
 - The creation answers `201` with `Location: /v1/lists/<listId>` and the `ETag` of the list;
   `Idempotency-Key` and `If-Match` are relayed unchanged.
+- `organizationAccess` of a creation or a change is relayed unchanged in the body; the
+  `organizationAccess`, `archivedAt`, `archivedBy` and `callerRole` of a list come from
+  task-service and reach the answer through the public validator, an archived list read by its id
+  included. The gateway reads none of them. A creation or a change task-service refuses for want
+  of `edit` answers `403 access.role-insufficient`, relayed.
+- The deletion answers `204` without a body nor an `ETag`, as the contract declares, with
+  `If-Match` relayed unchanged; `403 access.role-insufficient`, `404` and `412` are relayed.
+  task-service deletes the list, archived or not, and moves its tasks to the trash afterwards; the
+  gateway decides nothing about either.
 - The counts relay the `today` of the caller; `kind` and `actorId` of the activity are
   comma-separated query parameters, split before the public validator checks them.

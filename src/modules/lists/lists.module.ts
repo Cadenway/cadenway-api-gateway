@@ -6,6 +6,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import type { ListRegistry } from './application/ports/outbound/task-service/lists/list-registry.port.js';
 import { CreateList } from './application/use-cases/commands/lists/create-list/create-list.use-case.js';
+import { DeleteList } from './application/use-cases/commands/lists/delete-list/delete-list.use-case.js';
 import { UpdateList } from './application/use-cases/commands/lists/update-list/update-list.use-case.js';
 import { ListListActivity } from './application/use-cases/queries/activity/list-list-activity/list-list-activity.use-case.js';
 import { GetListCounts } from './application/use-cases/queries/lists/get-list-counts/get-list-counts.use-case.js';
@@ -47,6 +48,11 @@ const PROVIDERS: readonly FactoryProvider[] = [
     provide: UpdateList,
     inject: [LIST_REGISTRY],
     useFactory: (registry: ListRegistry): UpdateList => new UpdateList(registry),
+  },
+  {
+    provide: DeleteList,
+    inject: [LIST_REGISTRY],
+    useFactory: (registry: ListRegistry): DeleteList => new DeleteList(registry),
   },
   {
     provide: ListListActivity,

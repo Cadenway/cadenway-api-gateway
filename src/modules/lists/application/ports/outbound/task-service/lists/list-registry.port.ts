@@ -72,6 +72,19 @@ export interface ListRegistry {
   ): Promise<TaskServiceDocument>;
 
   /**
+   * Method deleteList
+   *
+   * @description
+   * `DELETE /internal/v1/lists/{listId}`. Deletes a list, archived or not; task-service then moves
+   * its tasks to the trash. `204` without `ETag`.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<void>} Once task-service deleted the list.
+   */
+  deleteList(listId: string, ifMatch: string | undefined): Promise<void>;
+
+  /**
    * Method getListCounts
    *
    * @description

@@ -1,3 +1,4 @@
+import { ProblemException } from '@cadenway/nest-common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { TaskServiceDocument } from '../../../../models/task-service/task-service-document.model.js';
@@ -108,5 +109,32 @@ describe('GetTaskDetail', () => {
         'CAD-482',
       ),
     ).rejects.toBe(failure);
+  });
+
+  it('fails with the 404 task.trashed of the core and its details, never a partial detail', async () => {
+    const details = {
+      key: 'CAD-452',
+      name: 'Ancien écran de connexion',
+      entryId: '019a7006-7a8b-7c9d-8e0f-1a2b3c4d5e01',
+      rootKey: 'CAD-452',
+      trashedAt: '2026-11-06T16:20:00Z',
+      trashedBy: { type: 'user', id: '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30' },
+      purgeAt: '2026-12-06T16:20:00Z',
+      service: 'task-service',
+    };
+    const trashed: ProblemException = new ProblemException({
+      status: 404,
+      code: 'task.trashed',
+      details,
+    });
+    const source: TaskDetailCoreSource = {
+      getTaskDetail: vi.fn(() => Promise.reject(trashed)),
+    };
+    const attachments: TaskDetailPart = part('attachments', () => Promise.resolve({ items: [] }));
+
+    const pending: Promise<unknown> = new GetTaskDetail(source, [attachments]).execute('CAD-452');
+
+    await expect(pending).rejects.toBe(trashed);
+    expect(trashed.problem).toMatchObject({ status: 404, code: 'task.trashed', details });
   });
 });

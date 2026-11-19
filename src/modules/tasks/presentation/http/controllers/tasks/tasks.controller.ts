@@ -143,6 +143,7 @@ const LIST_TASKS_QUERY = ListTasksQueryParams.extend({
  */
 const CREATE_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
+  403: ['access.role-insufficient'],
   404: ['list.not-found', 'organization.not-found'],
   409: ['idempotency.request-in-progress'],
   422: [
@@ -196,7 +197,7 @@ const COUNT_TASK_GROUPS_QUERY = CountTaskGroupsQueryParams.extend({
  */
 const GET_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -210,7 +211,9 @@ const GET_TASK_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: [
     'task.status-hidden',
@@ -235,7 +238,7 @@ const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
  */
 const GET_TASK_DETAIL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -249,7 +252,7 @@ const GET_TASK_DETAIL_PROBLEMS: AcceptedProblems = {
  */
 const LIST_SUBTASKS_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -263,8 +266,9 @@ const LIST_SUBTASKS_PROBLEMS: AcceptedProblems = {
  */
 const CREATE_SUBTASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
-  409: ['idempotency.request-in-progress'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived', 'idempotency.request-in-progress'],
   422: [
     'task.subtask-depth-exceeded',
     'task.subtask-limit-reached',
@@ -288,8 +292,9 @@ const CREATE_SUBTASK_PROBLEMS: AcceptedProblems = {
  */
 const ADD_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
-  409: ['idempotency.request-in-progress'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived', 'idempotency.request-in-progress'],
   422: ['task.checklist-limit-reached', 'idempotency.key-reused'],
 };
 
@@ -304,7 +309,9 @@ const ADD_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['checklist-item.not-found', 'task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['checklist-item.not-found', 'task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -319,7 +326,9 @@ const UPDATE_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
  */
 const ASSIGN_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: ['task.assignee-invalid', 'task.assignee-limit-reached'],
 };
@@ -335,7 +344,9 @@ const ASSIGN_TASK_PROBLEMS: AcceptedProblems = {
  */
 const UNASSIGN_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -350,7 +361,9 @@ const UNASSIGN_TASK_PROBLEMS: AcceptedProblems = {
  */
 const ADD_TASK_LABEL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: ['task.label-limit-reached'],
 };
@@ -366,7 +379,9 @@ const ADD_TASK_LABEL_PROBLEMS: AcceptedProblems = {
  */
 const REMOVE_TASK_LABEL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -381,7 +396,7 @@ const REMOVE_TASK_LABEL_PROBLEMS: AcceptedProblems = {
  */
 const LIST_TASK_ACTIVITY_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -407,9 +422,11 @@ const LIST_TASK_ACTIVITY_QUERY = ListTaskActivityQueryParams.extend({
  * `tasks:write` (writes, spaces and lists included), on the current organization:
  * `CredentialGuard` answers `403 auth.scope-missing`, `403 organization.not-selected` and
  * `403 organization.mfa-required` before any call, and `RateLimitGuard` counts the credential.
- * task-service decides everything; the gateway relays the client errors each public operation
- * declares, with their French titles, and maps every answer to the public contract through its
- * public validator.
+ * task-service decides everything, the roles on a list (`403 access.role-insufficient`), a task
+ * in the trash (`404 task.trashed`, with its `details`) and an archived task (`409 task.archived`
+ * on a change, an ordinary answer on a read) included; the gateway relays the client errors each
+ * public operation declares, with their French titles, and maps every answer to the public
+ * contract through its public validator.
  */
 @Controller('v1')
 @UseGuards(CredentialGuard, RateLimitGuard)
