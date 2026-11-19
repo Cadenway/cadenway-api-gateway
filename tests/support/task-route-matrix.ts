@@ -2,6 +2,7 @@ import { ProblemException, type ProblemStatus } from '@cadenway/nest-common';
 import type request from 'supertest';
 import { expect } from 'vitest';
 
+import { TASKS_API_TOKEN, TASKS_TOKEN } from './fake-identity.js';
 import { taskProblem, type TaskServiceMethod } from './fake-task.js';
 import {
   declaredProblemCodes,
@@ -81,14 +82,48 @@ const GUARD_CODES: ReadonlySet<string> = new Set<string>([
 const RELAYED_STATUSES: readonly ProblemStatus[] = [400, 403, 404, 409, 412, 422];
 
 /**
- * Blank `If-Match` values a client may send. Node.js strips the optional whitespace around a
- * header value, so both reach the gateway as `""`: the second shows that the wire form of spaces
- * and tabs is refused too.
+ * Blank `If-Match` values a client may send. Node.js strips the spaces and tabs around a header
+ * value: the first two reach the gateway as `""` (the second shows that the wire form of spaces
+ * and tabs is refused too), and `", "` reaches it as `","`. A no-break space (U+00A0) is kept
+ * as it is, and the `trim()` of the owning service would strip it.
+ *
+ * The no-break space is sent on the routes without a body only (`bodiless`): with a JSON body,
+ * the HTTP client of Node.js writes the header block and the body text in one UTF-8 string, so
+ * the byte `A0` leaves as `C2 A0` and the gateway reads `"\u00c2\u00a0"`, which is not blank. The
+ * raw byte under a body is shown on `PUT /v1/spaces/{spaceId}/grants/{userId}`, and the `", "`
+ * Node.js makes of two empty headers on `DELETE /v1/spaces/{spaceId}/grants/{userId}`: a route
+ * case sends one text value per header.
  */
-const BLANK_IF_MATCH: readonly { readonly label: string; readonly value: string }[] = [
+const BLANK_IF_MATCH: readonly {
+  readonly label: string;
+  readonly value: string;
+  readonly bodiless?: true;
+}[] = [
   { label: 'an empty If-Match', value: '' },
   { label: 'an If-Match of spaces and tabs only', value: ' \t ' },
+  { label: 'an If-Match of a no-break space', value: '\u00a0', bodiless: true },
+  { label: 'an If-Match of empty list members', value: ', ' },
 ];
+
+/**
+ * A personal API token with `tasks:write`, as its introspection returns it: a bearer request
+ * skips the `Content-Type` part of the cross-site check, so the media type of its body reaches
+ * the validation of the route.
+ */
+const TASKS_WRITE_API_TOKEN: typeof TASKS_API_TOKEN = {
+  ...TASKS_API_TOKEN,
+  scopes: ['tasks:write'],
+};
+
+/**
+ * The issue of a body sent with a media type other than JSON in UTF-8, as the gateway answers it.
+ */
+const UNSUPPORTED_MEDIA_TYPE_ISSUE = {
+  in: 'body',
+  path: '',
+  code: 'unsupported_media_type',
+  message: 'Expected an application/json body in UTF-8.',
+};
 
 /**
  * Tells whether the public operation marks its request body required
@@ -233,6 +268,9 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
   }
   if (route.headers?.['If-Match'] !== undefined) {
     for (const blank of BLANK_IF_MATCH) {
+      if (blank.bodiless === true && route.body !== undefined) {
+        continue;
+      }
       cases.push({
         ...base,
         name: `${label} refuses ${blank.label} before any call`,
@@ -260,6 +298,26 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
       check: (response, fakes) => {
         expect((response.body as ProblemBody).details).toEqual({
           issues: [{ in: 'body', path: '', code: 'required', message: 'Expected a JSON body.' }],
+        });
+        notCalled(response, fakes);
+      },
+    });
+    cases.push({
+      method: route.method,
+      path: route.path,
+      url: route.url,
+      name: `${label} refuses a form-encoded body of a token holding tasks:write before any call`,
+      credential: { bearer: `Bearer ${TASKS_TOKEN}` },
+      origin: null,
+      arrange: ({ identity }) =>
+        identity.introspectApiToken.mockResolvedValue(TASKS_WRITE_API_TOKEN),
+      headers: { ...route.headers, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: '&',
+      status: 400,
+      code: 'request.invalid',
+      check: (response, fakes) => {
+        expect((response.body as ProblemBody).details).toEqual({
+          issues: [UNSUPPORTED_MEDIA_TYPE_ISSUE],
         });
         notCalled(response, fakes);
       },

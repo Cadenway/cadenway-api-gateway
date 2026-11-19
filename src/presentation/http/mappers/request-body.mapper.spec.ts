@@ -60,6 +60,64 @@ describe('toRequiredBody', () => {
     },
   );
 
+  it.each([
+    ['application/json; charset=UTF-8'],
+    ['Application/JSON; Charset="utf-8"'],
+    ['application/json; foo=bar'],
+  ])('accepts a JSON body in UTF-8 sent as %s', (contentType: string) => {
+    expect(
+      toRequiredBody(
+        { headers: { 'content-length': '2', 'content-type': contentType }, body: {} },
+        EMPTY_REQUEST,
+      ),
+    ).toEqual({});
+  });
+
+  it.each([
+    ['a form-encoded body', 'application/x-www-form-urlencoded'],
+    ['a text body', 'text/plain'],
+    ['JSON in UTF-16', 'application/json; charset=utf-16le'],
+    ['JSON with a charset without a value', 'application/json; charset'],
+    ['a JSON-like media type', 'application/problem+json'],
+  ])(
+    'refuses %s, which a parser may hand on as {}, before the validator',
+    (_label: string, contentType: string) => {
+      const problem = problemOf(() =>
+        toRequiredBody(
+          { headers: { 'content-length': '1', 'content-type': contentType }, body: {} },
+          EMPTY_REQUEST,
+        ),
+      );
+
+      expect(problem).toMatchObject({
+        status: 400,
+        code: 'request.invalid',
+        details: {
+          issues: [
+            {
+              in: 'body',
+              path: '',
+              code: 'unsupported_media_type',
+              message: 'Expected an application/json body in UTF-8.',
+            },
+          ],
+        },
+      });
+    },
+  );
+
+  it('leaves a body without Content-Type to the validator, since no parser reads it', () => {
+    const problem = problemOf(() =>
+      toRequiredBody({ headers: { 'content-length': '2' } }, EMPTY_REQUEST),
+    );
+
+    expect(problem).toMatchObject({
+      status: 400,
+      code: 'request.invalid',
+      details: { issues: [{ in: 'body', path: '', code: 'invalid_type' }] },
+    });
+  });
+
   it('leaves a request with no body at all to the validator, located in the body', () => {
     const problem = problemOf(() => toRequiredBody({ headers: {} }, EMPTY_REQUEST));
 

@@ -64,8 +64,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   `Location` task-service answers. The unassignment answers `204` with the `ETag` task-service
   sent. The label routes answer `200`. A call with `If-Match` is never retried by the internal
   HTTP client: a repeat after a change that succeeded would answer `412`. A blank `If-Match`,
-  or a zero-byte body on a route whose contract requires one, answers `400 request.invalid`
-  before any call.
+  or a body that is zero-byte or not JSON in UTF-8 on a route whose contract requires one,
+  answers `400 request.invalid` before any call.
 - The detail (`GetTaskDetail`, bound in `composition/`) reads the core of task-service and the
   secondary parts in parallel. The core is the main part: its failure fails the detail. A
   secondary part that fails or takes more than 800 ms is named in `partial` and left out. A task

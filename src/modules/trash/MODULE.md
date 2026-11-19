@@ -33,9 +33,13 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   `If-Match` of the deletion is relayed unchanged, a blank one refused with
   `400 request.invalid`; the other routes declare none.
 - The `EmptyRequest` bodies of the deletion, the restoration and the emptying are required: a
-  zero-byte body (`Content-Length: 0`) answers `400 request.invalid`, a literal `{}` is accepted.
-  They are checked with `.strict()`: the contract declares `additionalProperties: false`, which the generated validator
-  does not enforce, so a body with any member answers `400 request.invalid` before any call.
+  zero-byte body (`Content-Length: 0`) or a `Content-Type` other than JSON in UTF-8 (a form
+  body `&` included) answers `400 request.invalid`, a literal `{}` is accepted. A body whose
+  decoded text is empty (empty chunked, empty under a `Content-Encoding`, lone UTF-8 byte-order
+  mark) still reads as `{}`: a limit of the parser of cadenway-service-kit. They are checked
+  with `.strict()`: the contract declares `additionalProperties: false`, which the generated
+  validator does not enforce, so a body with any member answers `400 request.invalid` before
+  any call.
 - The `details` of `404 task.trashed` (the entry the task is in), of `409 task.archived` (`key`)
   and of `403 access.role-insufficient` (`role`, `requiredRole`) are relayed without
   `details.service`.

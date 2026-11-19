@@ -40,8 +40,10 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - A grant change answers the version of the space or the list as `ETag`, which the `Grant` body
   does not carry: `200` with the grant for a `PUT`, `204` with no body for a `DELETE`. `If-Match`
   is optional and relayed unchanged; a blank one answers `400 request.invalid` before any call.
-  Every body the contract requires is read with `@RequiredBody`: a zero-byte one answers
-  `400 request.invalid` before any call.
+  Every body the contract requires is read with `@RequiredBody`: a zero-byte one, or one whose
+  `Content-Type` is not JSON in UTF-8, answers `400 request.invalid` before any call. A body
+  whose decoded text is empty (empty chunked, lone byte-order mark) still reads as `{}`: a
+  limit of the parser of cadenway-service-kit.
 - The grants of a space relay `403 space.manage-forbidden`, those of a list
   `403 access.role-insufficient`, each only where its operation declares it: the other code is
   `503 upstream.failed`. A `404` is relayed as the same `404`, never as another answer.

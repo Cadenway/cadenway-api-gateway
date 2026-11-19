@@ -327,16 +327,22 @@ request → auth guard (token) → scope guard → organization context → rate
 ```
 
 - Every route that relays `If-Match` reads it with `@IfMatchHeader()` (`src/presentation/http/`):
-  an absent header stays absent, a present but blank one (empty, or spaces and tabs, which Node.js
-  strips to empty) answers `400 request.invalid` with an issue `{ in: header, path: If-Match }`
-  before any call, since the owning service would take it for an absent one; any other value is
-  relayed unchanged.
+  an absent header stays absent, a present but blank one answers `400 request.invalid` with an
+  issue `{ in: header, path: If-Match }` before any call, since the owning service would take it
+  for an absent one. Blank means that no member of its comma-separated list is left after
+  JavaScript `trim()`, as the owning service reads it: empty, white space only (a no-break space
+  included) or commas and white space only (the `", "` of two empty headers). Any other value,
+  `W/"7"` and `*` included, is relayed unchanged.
 - Every task-domain route whose operation marks `requestBody.required: true` reads its body with
-  `@RequiredBody(validator)`: a request declaring `Content-Length: 0`, which the JSON parser of
-  `@cadenway/nest-common` hands on as `{}`, answers `400 request.invalid` with an issue
-  `{ in: body, path: '', code: required }` before any call, while a literal `{}` still reaches the
-  validator. Known limit: an empty chunked body also arrives as `{}` and cannot be told apart in
-  the gateway; that belongs to the parser of cadenway-service-kit.
+  `@RequiredBody(validator)`, which refuses with `400 request.invalid` before any call a request
+  declaring `Content-Length: 0` (issue `{ in: body, path: '', code: required }`), since the JSON
+  parser of `@cadenway/nest-common` hands it on as `{}`, and a `Content-Type` other than
+  `application/json` with no `charset` or `charset=utf-8` (issue `code: unsupported_media_type`),
+  since the form parser NestJS registers turns a body such as `&` into `{}` too. A literal `{}`
+  still reaches the validator. Known limit: any JSON body whose decoded text is empty (an empty
+  chunked body, an empty body under a `Content-Encoding`, a lone UTF-8 byte-order mark) also
+  arrives as `{}` and cannot be told apart in the gateway; that belongs to the parser of
+  cadenway-service-kit, which should leave such a body `undefined`.
 
 ### Task core routes
 

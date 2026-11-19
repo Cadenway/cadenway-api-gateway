@@ -1,7 +1,10 @@
+import { request as httpRequest, type OutgoingHttpHeaders, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  CAMILLE_ORGANIZATION_TOKEN,
   createFakeIdentity,
   type FakeIdentity,
 } from '../../../../../../../tests/support/fake-identity.js';
@@ -26,6 +29,7 @@ import {
   taskRouteCases,
   type TaskRoute,
 } from '../../../../../../../tests/support/task-route-matrix.js';
+import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
 
 /**
  * Id of the space "Produit" of the contract examples.
@@ -53,6 +57,93 @@ function removedWith(version: number): (response: request.Response) => void {
     expect(response.headers.etag).toBe(`"${String(version)}"`);
     expect(response.text).toBe('');
   };
+}
+
+/**
+ * The status and parsed body of a raw answer.
+ */
+interface RawAnswer {
+  // #region Properties
+  /** Status of the answer. */
+  readonly status: number;
+
+  /** The JSON body. */
+  readonly body: unknown;
+  // #endregion
+}
+
+/**
+ * A raw request: header values and body bytes as they are written.
+ */
+interface RawRequest {
+  // #region Properties
+  /** Method of the request. */
+  readonly method: string;
+
+  /** Path of the request. */
+  readonly path: string;
+
+  /** Headers besides the session cookie and the origin, an array sent as repeated lines. */
+  readonly headers: OutgoingHttpHeaders;
+
+  /** Bytes of the body. */
+  readonly body?: Buffer;
+  // #endregion
+}
+
+/**
+ * Sends a request with the HTTP client of Node.js, which supertest cannot do: a body given as
+ * bytes keeps the header block in Latin-1, so a no-break space leaves as the single byte `A0`,
+ * and an array header leaves as repeated lines. The request carries the session in Atelier
+ * Nord and the origin of the web application.
+ *
+ * @param application - Application under test.
+ * @param raw - The request.
+ * @returns The answer.
+ */
+async function sendRaw(application: RouteApplication, raw: RawRequest): Promise<RawAnswer> {
+  const server: Server = application.app.getHttpServer();
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  try {
+    const { port } = server.address() as AddressInfo;
+    return await new Promise<RawAnswer>((resolve, reject) => {
+      const outgoing = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method: raw.method,
+          path: raw.path,
+          agent: false,
+          headers: {
+            Connection: 'close',
+            Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
+            Origin: ALLOWED_ORIGIN,
+            ...raw.headers,
+          },
+        },
+        (incoming) => {
+          let text = '';
+          incoming.setEncoding('utf8');
+          incoming.on('data', (chunk: string) => {
+            text += chunk;
+          });
+          incoming.on('end', () => {
+            resolve({ status: incoming.statusCode ?? 0, body: JSON.parse(text) as unknown });
+          });
+        },
+      );
+      outgoing.on('error', reject);
+      outgoing.end(raw.body);
+    });
+  } finally {
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+  }
 }
 
 /**
@@ -292,4 +383,35 @@ describe('routes of /v1/spaces/{spaceId}/grants and /v1/lists/{listId}/grants', 
       await runRouteCase(application, identity, routeCase);
     },
   );
+
+  it('refuses the raw byte of a no-break space in If-Match under a JSON body before any call', async () => {
+    const answer: RawAnswer = await sendRaw(application, {
+      method: 'PUT',
+      path: `/v1/spaces/${SPACE_ID}/grants/${USER_ID}`,
+      headers: { 'Content-Type': 'application/json', 'If-Match': '\u00a0' },
+      body: Buffer.from(JSON.stringify({ role: 'edit' })),
+    });
+
+    expect(answer.status).toBe(400);
+    expect(answer.body).toMatchObject({
+      code: 'request.invalid',
+      details: { issues: [{ in: 'header', path: 'If-Match' }] },
+    });
+    expect(application.task.setSpaceGrant).not.toHaveBeenCalled();
+  });
+
+  it('refuses two empty If-Match headers, which Node.js joins as ", ", before any call', async () => {
+    const answer: RawAnswer = await sendRaw(application, {
+      method: 'DELETE',
+      path: `/v1/spaces/${SPACE_ID}/grants/${USER_ID}`,
+      headers: { 'If-Match': ['', ''] },
+    });
+
+    expect(answer.status).toBe(400);
+    expect(answer.body).toMatchObject({
+      code: 'request.invalid',
+      details: { issues: [{ in: 'header', path: 'If-Match' }] },
+    });
+    expect(application.task.removeSpaceGrant).not.toHaveBeenCalled();
+  });
 });

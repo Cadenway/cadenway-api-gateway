@@ -32,8 +32,10 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 - The four actions answer `200` with the list or the task and its `ETag`, the `version` of the
   body; `If-Match` is optional, refused blank with `400 request.invalid` by the shared
   `@IfMatchHeader()` and otherwise relayed unchanged. Their body is the empty object of
-  `EmptyRequest`, required (a zero-byte body answers `400 request.invalid`), refused with any
-  other member, and relayed.
+  `EmptyRequest`, required (a zero-byte body or a `Content-Type` other than JSON in UTF-8
+  answers `400 request.invalid`), refused with any other member, and relayed. A body whose
+  decoded text is empty (empty chunked, lone byte-order mark) still reads as `{}`: a limit of
+  the parser of cadenway-service-kit.
 - `403 access.role-insufficient` and `404 task.trashed` are relayed with their `details` (the
   roles; the trash entry of the task).
 - The listings relay `cursor` and `limit`; they carry no `ETag`.

@@ -35,10 +35,22 @@ describe('toIfMatchHeader', () => {
   });
 
   it.each([
+    ['a list of entity tags', '"4", "5"'],
+    ['a weak entity tag', 'W/"7"'],
+    ['the wildcard', '*'],
+  ])('returns %s unchanged', (_label: string, value: string) => {
+    expect(toIfMatchHeader(value)).toBe(value);
+  });
+
+  it.each([
     ['an empty value', ''],
     ['spaces only', '   '],
     ['a tab only', '\t'],
     ['spaces and tabs', ' \t '],
+    ['a no-break space', '\u00a0'],
+    ['a comma only', ','],
+    ['two empty list members', ', '],
+    ['empty list members around white space', ' , '],
   ])(
     'refuses %s with 400 request.invalid located in the header',
     (_label: string, value: string) => {
@@ -52,7 +64,7 @@ describe('toIfMatchHeader', () => {
             {
               in: 'header',
               path: 'If-Match',
-              code: 'invalid_format',
+              code: 'custom',
               message: 'Expected an entity tag, not a blank value.',
             },
           ],
