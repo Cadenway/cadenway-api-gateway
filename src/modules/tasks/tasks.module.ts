@@ -2,9 +2,18 @@ import { ExecuteBulkTaskAction } from './application/use-cases/commands/tasks/ex
 import { ExecuteBulkTaskActionController } from './presentation/http/controllers/tasks/execute-bulk-task-action.controller.js';
 import { DuplicateTask } from './application/use-cases/commands/tasks/duplicate-task/duplicate-task.use-case.js';
 import { DuplicateTaskController } from './presentation/http/controllers/tasks/duplicate-task.controller.js';
-import { Module, type FactoryProvider, type Provider } from '@nestjs/common';
+import { requestDeadlineMiddleware } from '@cadenway/nest-common';
+import {
+  Module,
+  RequestMethod,
+  type FactoryProvider,
+  type MiddlewareConsumer,
+  type NestModule,
+  type Provider,
+} from '@nestjs/common';
 
 import { ClientsModule } from '../../clients/clients.module.js';
+import { noStore } from '../../presentation/http/middleware/no-store.middleware.js';
 import { TaskServiceClient } from '../../clients/task-service.client.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
@@ -30,12 +39,21 @@ import { taskDetailCoreSourceProvider } from './composition/providers/adapters/d
 import { taskDetailPartsProvider } from './composition/providers/adapters/details/task-detail-parts.provider.js';
 import { getTaskDetailProvider } from './composition/providers/use-cases/details/get-task-detail.provider.js';
 import { taskTimeProviders } from './composition/providers/use-cases/time/task-time.provider.js';
+import { goalProviders } from './composition/providers/use-cases/goal/goal.provider.js';
+import { intakeProviders } from './composition/providers/use-cases/intake/intake.provider.js';
+import { taskReportingProviders } from './composition/providers/use-cases/reporting/task-reporting.provider.js';
 import { taskCollaborationProviders } from './composition/providers/use-cases/approval/task-collaboration.provider.js';
 import { createTaskRegistryAdapter } from './infrastructure/adapters/task-service/task-registry.adapter.js';
 import { TasksController } from './presentation/http/controllers/tasks/tasks.controller.js';
 import { LabelsController } from './presentation/http/controllers/labels/labels.controller.js';
 import { MyTasksController } from './presentation/http/controllers/my-tasks/my-tasks.controller.js';
 import { TaskTimeController } from './presentation/http/controllers/time/task-time.controller.js';
+import { GoalController } from './presentation/http/controllers/goal/goal.controller.js';
+import {
+  IntakeController,
+  PublicIntakeController,
+} from './presentation/http/controllers/intake/intake.controller.js';
+import { TaskReportingController } from './presentation/http/controllers/reporting/task-reporting.controller.js';
 import { TaskApprovalController } from './presentation/http/controllers/approval/task-approval.controller.js';
 import { OnboardingController } from './presentation/http/controllers/onboarding/onboarding.controller.js';
 
@@ -189,6 +207,9 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     ...PROVIDERS,
     ...DETAIL_PROVIDERS,
     ...taskTimeProviders,
+    ...goalProviders,
+    ...intakeProviders,
+    ...taskReportingProviders,
     ...taskCollaborationProviders,
   ],
   controllers: [
@@ -198,8 +219,22 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     LabelsController,
     MyTasksController,
     TaskTimeController,
+    GoalController,
+    TaskReportingController,
+    IntakeController,
+    PublicIntakeController,
     TaskApprovalController,
     OnboardingController,
   ],
 })
-export class TasksModule {}
+export class TasksModule implements NestModule {
+  // #region Methods
+  /** Configures the intake cache policy and the bounded CSV preparation deadline. */
+  public configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(noStore).forRoutes(IntakeController, PublicIntakeController);
+    consumer
+      .apply(requestDeadlineMiddleware({ budgetMs: 120_000, acceptIncoming: false }))
+      .forRoutes({ path: 'v1/lists/:listId/tasks/export', method: RequestMethod.GET });
+  }
+  // #endregion
+}

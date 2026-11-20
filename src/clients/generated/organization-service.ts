@@ -177,6 +177,25 @@ export interface MyOrganizationPage {
   nextCursor: NextCursor | null;
 }
 
+export interface MemberNameLookup {
+  /**
+     * @minItems 1
+     * @maxItems 5000
+     */
+  userIds: string[];
+}
+
+export type MemberNameLookupResultItemsItem = {
+  userId: string;
+  /** Full name from the organization-service user directory. */
+  name: string;
+};
+
+export interface MemberNameLookupResult {
+  /** @maxItems 5000 */
+  items: MemberNameLookupResultItemsItem[];
+}
+
 export interface Member {
   id: string;
   userId: string;
@@ -726,6 +745,46 @@ const listMembersInternal = async (params?: ListMembersInternalParams, options?:
 
 
 
+const getLookupMemberNamesInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/member-names/lookup`
+}
+
+/**
+ * Returns the directory names of requested accounts that currently belong to the
+ * organization of the token. All current members, including guests, can be the acting user.
+ * Read the actor's membership and the requested names in one tenant snapshot. Omit accounts
+ * outside the organization, departed members and accounts without a directory name.
+ * Case-equivalent UUIDs and repeated identifiers resolve to at most one result per account.
+ * Result order is unspecified. The gateway supplies only assignees from the result of
+ * `GET /internal/v1/lists/{listId}/tasks/export` for the same actor and organization.
+ *
+ * Internal token: issuer `api-gateway` only, actor `user` and organization required.
+ * @summary Resolve member names for list CSV export
+ */
+const lookupMemberNamesInternal = async (memberNameLookup: MemberNameLookup, options?: RequestInit): Promise<lookupMemberNamesInternalResponse> => {
+
+  const res = await fetchFn(getLookupMemberNamesInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(memberNameLookup)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: lookupMemberNamesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as lookupMemberNamesInternalResponse
+}
+
+
+
 const getGetMemberInternalUrl = (memberId: string,) => {
 
 
@@ -1121,7 +1180,7 @@ const refuseInvitationInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, listMembersInternal, getListMembersInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -1307,6 +1366,41 @@ export type listMembersInternalResponseError = (listMembersInternalResponse400 |
 };
 
 export type listMembersInternalResponse = (listMembersInternalResponseSuccess | listMembersInternalResponseError)
+
+
+export type lookupMemberNamesInternalResponse200 = {
+  data: MemberNameLookupResult
+  status: 200
+}
+
+export type lookupMemberNamesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type lookupMemberNamesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type lookupMemberNamesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type lookupMemberNamesInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type lookupMemberNamesInternalResponseSuccess = (lookupMemberNamesInternalResponse200) & {
+  headers: Headers;
+};
+export type lookupMemberNamesInternalResponseError = (lookupMemberNamesInternalResponse400 | lookupMemberNamesInternalResponse401 | lookupMemberNamesInternalResponse403 | lookupMemberNamesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type lookupMemberNamesInternalResponse = (lookupMemberNamesInternalResponseSuccess | lookupMemberNamesInternalResponseError)
 
 
 export type getMemberInternalResponse200 = {

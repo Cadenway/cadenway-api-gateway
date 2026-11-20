@@ -392,10 +392,13 @@ request → auth guard (token) → scope guard → organization context → rate
 
 ### Deadlines and internal calls
 
-- A public route has a budget of 10 seconds. It travels as a deadline: each internal call gets the
+- A public route has a default budget of 10 seconds. It travels as a deadline: each internal call gets the
   time left, never its own fresh timeout.
 - One internal call waits 2 seconds at most, or the time left when that is shorter. The cap also
   bounds the main call of an aggregate.
+- CSV export allows up to 120 seconds to prepare the download. Its Task call keeps the
+  two-second header deadline and reads the body within the time left. The gateway prepares the
+  file on disk before sending headers. It closes a download after 30 seconds without progress.
 - One retry, only on a connection error or a `503`, and only for an idempotent call.
 - One circuit breaker per service: while it is open, the call fails at once, as a failing main or
   secondary service does in an aggregate.

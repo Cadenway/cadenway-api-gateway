@@ -10,4 +10,7 @@
 // package.json next to dist/.
 import { startTelemetry } from '@cadenway/nest-common/telemetry';
 
-startTelemetry({ service: 'api-gateway' });
+startTelemetry({
+  service: 'api-gateway',
+  sensitiveHttpPathPrefixes: ['/v1/intake-forms/', '/internal/v1/intake-forms/'],
+});

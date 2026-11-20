@@ -3,12 +3,16 @@ import {
   InternalTokenSigner,
   InternalTokenVerifier,
   ProblemException,
+  runWithDeadline,
   runWithOrganizationContext,
   type Ed25519PrivateJwk,
   type InternalPrincipal,
   type OrganizationContext,
 } from '@cadenway/nest-common';
+import { once } from 'node:events';
 import { readFileSync } from 'node:fs';
+import { createServer, type ServerResponse } from 'node:http';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { http, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
@@ -53,6 +57,140 @@ const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
 const ACCESS_REQUEST_ID = '019a7e00-1a2b-7c3d-8e4f-5a6b7c8d9e21';
 const ENTRY_ID = '019a7f00-1a2b-7c3d-8e4f-5a6b7c8d9e31';
 const ITEM_ID = '019a7c00-1a2b-7c3d-8e4f-5a6b7c8d9e10';
+const NATIVE_EXPORT_ROWS = 256;
+const NATIVE_EXPORT_HEADER_TIMEOUT = 1000;
+
+/** Writes a chunked export through Node's real socket backpressure. */
+async function serveNativeExport(response: ServerResponse): Promise<number> {
+  const closed = new AbortController();
+  const onClose = (): void => {
+    closed.abort();
+  };
+  response.once('close', onClose);
+  let drains = 0;
+  const writeRecord = async (record: object): Promise<void> => {
+    const chunk = Buffer.from(`${JSON.stringify(record)}\n`, 'utf8');
+    if (!response.write(chunk)) {
+      drains += 1;
+      await once(response, 'drain', { signal: closed.signal });
+    }
+  };
+
+  try {
+    response.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    await writeRecord({ kind: 'metadata', filename: 'sprint.csv', header: '"Identifiant"' });
+    // Cross the ordinary header deadline while the response body is still open.
+    await delay(NATIVE_EXPORT_HEADER_TIMEOUT + 200, undefined, { signal: closed.signal });
+
+    const afterAssignees = ['""', '""', ...Array<string>(30).fill(`"${'界'.repeat(500)}"`)];
+    for (let index = 1; index <= NATIVE_EXPORT_ROWS; index += 1) {
+      await writeRecord({
+        kind: 'row',
+        row: {
+          beforeAssignees: [`"CAD-${String(index)}"`, '"Nom"', '"En cours"', '"Haute"'],
+          assigneeIds: [],
+          afterAssignees,
+        },
+      });
+    }
+    await writeRecord({ kind: 'complete', rowCount: NATIVE_EXPORT_ROWS });
+    response.end();
+    return drains;
+  } finally {
+    response.off('close', onClose);
+  }
+}
+
+it('reads a signed CSV projection under socket backpressure beyond the header deadline', async () => {
+  const keys = generateSigningKeys();
+  const signer = await InternalTokenSigner.create({
+    issuer: GATEWAY_ISSUER,
+    privateJwk: JSON.parse(keys.privateJwk) as Ed25519PrivateJwk,
+  });
+  const verifier = await InternalTokenVerifier.create({
+    audience: TASK_SERVICE,
+    trustedIssuers: { [GATEWAY_ISSUER]: [keys.publicJwk] },
+  });
+  const requestSignal = new AbortController();
+  const writes: Promise<number>[] = [];
+  let principal: InternalPrincipal | undefined;
+  let propagatedBudget: number | undefined;
+  const producer = createServer({ highWaterMark: 16_384 }, (request, response) => {
+    const served = (async (): Promise<number> => {
+      expect(request.method).toBe('GET');
+      expect(request.url?.split('?')[0]).toBe(`/internal/v1/lists/${LIST_ID}/tasks/export`);
+      expect(request.headers.accept).toBe('application/x-ndjson');
+      propagatedBudget = Number(request.headers['x-request-timeout-ms']);
+      principal = await verifier.verify(
+        (request.headers.authorization ?? '').replace(/^Bearer /u, ''),
+      );
+      return serveNativeExport(response);
+    })();
+    writes.push(served);
+    void served.catch(() => {
+      response.destroy();
+    });
+  });
+
+  try {
+    producer.listen(0, '127.0.0.1');
+    await once(producer, 'listening');
+    const address = producer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('The loopback server did not obtain a TCP port.');
+    }
+    const client = new TaskServiceClient(
+      new InternalHttpClient({
+        service: TASK_SERVICE,
+        baseUrl: `http://127.0.0.1:${String(address.port)}`,
+        signer,
+        callTimeoutMs: NATIVE_EXPORT_HEADER_TIMEOUT,
+      }),
+    );
+    const observedKeys: string[] = [];
+    let observedCompletion: number | undefined;
+    let firstFrame: string | undefined;
+
+    await runWithDeadline(10_000, () =>
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, async () => {
+        const records = await client.exportListTasks(LIST_ID, {}, requestSignal.signal);
+        for await (const record of records) {
+          firstFrame ??= record.kind;
+          if (record.kind === 'row') {
+            observedKeys.push(record.row.beforeAssignees[0] ?? '');
+            expect(record.row.afterAssignees[31]).toBe(`"${'界'.repeat(500)}"`);
+            if (observedKeys.length % 32 === 0) await delay(10);
+          } else if (record.kind === 'complete') {
+            observedCompletion = record.rowCount;
+          }
+        }
+      }),
+    );
+
+    expect(writes).toHaveLength(1);
+    expect((await Promise.all(writes))[0]).toBeGreaterThan(0);
+    expect(firstFrame).toBe('metadata');
+    expect(observedKeys).toEqual(
+      Array.from({ length: NATIVE_EXPORT_ROWS }, (_, index) => `"CAD-${String(index + 1)}"`),
+    );
+    expect(observedCompletion).toBe(NATIVE_EXPORT_ROWS);
+    expect(propagatedBudget).toBeGreaterThan(NATIVE_EXPORT_HEADER_TIMEOUT);
+    expect(principal).toMatchObject({
+      issuer: GATEWAY_ISSUER,
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+      scopes: ['tasks:read', 'tasks:write'],
+    });
+  } finally {
+    requestSignal.abort();
+    producer.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      producer.close(() => {
+        resolve();
+      });
+    });
+  }
+});
 
 /**
  * A call task-service received.
@@ -505,7 +643,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
   function answer(
     method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     path: string,
-    reply: () => Response,
+    reply: (request: Request) => Response,
   ): void {
     server.use(
       http[method](`${BASE_URL}${path}`, async ({ request }) => {
@@ -521,7 +659,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
             (request.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
           ),
         });
-        return reply();
+        return reply(request);
       }),
     );
   }
@@ -597,6 +735,105 @@ describe('TaskServiceClient against task-service over HTTP', () => {
       actor: { type: 'user', id: CAMILLE.id },
       organizationId: ATELIER_NORD_ID,
     });
+  });
+
+  it('opens an NDJSON export through the generated route with the verified user and organization', async () => {
+    const frames = [
+      { kind: 'metadata', filename: 'sprint.csv', header: '"Identifiant"' },
+      { kind: 'complete', rowCount: 0 },
+    ];
+    answer('get', '/internal/v1/lists/:listId/tasks/export', (request) => {
+      expect(request.headers.get('Accept')).toBe('application/x-ndjson');
+      return new HttpResponse(`${frames.map((frame) => JSON.stringify(frame)).join('\n')}\n`, {
+        headers: { 'Content-Type': 'application/x-ndjson' },
+      });
+    });
+
+    const stream = await asCamille(() =>
+      client.exportListTasks(LIST_ID, { sheetSortColumn: 'people' }),
+    );
+
+    const result: unknown[] = [];
+    for await (const frame of stream) result.push(frame);
+
+    expect(result).toEqual(frames);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('sheetSortColumn=people');
+    expect(calls[0]?.principal).toMatchObject({
+      issuer: GATEWAY_ISSUER,
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('does not retry an unavailable export', async () => {
+    answer('get', '/internal/v1/lists/:listId/tasks/export', () =>
+      json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+
+    await expect(asCamille(() => client.exportListTasks(LIST_ID, {}))).rejects.toBeInstanceOf(
+      ProblemException,
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it('retains a typed row-limit refusal before handing off an export body', async () => {
+    answer('get', '/internal/v1/lists/:listId/tasks/export', () =>
+      json(
+        {
+          type: 'about:blank',
+          title: 'Export too large',
+          status: 422,
+          code: 'list.export-row-limit-reached',
+        },
+        422,
+        { 'Content-Type': 'application/problem+json' },
+      ),
+    );
+
+    await expect(asCamille(() => client.exportListTasks(LIST_ID, {}))).rejects.toMatchObject({
+      problem: { status: 422, code: 'list.export-row-limit-reached' },
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('uses an unscoped system token for public intake submissions and forwards the replay key', async () => {
+    const key = 'A'.repeat(43);
+    answer('post', '/internal/v1/intake-forms/:publicKey/submissions', () =>
+      json({ receipt: 'B'.repeat(43) }),
+    );
+
+    await client.submitPublicIntakeForm(key, { title: 'Aide' }, 'request-1');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.idempotencyKey).toBe('request-1');
+    expect(calls[0]?.principal).toMatchObject({
+      actor: { type: 'system', id: null },
+      organizationId: null,
+    });
+  });
+
+  it('does not retry a public intake submission even when it has a replay key', async () => {
+    const key = 'A'.repeat(43);
+    answer('post', '/internal/v1/intake-forms/:publicKey/submissions', () =>
+      json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+
+    await expect(
+      client.submitPublicIntakeForm(key, { title: 'Aide' }, 'request-1'),
+    ).rejects.toBeInstanceOf(ProblemException);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('returns the intake ETag on a no-content publication revocation', async () => {
+    answer(
+      'delete',
+      '/internal/v1/lists/:listId/intake-form/publication',
+      () => new HttpResponse(null, { status: 204, headers: { ETag: '"3"' } }),
+    );
+
+    await expect(asCamille(() => client.disableIntakeForm(LIST_ID, '"2"'))).resolves.toBe(3);
+    expect(calls[0]?.ifMatch).toBe('"2"');
   });
 
   it('sends the array filters comma-separated and every other parameter as declared', async () => {

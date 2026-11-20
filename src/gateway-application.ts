@@ -2,10 +2,12 @@ import { createApplication, type CreateApplicationOptions } from '@cadenway/nest
 import type { DynamicModule, Type } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 
 import { AppModule } from './app.module.js';
 import type { AppConfig } from './config/app-config.js';
+import { noStore } from './presentation/http/middleware/no-store.middleware.js';
 
 /**
  * Constant SERVICE_NAME
@@ -67,8 +69,8 @@ export const CORS_ALLOWED_HEADERS: readonly string[] = [
  *
  * @description
  * Response headers of the contracts the applications must be able to read across origins: the
- * error reference, the entity tag, the location of a created resource, the rate limit, the
- * idempotent replay and the deprecation notices.
+ * error reference, the entity tag, the location of a created resource, the download filename,
+ * the rate limit, the idempotent replay and the deprecation notices.
  *
  * @type {readonly string[]}
  */
@@ -76,6 +78,7 @@ export const CORS_EXPOSED_HEADERS: readonly string[] = [
   'X-Request-Id',
   'ETag',
   'Location',
+  'Content-Disposition',
   'Retry-After',
   'RateLimit',
   'RateLimit-Policy',
@@ -144,6 +147,15 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
+  // Nest route middleware is skipped when the shared parser reports a malformed body.
+  app.use(
+    '/v1/intake-forms',
+    (error: unknown, request: Request, response: Response, next: NextFunction): void => {
+      noStore(request, response, () => {
+        next(error);
+      });
+    },
+  );
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
   // The only entity tag is the `version` of a resource, set by the `EtagInterceptor` of the kit:
   // Express would add a weak one, derived from the body, to every other answer.

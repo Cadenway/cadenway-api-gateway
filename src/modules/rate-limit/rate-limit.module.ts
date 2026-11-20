@@ -7,13 +7,16 @@ import { bearerFailureCounterProvider } from './composition/providers/adapters/a
 import { requestCounterProvider } from './composition/providers/adapters/requests/request-counter.provider.js';
 import { checkBearerFailuresProvider } from './composition/providers/use-cases/addresses/check-bearer-failures.provider.js';
 import { countAnonymousRequestProvider } from './composition/providers/use-cases/addresses/count-anonymous-request.provider.js';
+import { countIntakeRequestProvider } from './composition/providers/use-cases/addresses/count-intake-request.provider.js';
 import { countBearerFailureProvider } from './composition/providers/use-cases/addresses/count-bearer-failure.provider.js';
 import { countRequestProvider } from './composition/providers/use-cases/requests/count-request.provider.js';
 import { CheckBearerFailures } from './public/addresses/check-bearer-failures.js';
 import { CountAnonymousRequest } from './public/addresses/count-anonymous-request.js';
+import { CountIntakeRequest } from './public/addresses/count-intake-request.js';
 import { CountBearerFailure } from './public/addresses/count-bearer-failure.js';
 import { CountRequest } from './public/requests/count-request.js';
 import { RateLimitGuard } from './public/requests/rate-limit-guard.js';
+import { IntakeRateLimitGuard } from './public/requests/intake-rate-limit-guard.js';
 
 /**
  * Class RateLimitModule
@@ -36,14 +39,18 @@ import { RateLimitGuard } from './public/requests/rate-limit-guard.js';
     addressPseudonymizerProvider,
     countRequestProvider,
     countAnonymousRequestProvider,
+    countIntakeRequestProvider,
     checkBearerFailuresProvider,
     countBearerFailureProvider,
     RateLimitGuard,
+    IntakeRateLimitGuard,
   ],
   exports: [
     RateLimitGuard,
     CountRequest,
     CountAnonymousRequest,
+    CountIntakeRequest,
+    IntakeRateLimitGuard,
     CheckBearerFailures,
     CountBearerFailure,
   ],
