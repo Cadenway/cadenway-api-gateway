@@ -10,6 +10,23 @@ import {
   CreateSpaceInternalResponse,
   CreateSubtaskInternalResponse,
   CreateTaskInternalResponse,
+  CreateTaskTimeEntryInternalResponse,
+  ListSpaceCustomFieldsInternalResponse,
+  ListListCustomFieldsInternalResponse,
+  CreateSpaceCustomFieldInternalResponse,
+  GetSpaceCustomFieldInternalResponse,
+  UpdateSpaceCustomFieldInternalResponse,
+  GetTaskApprovalInternalResponse,
+  RequestTaskApprovalInternalResponse,
+  VoteOnTaskApprovalInternalResponse,
+  GetOnboardingInternalResponse,
+  UpdateOnboardingInternalResponse,
+  UpdateOnboardingChecklistInternalResponse,
+  FinishOnboardingInternalResponse,
+  GetTaskTimeEntryInternalResponse,
+  GetTaskTimeSummaryInternalResponse,
+  GetTaskStatusDurationsInternalResponse,
+  ListTaskTimeEntriesInternalResponse,
   CreateTaskCommentInternalResponse,
   GetTaskCommentInternalResponse,
   UpdateTaskCommentInternalResponse,
@@ -187,6 +204,119 @@ export function createFakeTask(): FakeTask {
     return () => Promise.resolve(answer as never);
   };
   return {
+    listSpaceCustomFields: vi.fn(
+      task(ListSpaceCustomFieldsInternalResponse, 'get', '/v1/spaces/{spaceId}/custom-fields'),
+    ),
+    listListCustomFields: vi.fn(
+      task(ListListCustomFieldsInternalResponse, 'get', '/v1/lists/{listId}/custom-fields'),
+    ),
+    createSpaceCustomField: vi.fn(() => {
+      const field = internalExample(
+        CreateSpaceCustomFieldInternalResponse,
+        'post',
+        '/v1/spaces/{spaceId}/custom-fields',
+        201,
+      );
+      return Promise.resolve({ field, version: field.version });
+    }),
+    getSpaceCustomField: vi.fn(() => {
+      const field = internalExample(
+        GetSpaceCustomFieldInternalResponse,
+        'get',
+        '/v1/spaces/{spaceId}/custom-fields/{fieldId}',
+      );
+      return Promise.resolve({ field, version: field.version });
+    }),
+    updateSpaceCustomField: vi.fn(() => {
+      const field = internalExample(
+        UpdateSpaceCustomFieldInternalResponse,
+        'patch',
+        '/v1/spaces/{spaceId}/custom-fields/{fieldId}',
+      );
+      return Promise.resolve({ field, version: field.version });
+    }),
+    retireSpaceCustomField: vi.fn(() => Promise.resolve()),
+    getTaskApproval: vi.fn(() => {
+      const body = internalExample(
+        GetTaskApprovalInternalResponse,
+        'get',
+        '/v1/tasks/{taskKey}/approvals',
+      );
+      return Promise.resolve({ body, version: body.taskVersion });
+    }),
+    requestTaskApproval: vi.fn(() => {
+      const body = internalExample(
+        RequestTaskApprovalInternalResponse,
+        'post',
+        '/v1/tasks/{taskKey}/approvals/request',
+      );
+      return Promise.resolve({ body, version: body.taskVersion });
+    }),
+    voteOnTaskApproval: vi.fn(() => {
+      const body = internalExample(
+        VoteOnTaskApprovalInternalResponse,
+        'put',
+        '/v1/tasks/{taskKey}/approvals/{roundId}/votes/me',
+      );
+      return Promise.resolve({ body, version: body.taskVersion });
+    }),
+    withdrawTaskApprovalVote: vi.fn(() => Promise.resolve({ version: 14 })),
+    getOnboarding: vi.fn(() => {
+      const body = internalExample(
+        GetOnboardingInternalResponse,
+        'post',
+        '/v1/me/onboarding/finish',
+        201,
+      );
+      return Promise.resolve({ body, version: body.version });
+    }),
+    updateOnboarding: vi.fn(() => {
+      const body = internalExample(
+        UpdateOnboardingInternalResponse,
+        'post',
+        '/v1/me/onboarding/finish',
+        201,
+      );
+      return Promise.resolve({ body, version: body.version });
+    }),
+    updateOnboardingChecklist: vi.fn(() => {
+      const body = internalExample(
+        UpdateOnboardingChecklistInternalResponse,
+        'post',
+        '/v1/me/onboarding/finish',
+        201,
+      );
+      return Promise.resolve({ body, version: body.version });
+    }),
+    finishOnboarding: vi.fn(() => {
+      const body = internalExample(
+        FinishOnboardingInternalResponse,
+        'post',
+        '/v1/me/onboarding/finish',
+        201,
+      );
+      return Promise.resolve({ body, version: body.version });
+    }),
+    listTaskTimeEntries: vi.fn(
+      task(ListTaskTimeEntriesInternalResponse, 'get', '/v1/tasks/{taskKey}/time-entries'),
+    ),
+    createTaskTimeEntry: vi.fn(
+      task(CreateTaskTimeEntryInternalResponse, 'post', '/v1/tasks/{taskKey}/time-entries', 201),
+    ),
+    getTaskTimeEntry: vi.fn(() =>
+      Promise.resolve(
+        GetTaskTimeEntryInternalResponse.parse(
+          responseExample('post', '/v1/tasks/{taskKey}/time-entries', 201),
+        ),
+      ),
+    ),
+    deleteTaskTimeEntry: vi.fn(() => Promise.resolve()),
+    getTaskTimeSummary: vi.fn(
+      task(GetTaskTimeSummaryInternalResponse, 'get', '/v1/tasks/{taskKey}/time-summary'),
+    ),
+    getTaskStatusDurations: vi.fn(
+      task(GetTaskStatusDurationsInternalResponse, 'get', '/v1/tasks/{taskKey}/status-durations'),
+    ),
     duplicateList: vi.fn(() =>
       Promise.resolve(
         DuplicateListInternalResponse.parse({

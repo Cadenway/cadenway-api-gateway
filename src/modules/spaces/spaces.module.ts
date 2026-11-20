@@ -13,8 +13,10 @@ import { UpdateSpace } from './application/use-cases/commands/spaces/update-spac
 import { GetSpaceOverview } from './application/use-cases/queries/spaces/get-space-overview/get-space-overview.use-case.js';
 import { GetSpace } from './application/use-cases/queries/spaces/get-space/get-space.use-case.js';
 import { ListSpaces } from './application/use-cases/queries/spaces/list-spaces/list-spaces.use-case.js';
+import { customFieldProviders } from './composition/providers/use-cases/custom-field/custom-field.provider.js';
 import { createSpaceRegistryAdapter } from './infrastructure/adapters/task-service/space-registry.adapter.js';
 import { SpacesController } from './presentation/http/controllers/spaces/spaces.controller.js';
+import { CustomFieldsController } from './presentation/http/controllers/custom-field/custom-fields.controller.js';
 
 /**
  * Constant SPACE_REGISTRY
@@ -86,7 +88,7 @@ const PROVIDERS: readonly FactoryProvider[] = [
  */
 @Module({
   imports: [AuthModule, RateLimitModule, ClientsModule],
-  providers: [...PROVIDERS],
-  controllers: [ListSpaceMilestonesController, SpacesController],
+  providers: [...PROVIDERS, ...customFieldProviders],
+  controllers: [ListSpaceMilestonesController, SpacesController, CustomFieldsController],
 })
 export class SpacesModule {}

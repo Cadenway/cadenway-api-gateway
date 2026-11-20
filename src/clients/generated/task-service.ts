@@ -3,6 +3,86 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
+ * A stable UUID v7 identifying one custom field definition, in lowercase.
+ * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+ */
+export type CustomFieldId = string;
+
+/**
+ * An active definition of a custom column in a space.
+ */
+export interface CustomFieldDefinition {
+  id: CustomFieldId;
+  spaceId: string;
+  name: string;
+  /** Immutable kind. This delivery supports numeric and text values. */
+  type: string;
+  /**
+     * Zero-based position among the active definitions of the space.
+     * @minimum 0
+     */
+  position: number;
+  /** True only for the active numeric definition used for sprint points. */
+  sprintPoints: boolean;
+  /**
+     * Definition version used by its ETag.
+     * @minimum 1
+     */
+  version: number;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface CustomFieldDefinitionPage {
+  items: CustomFieldDefinition[];
+  nextCursor: NextCursor | null;
+}
+
+export type CustomFieldDefinitionCreationType = typeof CustomFieldDefinitionCreationType[keyof typeof CustomFieldDefinitionCreationType];
+
+
+export const CustomFieldDefinitionCreationType = {
+  number: 'number',
+  text: 'text',
+} as const;
+
+export interface CustomFieldDefinitionCreation {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name: string;
+  type: CustomFieldDefinitionCreationType;
+}
+
+export interface CustomFieldDefinitionPatch {
+  /**
+     * Display name, trimmed. Renaming never changes the ID.
+     * @minLength 1
+     * @maxLength 80
+     * @pattern \S
+     */
+  name?: string;
+  /**
+     * Move to this zero-based position in the active definition order.
+     * @minimum 0
+     * @maximum 29
+     */
+  position?: number;
+  /**
+     * True designates this numeric field, clearing any previous designation. False clears
+     * the designation if this field currently holds it.
+     */
+  sprintPoints?: boolean;
+}
+
+/**
  * Current visible target name and public resource path; listId is present for a saved view.
  */
 export type FavoriteTarget = {
@@ -43,12 +123,6 @@ export interface FavoriteCreation {
   /** UUID of the target resource. */
   targetId: string;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 /**
  * The caller's currently accessible active targets in insertion order by creation time and ID.
@@ -164,6 +238,23 @@ export type SavedViewGroupByValue = string | null;
  */
 export type SavedViewSheetColumnValue = string;
 
+export type SavedViewCustomFieldSortDirection = typeof SavedViewCustomFieldSortDirection[keyof typeof SavedViewCustomFieldSortDirection];
+
+
+export const SavedViewCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * Feuille-only sort by a custom field's stable ID. It takes precedence over sheetSort while
+ * the list has that active definition. Otherwise the client falls back to sheetSort.
+ */
+export interface SavedViewCustomFieldSort {
+  fieldId: CustomFieldId;
+  direction: SavedViewCustomFieldSortDirection;
+}
+
 /**
  * Feuille-only sort applied to the fully loaded result by the client.
  */
@@ -178,8 +269,11 @@ export type SavedViewPresentationValueSheetSort = {
 export interface SavedViewPresentationValue {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Stable IDs of hidden custom columns; clients ignore retired or unknown IDs. */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationValueSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -337,8 +431,14 @@ export type SavedViewPresentationSheetSort = {
 export interface SavedViewPresentation {
   hiddenBoardStatusKeys?: StatusKey[];
   hiddenSheetColumns?: SavedViewSheetColumn[];
+  /**
+     * IDs of custom columns to hide, including stored preferences for retired fields.
+     * @maxItems 30
+     */
+  hiddenCustomFieldIds?: CustomFieldId[];
   /** Feuille-only sort applied to the fully loaded result by the client. */
   sheetSort?: SavedViewPresentationSheetSort;
+  customFieldSort?: SavedViewCustomFieldSort;
 }
 
 /**
@@ -390,9 +490,22 @@ export const SavedViewPresentationPatchSheetSortDirection = {
   desc: 'desc',
 } as const;
 
+export type SavedViewPresentationPatchCustomFieldSortDirection = typeof SavedViewPresentationPatchCustomFieldSortDirection[keyof typeof SavedViewPresentationPatchCustomFieldSortDirection];
+
+
+export const SavedViewPresentationPatchCustomFieldSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
 export type SavedViewPresentationPatchSheetSort = {
   column?: SavedViewSheetColumn;
   direction?: SavedViewPresentationPatchSheetSortDirection;
+} | null;
+
+export type SavedViewPresentationPatchCustomFieldSort = {
+  fieldId?: CustomFieldId;
+  direction?: SavedViewPresentationPatchCustomFieldSortDirection;
 } | null;
 
 /**
@@ -401,7 +514,9 @@ export type SavedViewPresentationPatchSheetSort = {
 export interface SavedViewPresentationPatch {
   hiddenBoardStatusKeys?: StatusKey[] | null;
   hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  hiddenCustomFieldIds?: CustomFieldId[] | null;
   sheetSort?: SavedViewPresentationPatchSheetSort;
+  customFieldSort?: SavedViewPresentationPatchCustomFieldSort;
 }
 
 /**
@@ -774,6 +889,13 @@ export const Recurrence = {
 } as const;
 
 /**
+ * Sparse values keyed by lowercase stable custom field ID. Only active definitions of the readable
+ * task's current space are included. Missing entries have no value. Absence of the member
+ * means the producer has not reported these values. Numeric zero and empty text are values.
+ */
+export interface TaskCustomFieldValues {[key: string]: number | string}
+
+/**
  * A person, by account. Only the account id in this version: the web application takes the
  * name and the initials from the member list. It may name a former member, for example the
  * owner of a space of the whole organization who left it. Later versions may add members.
@@ -810,6 +932,7 @@ export interface TaskSummary {
   /** Whether this task is a milestone; absence means the producer did not report it. */
   milestone?: boolean;
   recurrence?: Recurrence;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -924,6 +1047,82 @@ export interface Mention {
   /** @minimum 1 */
   end: number;
 }
+
+export interface TaskApprovalReviewer {
+  reviewerUserId: string;
+  /**
+     * Null while no vote is recorded for the reviewer.
+     * @nullable
+     */
+  decision: string | null;
+  /** @nullable */
+  decidedAt: string | null;
+  /**
+     * The task comment created by a change request, or null for other decisions and while
+     * waiting. Resolve it with the task comment route, which also handles removed comments.
+     * @nullable
+     */
+  commentId: string | null;
+}
+
+/**
+ * The current request and its votes from reviewers with current edit access.
+ */
+export interface TaskApprovalRound {
+  /** UUID v7 of the round. Each new round receives a different identifier. */
+  roundId: string;
+  /** Account that opened the round. */
+  requesterUserId: string;
+  requestedAt: string;
+  /**
+     * Pending while a reviewer is waiting or there are no eligible reviewers.
+     * A change request takes precedence. Approval requires every eligible reviewer to approve.
+     * Clients can display an unknown status as pending.
+     */
+  status: string;
+  /** Eligible requested reviewers in request order, including those waiting to vote. */
+  reviewers: TaskApprovalReviewer[];
+}
+
+/**
+ * The approval state at the current task version.
+ */
+export interface TaskApprovalState {
+  taskKey: TaskKey;
+  /**
+     * The version carried by the task ETag.
+     * @minimum 1
+     */
+  taskVersion: number;
+  taskStatus: StatusKey;
+  /** The current round, or null if no round is visible for this task. */
+  current: TaskApprovalRound | null;
+}
+
+export interface TaskApprovalRequest {
+  /**
+     * Distinct accounts with current edit access to the task, including the caller if requested.
+     * @minItems 1
+     * @maxItems 20
+     */
+  reviewerUserIds: string[];
+}
+
+/**
+ * The vote made by the authenticated reviewer.
+ */
+export type TaskApprovalVote = {
+  decision: 'approved';
+} | {
+  decision: 'changes-requested';
+  /**
+     * Nonblank Markdown of up to 5,000 Unicode code points, stored as a task comment.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  reason: string;
+};
 
 /**
  * A live comment in the flat task timeline; deleted comments are omitted.
@@ -1495,6 +1694,7 @@ export interface Task {
   descriptionMentions?: Mention[];
   /** Successor key only when the successor is live and readable by the caller. */
   nextOccurrenceKey?: TaskKey;
+  customFieldValues?: TaskCustomFieldValues;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -1794,11 +1994,19 @@ export interface SubtaskCreation {
 }
 
 /**
+ * Merge values by lowercase active field ID in the task's resulting space. Omitted keys are unchanged.
+ * A null value clears that entry. A number or string must match the field's immutable type.
+ * A value of the designated sprint points field must be nonnegative, including zero.
+ */
+export interface TaskCustomFieldValuesPatch {[key: string]: number | string | null}
+
+/**
  * JSON Merge Patch of a task; an empty object changes nothing. The assignees, the labels and
  * the checklist are collections: they change through their own routes, and a patch ignores
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  customFieldValues?: TaskCustomFieldValuesPatch;
   /**
      * Structured spans in the description; replacing text clears prior spans unless a
      * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
@@ -2333,6 +2541,143 @@ export interface TaskDetailCore {
 }
 
 /**
+ * Wizard screen. The import screen can be skipped and does not start an import.
+ */
+export type OnboardingWizardStep = typeof OnboardingWizardStep[keyof typeof OnboardingWizardStep];
+
+
+export const OnboardingWizardStep = {
+  space: 'space',
+  preset: 'preset',
+  team: 'team',
+  import: 'import',
+} as const;
+
+/**
+ * `dev` creates Backlog, Sprint 1 and Bugs. `mkt` creates Calendrier éditorial and
+ * Campagnes. `agency` creates Projets clients and Demandes. Those presets include the
+ * corresponding example tasks. `blank` creates only Première liste, with no example tasks.
+ */
+export type OnboardingPreset = typeof OnboardingPreset[keyof typeof OnboardingPreset];
+
+
+export const OnboardingPreset = {
+  dev: 'dev',
+  mkt: 'mkt',
+  agency: 'agency',
+  blank: 'blank',
+} as const;
+
+/**
+ * Space name in the draft, or null when unset.
+ */
+export type OnboardingDraftName = SpaceName | null;
+
+/**
+ * Explicit space prefix in the draft, or null when unset.
+ */
+export type OnboardingDraftPrefix = SpacePrefix | null;
+
+export interface OnboardingWizard {
+  /** Only an in-progress wizard accepts further draft changes. */
+  status: string;
+  step: OnboardingWizardStep;
+  preset: OnboardingPreset;
+  name: OnboardingDraftName;
+  prefix: OnboardingDraftPrefix;
+  color: LookColorValue;
+}
+
+/**
+ * Space and first list created by the first successful finish.
+ */
+export interface OnboardingProvisioning {
+  /** UUID v7 of the provisioned space. */
+  spaceId: string;
+  /** UUID v7 of the first list of the selected preset. */
+  firstListId: string;
+}
+
+/**
+ * Presentation state of the personal checklist.
+ */
+export type OnboardingChecklistPresentation = typeof OnboardingChecklistPresentation[keyof typeof OnboardingChecklistPresentation];
+
+
+export const OnboardingChecklistPresentation = {
+  expanded: 'expanded',
+  collapsed: 'collapsed',
+  dismissed: 'dismissed',
+} as const;
+
+/**
+ * Personal progress markers for checklist actions available in this delivery.
+ */
+export interface OnboardingChecklist {
+  presentation: OnboardingChecklistPresentation;
+  /** Set by the first normal task creation by the caller in the provisioned space. */
+  firstTaskCreated: boolean;
+  /** The caller recorded a successful outcome from the organization invitation flow. */
+  invitationSent: boolean;
+  /** The caller recorded trying the Board view. */
+  boardTried: boolean;
+}
+
+/**
+ * First-launch state scoped to the verified caller and organization.
+ */
+export interface OnboardingState {
+  /**
+     * Version of the current state, used for conditional writes.
+     * @minimum 1
+     */
+  version: number;
+  wizard: OnboardingWizard;
+  /** IDs returned by successful provisioning, or null before it completes. */
+  provisioning: OnboardingProvisioning | null;
+  checklist: OnboardingChecklist;
+}
+
+/**
+ * Save wizard progress without provisioning a space. Omitted members keep their values.
+ * Null clears the draft name or prefix. Dismissal is terminal and requires only current
+ * organization membership.
+ */
+export interface OnboardingDraftPatch {
+  step?: OnboardingWizardStep;
+  preset?: OnboardingPreset;
+  name?: OnboardingDraftName;
+  prefix?: OnboardingDraftPrefix;
+  color?: LookColor;
+  /** Dismiss the wizard. */
+  dismissed?: true;
+}
+
+/**
+ * Update personal checklist presentation or mark an action as done. Invitation success
+ * can be recorded before provisioning. Presentation and Board progress require a
+ * provisioned space. The first-task marker is set by task creation.
+ */
+export interface OnboardingChecklistPatch {
+  presentation?: OnboardingChecklistPresentation;
+  /** Record the outcome of a successful organization invitation. */
+  invitationSent?: true;
+  /** Record trying the Board view. */
+  boardTried?: true;
+}
+
+/**
+ * Provision the first space from the selected preset. The caller supplies the prefix
+ * required by regular space creation. The command uses violet when color is omitted.
+ */
+export interface OnboardingFinish {
+  name: SpaceName;
+  prefix: SpacePrefix;
+  preset: OnboardingPreset;
+  color?: LookColor;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -2356,6 +2701,170 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type TimeEntryId = string;
+
+/**
+ * Whole minutes recorded in this entry.
+ * @minimum 1
+ * @maximum 1440
+ */
+export type WorkLogMinutes = number;
+
+/**
+ * Work date in the caller's time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.
+ * @pattern ^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$
+ */
+export type TaskWorkDate = string;
+
+export interface TaskTimeEntry {
+  id: TimeEntryId;
+  taskKey: TaskKey;
+  /** Stable ID of the verified author, including after the author leaves the organization. */
+  authorUserId: string;
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * The normalized note, or null when absent.
+     * @nullable
+     */
+  note: string | null;
+  /** Server creation instant in UTC. */
+  createdAt: string;
+}
+
+export interface TaskTimeEntryPage {
+  items: TaskTimeEntry[];
+  nextCursor: NextCursor | null;
+  /**
+     * Number of entries on the task before pagination.
+     * @minimum 0
+     */
+  total: number;
+  /**
+     * Sum over all entries on the task before pagination. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+}
+
+export interface TaskTimeEntryCreation {
+  minutes: WorkLogMinutes;
+  workDate: TaskWorkDate;
+  /**
+     * Plain text. Surrounding whitespace is removed. An empty note is stored as null.
+     * @maxLength 500
+     */
+  note?: string;
+}
+
+export interface TaskTimeSummary {
+  /**
+     * Sum over all entries on the task. Subtasks are counted separately.
+     * @minimum 0
+     */
+  totalMinutes: number;
+  estimateMinutes: EstimateMinutes | null;
+}
+
+export interface TaskStatusDuration {
+  status: StatusKey;
+  /**
+     * Sum of elapsed milliseconds across the covered visits to this status.
+     * @minimum 0
+     */
+  durationMilliseconds: number;
+  /** True only for the current status when its category is open or active. */
+  active: boolean;
+}
+
+export interface TaskStatusDurationSummary {
+  /** One server observation instant in UTC used for all spans in this summary. */
+  observedAt: string;
+  /** Earliest reliable boundary of the covered suffix, or observedAt with no earlier boundary. */
+  coverageStartedAt: string;
+  /** True when the initial status and all transitions are known since task creation. */
+  complete: boolean;
+  /**
+     * One row per covered status, in order of first appearance in the covered suffix.
+     * The observed current status has a row even when its measured duration is zero.
+     */
+  durations: TaskStatusDuration[];
+}
+
+export interface TaskStatusDurationResult {
+  /** Null for a milestone. */
+  summary: TaskStatusDurationSummary | null;
+}
+
+/**
+ * `time-entry.author-required` when an editor tries to delete another actor's entry.
+ * `access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+ * `auth.organization-required` are defined in `WriteForbidden`.
+ */
+export type TimeEntryDeleteForbiddenResponse = Problem;
+
+/**
+ * `time-entry.not-found` for an entry missing from the task. `task.not-found`, `task.trashed`
+ * and `organization.not-found` follow `TaskNotFound`.
+ */
+export type TimeEntryNotFoundResponse = Problem;
+
+/**
+ * `task.archived` or `idempotency.request-in-progress` while a request using this key is running.
+ */
+export type TimeEntryCreationConflictResponse = Problem;
+
+/**
+ * - `space.manage-forbidden`: the caller does not manage the visible space.
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type CustomFieldManageForbiddenResponse = Problem;
+
+/**
+ * - `custom-field.not-found`: no active definition with this ID in the specified space.
+ * - `space.not-found`: the caller does not see the space or it is absent or deleted.
+ * - `organization.not-found`: the caller is not known as a current member.
+ */
+export type CustomFieldNotFoundResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+ */
+export type CustomFieldCreationConflictResponse = Problem;
+
+/**
+ * - `custom-field.limit-reached`: the space has 30 active definitions.
+ * - `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ */
+export type CustomFieldCreationRefusedResponse = Problem;
+
+/**
+ * - `custom-field.position-invalid`: the requested position does not exist.
+ * - `custom-field.sprint-points-invalid`: the field is text or has a negative current value.
+ */
+export type CustomFieldChangeRefusedResponse = Problem;
+
+/**
+ * `onboarding.wizard-closed`: the wizard has already finished or was dismissed.
+ */
+export type OnboardingWizardClosedResponse = Problem;
+
+/**
+ * `onboarding.checklist-unavailable`: the caller has no provisioned space for this change.
+ */
+export type OnboardingChecklistUnavailableResponse = Problem;
+
+/**
+ * - `onboarding.wizard-closed`: this wizard was already finished or dismissed;
+ * - `space.prefix-taken`: the prefix is reserved in the organization, given in `details.prefix`;
+ * - `idempotency.request-in-progress`: a matching request with this key is still running.
+ */
+export type OnboardingFinishConflictResponse = Problem;
 
 /**
  * `template.not-found`, `space.not-found`, `organization.not-found`.
@@ -2597,6 +3106,46 @@ export type SpaceNotFoundResponse = Problem;
 export type ListNotFoundResponse = Problem;
 
 /**
+ * - `approval.reviewer-required` applies when an editor was omitted from the round.
+ * - `access.role-insufficient` applies when the actor has a list role below `edit`.
+ * - See `InternalAccessRefused` for `auth.issuer-not-allowed`, `auth.actor-not-allowed` and
+ *   `auth.organization-required`.
+ */
+export type ApprovalVoteForbiddenResponse = Problem;
+
+/**
+ * - `approval.round-not-found` applies when the supplied ID differs from the current round or the task has no round.
+ * - See `TaskNotFound` for `task.not-found`, `task.trashed` and `organization.not-found`.
+ */
+export type ApprovalRoundNotFoundResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ */
+export type ApprovalRoundConflictResponse = Problem;
+
+/**
+ * - An archived task returns `task.archived`.
+ * - A milestone returns `approval.milestone-unsupported`.
+ * - An existing vote returns `approval.vote-already-recorded`. Withdraw it before casting another.
+ * - The automated completion returns `recurrence.already-spawned` if it would repeat an occurrence.
+ */
+export type ApprovalVoteConflictResponse = Problem;
+
+/**
+ * A requested reviewer without edit access causes `approval.reviewer-invalid`.
+ */
+export type ApprovalReviewersRefusedResponse = Problem;
+
+/**
+ * - `task.status-hidden` applies if the automatic status is unavailable in the task's space.
+ * - `task.subtask-limit-reached` applies if the recurrence successor would exceed the parent capacity.
+ * - `recurrence.date-out-of-range` applies if the successor dates are out of range.
+ */
+export type ApprovalTransitionRefusedResponse = Problem;
+
+/**
  * - `task.not-found`: no task with this key that the actor sees, or a task in the trash the
  *   actor could not change;
  * - `task.trashed`: the task is in the trash and the actor could change its list, with
@@ -2709,7 +3258,9 @@ export type SprintDatesInvalidResponse = Problem;
  * `idempotency.key-reused`.
  * - `mention.recipient-invalid`: a description mention recipient is ineligible;
  * - `milestone.status-invalid` or `milestone.dates-invalid`: the final milestone is invalid;
- * - `recurrence.date-out-of-range`: the successor date cannot be represented.
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented;
+ * - `custom-field.value-invalid`: on a patch, a field is absent, retired or outside the
+ *   resulting space, the value has the wrong type or designated sprint points are negative.
  */
 export type TaskRefusedResponse = Problem;
 
@@ -2734,6 +3285,11 @@ export type ChecklistItemRefusedResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 export type DependencyDirectionParameter = DependencyDirection;
+
+/**
+ * The strong task version ETag last returned on the task or approval state.
+ */
+export type ApprovalIfMatchParameter = string;
 
 /**
  * Keep the requests of this space, its lists and their tasks.
@@ -3069,6 +3625,17 @@ export type CountTaskGroupsInternalParams = {
   limit?: LimitParameter;
 };
 
+export type ListTaskTimeEntriesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
 export type ListTaskCommentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
@@ -3296,6 +3863,28 @@ export type ListSavedViewsInternalParams = {
 };
 
 export type ListFavoritesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListSpaceCustomFieldsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListListCustomFieldsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -3936,7 +4525,9 @@ const getCreateTaskInternalUrl = (listId: string,) => {
  * as `POST /v1/lists/{listId}/tasks` says: the next keys of the space of the list, never
  * given again, `422 task.status-hidden`, `422 task.cancel-reason-required`,
  * `422 task.cancel-reason-unexpected`, `422 task.assignee-invalid`,
- * `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
+ * `422 task.start-date-invalid`. The actor's first creation through this route in their own
+ * provisioned onboarding space also advances their first-task marker in this transaction.
+ * Records a creation per task. Emits `task.created.v1` per task
  * and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
  * required.
  * Optional checklist entries are created unchecked in order with fresh IDs. Structured
@@ -4155,8 +4746,11 @@ const getUpdateTaskInternalUrl = (taskKey: string,) => {
  * task and its subtasks, the parent, `If-Match` required with `description`
  * (`400 request.invalid` with an issue on the header), `edit` on the list of the task and on
  * the list it moves to (`403 access.role-insufficient`), `409 task.archived` for an archived
- * task or parent. Records the changes of status, priority and due date, the changes of the
- * priority and the due date of a task by the same actor within 60 seconds merged into one
+ * task or parent. A custom field patch is checked against the resulting space, clears entries
+ * set to null and refuses inactive or mismatched definitions and values with
+ * `422 custom-field.value-invalid`. Cross-space move removes incompatible values from the
+ * moved tasks in that transaction. Records the changes of status, priority and due date.
+ * Changes of the priority and the due date of a task by the same actor within 60 seconds merge into one
  * entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
  * assignee, label, subtask and checklist routes below refuse an archived task the same way.
  * Internal token: actor `user`, organization required.
@@ -4423,6 +5017,378 @@ const getTaskDetailInternal = async (taskKey: string, options?: RequestInit): Pr
 
   const data: getTaskDetailInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTaskDetailInternalResponse
+}
+
+
+
+const getListTaskTimeEntriesInternalUrl = (taskKey: string,
+    params?: ListTaskTimeEntriesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/time-entries?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/time-entries`
+}
+
+/**
+ * Lists entries on the visible task in descending `(createdAt,id)` order, with totals
+ * before pagination. The cursor is bound to the task and ordering. Internal token: issuer
+ * api-gateway, actor user and organization required.
+ * @summary List task time entries
+ */
+const listTaskTimeEntriesInternal = async (taskKey: string,
+    params?: ListTaskTimeEntriesInternalParams, options?: RequestInit): Promise<listTaskTimeEntriesInternalResponse> => {
+
+  const res = await fetchFn(getListTaskTimeEntriesInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskTimeEntriesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskTimeEntriesInternalResponse
+}
+
+
+
+const getCreateTaskTimeEntryInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/time-entries`
+}
+
+/**
+ * Requires `edit` on a live task's list. The verified actor becomes the author. A matching
+ * Idempotency-Key replays the entry and Location for 24 hours. The supplied work date is
+ * independent of the UTC creation instant. Internal token: issuer api-gateway, actor user
+ * and organization required.
+ * @summary Record time on a task
+ */
+const createTaskTimeEntryInternal = async (taskKey: string,
+    taskTimeEntryCreation: TaskTimeEntryCreation, options?: RequestInit): Promise<createTaskTimeEntryInternalResponse> => {
+
+  const res = await fetchFn(getCreateTaskTimeEntryInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskTimeEntryCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTaskTimeEntryInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTaskTimeEntryInternalResponse
+}
+
+
+
+const getGetTaskTimeEntryInternalUrl = (taskKey: string,
+    timeEntryId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/time-entries/${timeEntryId}`
+}
+
+/**
+ * Reads the created entry from the specified visible task. Archived tasks remain readable.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Read a task time entry
+ */
+const getTaskTimeEntryInternal = async (taskKey: string,
+    timeEntryId: string, options?: RequestInit): Promise<getTaskTimeEntryInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskTimeEntryInternalUrl(taskKey,timeEntryId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskTimeEntryInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskTimeEntryInternalResponse
+}
+
+
+
+const getDeleteTaskTimeEntryInternalUrl = (taskKey: string,
+    timeEntryId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/time-entries/${timeEntryId}`
+}
+
+/**
+ * Only the entry's author with `edit` on the live task's list can remove it. Internal
+ * token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a task time entry
+ */
+const deleteTaskTimeEntryInternal = async (taskKey: string,
+    timeEntryId: string, options?: RequestInit): Promise<deleteTaskTimeEntryInternalResponse> => {
+
+  const res = await fetchFn(getDeleteTaskTimeEntryInternalUrl(taskKey,timeEntryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteTaskTimeEntryInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteTaskTimeEntryInternalResponse
+}
+
+
+
+const getGetTaskTimeSummaryInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/time-summary`
+}
+
+/**
+ * Returns all work-log minutes for the visible task and its estimate. Entries on subtasks
+ * contribute only to their own totals. Internal token: issuer api-gateway, actor user and
+ * organization required.
+ * @summary Read the task time summary
+ */
+const getTaskTimeSummaryInternal = async (taskKey: string, options?: RequestInit): Promise<getTaskTimeSummaryInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskTimeSummaryInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskTimeSummaryInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskTimeSummaryInternalResponse
+}
+
+
+
+const getGetTaskStatusDurationsInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/status-durations`
+}
+
+/**
+ * Measures the latest reliable continuous status history up to one observation instant,
+ * summing repeated visits. Uses the known initial status when history is complete.
+ * A visible milestone has `summary: null`. Internal token: issuer api-gateway, actor
+ * user and organization required.
+ * @summary Read elapsed time per task status
+ */
+const getTaskStatusDurationsInternal = async (taskKey: string, options?: RequestInit): Promise<getTaskStatusDurationsInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskStatusDurationsInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskStatusDurationsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskStatusDurationsInternalResponse
+}
+
+
+
+const getGetTaskApprovalInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/approvals`
+}
+
+/**
+ * Reads the current round on a task visible to the caller. Returns `current: null` for a
+ * milestone or a task without a round. An archived task keeps its approval readable.
+ * Reviewers who no longer have edit access are omitted from both the reviewer list and
+ * the outcome. A round without eligible reviewers is pending.
+ * Requires an internal token from api-gateway with a user actor and an organization.
+ * @summary Read the current task approval
+ */
+const getTaskApprovalInternal = async (taskKey: string, options?: RequestInit): Promise<getTaskApprovalInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskApprovalInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskApprovalInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskApprovalInternalResponse
+}
+
+
+
+const getRequestTaskApprovalInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/approvals/request`
+}
+
+/**
+ * An editor of the task starts a new round, replacing any current round and clearing its
+ * votes from the current state. Closed round history is retained with the task.
+ * The task must be ordinary and live. All requested reviewers, including the caller
+ * when designated, must currently have edit access. Invalid reviewers cause
+ * `422 approval.reviewer-invalid` without identifying them. The request keeps the task
+ * status unchanged. The task version, round and approval event commit together.
+ * Requires an internal token from api-gateway with a user actor and an organization.
+ * @summary Start or replace the current task approval
+ */
+const requestTaskApprovalInternal = async (taskKey: string,
+    taskApprovalRequest: TaskApprovalRequest, options?: RequestInit): Promise<requestTaskApprovalInternalResponse> => {
+
+  const res = await fetchFn(getRequestTaskApprovalInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskApprovalRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestTaskApprovalInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestTaskApprovalInternalResponse
+}
+
+
+
+const getVoteOnTaskApprovalInternalUrl = (taskKey: string,
+    roundId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`
+}
+
+/**
+ * The caller must be a designated reviewer of this current round and still have edit
+ * access. Withdraw a recorded vote before casting another. A change request creates
+ * a task comment with the supplied reason and moves the task to `progress`.
+ * When the last pending eligible reviewer approves and every eligible vote approves,
+ * the task moves to `done`. A refused status change leaves the vote, task, comment and
+ * events untouched. The normal task status, activity and recurrence rules apply.
+ * Requires an internal token from api-gateway with a user actor and an organization.
+ * @summary Cast the caller's approval vote
+ */
+const voteOnTaskApprovalInternal = async (taskKey: string,
+    roundId: string,
+    taskApprovalVote: TaskApprovalVote, options?: RequestInit): Promise<voteOnTaskApprovalInternalResponse> => {
+
+  const res = await fetchFn(getVoteOnTaskApprovalInternalUrl(taskKey,roundId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskApprovalVote)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: voteOnTaskApprovalInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as voteOnTaskApprovalInternalResponse
+}
+
+
+
+const getWithdrawTaskApprovalVoteInternalUrl = (taskKey: string,
+    roundId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/approvals/${roundId}/votes/me`
+}
+
+/**
+ * The caller must be a designated reviewer of this current round and still have edit
+ * access. Withdrawing a vote leaves the task status and any earlier comment unchanged.
+ * The round is recomputed from the remaining eligible votes. When the caller has no
+ * recorded vote, the request succeeds without a change to the task version or events.
+ * Requires an internal token from api-gateway with a user actor and an organization.
+ * @summary Withdraw the caller's approval vote
+ */
+const withdrawTaskApprovalVoteInternal = async (taskKey: string,
+    roundId: string, options?: RequestInit): Promise<withdrawTaskApprovalVoteInternalResponse> => {
+
+  const res = await fetchFn(getWithdrawTaskApprovalVoteInternalUrl(taskKey,roundId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: withdrawTaskApprovalVoteInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as withdrawTaskApprovalVoteInternalResponse
 }
 
 
@@ -5336,6 +6302,153 @@ const getHomeInternal = async (userId: string,
 
   const data: getHomeInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getHomeInternalResponse
+}
+
+
+
+const getGetOnboardingInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/onboarding`
+}
+
+/**
+ * Returns the actor's private onboarding state for the organization, as
+ * `GET /v1/me/onboarding` says. Until the first write the state has version 1.
+ * The internal token must be from the API gateway, with a user actor and an organization.
+ * A `userId` other than the verified actor answers `404 user.not-found`.
+ * @summary Read first-launch progress
+ */
+const getOnboardingInternal = async (userId: string, options?: RequestInit): Promise<getOnboardingInternalResponse> => {
+
+  const res = await fetchFn(getGetOnboardingInternalUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOnboardingInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOnboardingInternalResponse
+}
+
+
+
+const getUpdateOnboardingInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/onboarding`
+}
+
+/**
+ * Saves the actor's draft progress or dismisses the wizard, as `PATCH /v1/me/onboarding` says.
+ * The condition compares the onboarding aggregate version.
+ * The internal token must be from the API gateway, with a user actor and an organization.
+ * A `userId` other than the verified actor answers `404 user.not-found`.
+ * @summary Save or dismiss the first-launch wizard
+ */
+const updateOnboardingInternal = async (userId: string,
+    onboardingDraftPatch: OnboardingDraftPatch, options?: RequestInit): Promise<updateOnboardingInternalResponse> => {
+
+  const res = await fetchFn(getUpdateOnboardingInternalUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(onboardingDraftPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateOnboardingInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateOnboardingInternalResponse
+}
+
+
+
+const getUpdateOnboardingChecklistInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/onboarding/checklist`
+}
+
+/**
+ * Saves the actor's presentation choices and invitation or Board markers, as
+ * `PATCH /v1/me/onboarding/checklist` says. The organization invitation endpoint sends
+ * invitations, and normal task creation advances the first-task marker. The condition
+ * compares the onboarding aggregate version.
+ * The internal token must be from the API gateway, with a user actor and an organization.
+ * A `userId` other than the verified actor answers `404 user.not-found`.
+ * @summary Save the onboarding checklist presentation and markers
+ */
+const updateOnboardingChecklistInternal = async (userId: string,
+    onboardingChecklistPatch: OnboardingChecklistPatch, options?: RequestInit): Promise<updateOnboardingChecklistInternalResponse> => {
+
+  const res = await fetchFn(getUpdateOnboardingChecklistInternalUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(onboardingChecklistPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateOnboardingChecklistInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateOnboardingChecklistInternalResponse
+}
+
+
+
+const getFinishOnboardingInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/onboarding/finish`
+}
+
+/**
+ * Performs `POST /v1/me/onboarding/finish` in one tenant transaction. Uses the ordinary space,
+ * list and task creation policies and outbox facts. Applies the prefix and role checks of
+ * space creation. The condition compares the onboarding aggregate version. The gateway
+ * forwards the idempotency key and a matching replay returns the original response.
+ * The internal token must be from the API gateway, with a user actor and an organization.
+ * A `userId` other than the verified actor answers `404 user.not-found`.
+ * @summary Provision the space selected in the first-launch wizard
+ */
+const finishOnboardingInternal = async (userId: string,
+    onboardingFinish: OnboardingFinish, options?: RequestInit): Promise<finishOnboardingInternalResponse> => {
+
+  const res = await fetchFn(getFinishOnboardingInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(onboardingFinish)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: finishOnboardingInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as finishOnboardingInternalResponse
 }
 
 
@@ -6838,7 +7951,255 @@ const deleteFavoriteInternal = async (favoriteId: string, options?: RequestInit)
 
 
 
-return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl };
+const getListSpaceCustomFieldsInternalUrl = (spaceId: string,
+    params?: ListSpaceCustomFieldsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/spaces/${spaceId}/custom-fields?${stringifiedParams}` : `/internal/v1/spaces/${spaceId}/custom-fields`
+}
+
+/**
+ * Lists active definitions in `(position, id)` order. The cursor is bound to the requested
+ * space and order. Requires a role on the space itself; a list-only grant does not grant
+ * this route (`404 space.not-found`). A readable list has its own definitions route.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List the custom fields of a space
+ */
+const listSpaceCustomFieldsInternal = async (spaceId: string,
+    params?: ListSpaceCustomFieldsInternalParams, options?: RequestInit): Promise<listSpaceCustomFieldsInternalResponse> => {
+
+  const res = await fetchFn(getListSpaceCustomFieldsInternalUrl(spaceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSpaceCustomFieldsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSpaceCustomFieldsInternalResponse
+}
+
+
+
+const getCreateSpaceCustomFieldInternalUrl = (spaceId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/custom-fields`
+}
+
+/**
+ * Only a space manager can create a definition. It is active and appended to the
+ * space's definition order, with a stable UUID v7 and an immutable value type.
+ * It starts with `sprintPoints: false` and does not set a value on any task.
+ * Up to 30 active definitions are allowed (`422 custom-field.limit-reached`).
+ * An optional `Idempotency-Key` replays the original response and Location for 24 hours;
+ * a changed body answers `422 idempotency.key-reused` and an in-flight request answers
+ * `409 idempotency.request-in-progress`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a space custom field
+ */
+const createSpaceCustomFieldInternal = async (spaceId: string,
+    customFieldDefinitionCreation: CustomFieldDefinitionCreation, options?: RequestInit): Promise<createSpaceCustomFieldInternalResponse> => {
+
+  const res = await fetchFn(getCreateSpaceCustomFieldInternalUrl(spaceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(customFieldDefinitionCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSpaceCustomFieldInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSpaceCustomFieldInternalResponse
+}
+
+
+
+const getGetSpaceCustomFieldInternalUrl = (spaceId: string,
+    fieldId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/custom-fields/${fieldId}`
+}
+
+/**
+ * Reads one active definition in the specified space. Requires a role on the space itself.
+ * A field that is absent, retired or belongs to another space answers `404 custom-field.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a space custom field
+ */
+const getSpaceCustomFieldInternal = async (spaceId: string,
+    fieldId: string, options?: RequestInit): Promise<getSpaceCustomFieldInternalResponse> => {
+
+  const res = await fetchFn(getGetSpaceCustomFieldInternalUrl(spaceId,fieldId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSpaceCustomFieldInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSpaceCustomFieldInternalResponse
+}
+
+
+
+const getUpdateSpaceCustomFieldInternalUrl = (spaceId: string,
+    fieldId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/custom-fields/${fieldId}`
+}
+
+/**
+ * Only a space manager can change a definition. The JSON Merge Patch can rename the
+ * field, move it to a zero-based position, or change whether it supplies sprint points.
+ * A position outside the current definition order answers `422 custom-field.position-invalid`.
+ * Moving a field shifts the intervening positions, preserving relative order. Designating
+ * a numeric field clears the previous designation atomically. A text field or a numeric
+ * field with a negative current value cannot be designated (`422 custom-field.sprint-points-invalid`).
+ * This refusal preserves all values, historic sprint inputs and the previous designation.
+ * Versions of definitions whose position or designation changes advance. A patch with no
+ * change keeps the current version. Field IDs, types and values remain unchanged.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Update a space custom field
+ */
+const updateSpaceCustomFieldInternal = async (spaceId: string,
+    fieldId: string,
+    customFieldDefinitionPatch: CustomFieldDefinitionPatch, options?: RequestInit): Promise<updateSpaceCustomFieldInternalResponse> => {
+
+  const res = await fetchFn(getUpdateSpaceCustomFieldInternalUrl(spaceId,fieldId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(customFieldDefinitionPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSpaceCustomFieldInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSpaceCustomFieldInternalResponse
+}
+
+
+
+const getRetireSpaceCustomFieldInternalUrl = (spaceId: string,
+    fieldId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/custom-fields/${fieldId}`
+}
+
+/**
+ * Only a space manager can retire a definition. Retirement removes it from active columns
+ * and task value reads, frees its position and capacity, and clears any sprint points
+ * designation held by the field. Historic sprint inputs are retained. A retired field cannot
+ * be set or read through the active field routes. Remaining definitions retain their relative
+ * order and any shifted position advances the definition version.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Retire a space custom field
+ */
+const retireSpaceCustomFieldInternal = async (spaceId: string,
+    fieldId: string, options?: RequestInit): Promise<retireSpaceCustomFieldInternalResponse> => {
+
+  const res = await fetchFn(getRetireSpaceCustomFieldInternalUrl(spaceId,fieldId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: retireSpaceCustomFieldInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as retireSpaceCustomFieldInternalResponse
+}
+
+
+
+const getListListCustomFieldsInternalUrl = (listId: string,
+    params?: ListListCustomFieldsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/lists/${listId}/custom-fields?${stringifiedParams}` : `/internal/v1/lists/${listId}/custom-fields`
+}
+
+/**
+ * Lists active definitions in the list's space in `(position, id)` order. A read role on the
+ * list suffices, including a direct list grant. The cursor is bound to this list and order.
+ * The definitions remain readable on a retained archived list.
+ * An unknown, invisible or deleted list answers `404 list.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List the custom fields visible in a list
+ */
+const listListCustomFieldsInternal = async (listId: string,
+    params?: ListListCustomFieldsInternalParams, options?: RequestInit): Promise<listListCustomFieldsInternalResponse> => {
+
+  const res = await fetchFn(getListListCustomFieldsInternalUrl(listId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listListCustomFieldsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listListCustomFieldsInternalResponse
+}
+
+
+
+return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl };
 };
 
 export type createSpaceInternalResponse201 = {
@@ -7961,6 +9322,411 @@ export type getTaskDetailInternalResponseError = (getTaskDetailInternalResponse4
 export type getTaskDetailInternalResponse = (getTaskDetailInternalResponseSuccess | getTaskDetailInternalResponseError)
 
 
+export type listTaskTimeEntriesInternalResponse200 = {
+  data: TaskTimeEntryPage
+  status: 200
+}
+
+export type listTaskTimeEntriesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskTimeEntriesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskTimeEntriesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskTimeEntriesInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listTaskTimeEntriesInternalResponseSuccess = (listTaskTimeEntriesInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskTimeEntriesInternalResponseError = (listTaskTimeEntriesInternalResponse400 | listTaskTimeEntriesInternalResponse401 | listTaskTimeEntriesInternalResponse403 | listTaskTimeEntriesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskTimeEntriesInternalResponse = (listTaskTimeEntriesInternalResponseSuccess | listTaskTimeEntriesInternalResponseError)
+
+
+export type createTaskTimeEntryInternalResponse201 = {
+  data: TaskTimeEntry
+  status: 201
+}
+
+export type createTaskTimeEntryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createTaskTimeEntryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createTaskTimeEntryInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type createTaskTimeEntryInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type createTaskTimeEntryInternalResponse409 = {
+  data: TimeEntryCreationConflictResponse
+  status: 409
+}
+
+export type createTaskTimeEntryInternalResponse422 = {
+  data: IdempotencyKeyReusedResponse
+  status: 422
+}
+
+export type createTaskTimeEntryInternalResponseSuccess = (createTaskTimeEntryInternalResponse201) & {
+  headers: Headers;
+};
+export type createTaskTimeEntryInternalResponseError = (createTaskTimeEntryInternalResponse400 | createTaskTimeEntryInternalResponse401 | createTaskTimeEntryInternalResponse403 | createTaskTimeEntryInternalResponse404 | createTaskTimeEntryInternalResponse409 | createTaskTimeEntryInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createTaskTimeEntryInternalResponse = (createTaskTimeEntryInternalResponseSuccess | createTaskTimeEntryInternalResponseError)
+
+
+export type getTaskTimeEntryInternalResponse200 = {
+  data: TaskTimeEntry
+  status: 200
+}
+
+export type getTaskTimeEntryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskTimeEntryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskTimeEntryInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskTimeEntryInternalResponse404 = {
+  data: TimeEntryNotFoundResponse
+  status: 404
+}
+
+export type getTaskTimeEntryInternalResponseSuccess = (getTaskTimeEntryInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskTimeEntryInternalResponseError = (getTaskTimeEntryInternalResponse400 | getTaskTimeEntryInternalResponse401 | getTaskTimeEntryInternalResponse403 | getTaskTimeEntryInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskTimeEntryInternalResponse = (getTaskTimeEntryInternalResponseSuccess | getTaskTimeEntryInternalResponseError)
+
+
+export type deleteTaskTimeEntryInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTaskTimeEntryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteTaskTimeEntryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteTaskTimeEntryInternalResponse403 = {
+  data: TimeEntryDeleteForbiddenResponse
+  status: 403
+}
+
+export type deleteTaskTimeEntryInternalResponse404 = {
+  data: TimeEntryNotFoundResponse
+  status: 404
+}
+
+export type deleteTaskTimeEntryInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type deleteTaskTimeEntryInternalResponseSuccess = (deleteTaskTimeEntryInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteTaskTimeEntryInternalResponseError = (deleteTaskTimeEntryInternalResponse400 | deleteTaskTimeEntryInternalResponse401 | deleteTaskTimeEntryInternalResponse403 | deleteTaskTimeEntryInternalResponse404 | deleteTaskTimeEntryInternalResponse409) & {
+  headers: Headers;
+};
+
+export type deleteTaskTimeEntryInternalResponse = (deleteTaskTimeEntryInternalResponseSuccess | deleteTaskTimeEntryInternalResponseError)
+
+
+export type getTaskTimeSummaryInternalResponse200 = {
+  data: TaskTimeSummary
+  status: 200
+}
+
+export type getTaskTimeSummaryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskTimeSummaryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskTimeSummaryInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskTimeSummaryInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type getTaskTimeSummaryInternalResponseSuccess = (getTaskTimeSummaryInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskTimeSummaryInternalResponseError = (getTaskTimeSummaryInternalResponse400 | getTaskTimeSummaryInternalResponse401 | getTaskTimeSummaryInternalResponse403 | getTaskTimeSummaryInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskTimeSummaryInternalResponse = (getTaskTimeSummaryInternalResponseSuccess | getTaskTimeSummaryInternalResponseError)
+
+
+export type getTaskStatusDurationsInternalResponse200 = {
+  data: TaskStatusDurationResult
+  status: 200
+}
+
+export type getTaskStatusDurationsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskStatusDurationsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskStatusDurationsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskStatusDurationsInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type getTaskStatusDurationsInternalResponseSuccess = (getTaskStatusDurationsInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskStatusDurationsInternalResponseError = (getTaskStatusDurationsInternalResponse400 | getTaskStatusDurationsInternalResponse401 | getTaskStatusDurationsInternalResponse403 | getTaskStatusDurationsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskStatusDurationsInternalResponse = (getTaskStatusDurationsInternalResponseSuccess | getTaskStatusDurationsInternalResponseError)
+
+
+export type getTaskApprovalInternalResponse200 = {
+  data: TaskApprovalState
+  status: 200
+}
+
+export type getTaskApprovalInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskApprovalInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskApprovalInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskApprovalInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type getTaskApprovalInternalResponseSuccess = (getTaskApprovalInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskApprovalInternalResponseError = (getTaskApprovalInternalResponse400 | getTaskApprovalInternalResponse401 | getTaskApprovalInternalResponse403 | getTaskApprovalInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskApprovalInternalResponse = (getTaskApprovalInternalResponseSuccess | getTaskApprovalInternalResponseError)
+
+
+export type requestTaskApprovalInternalResponse200 = {
+  data: TaskApprovalState
+  status: 200
+}
+
+export type requestTaskApprovalInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type requestTaskApprovalInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type requestTaskApprovalInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type requestTaskApprovalInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type requestTaskApprovalInternalResponse409 = {
+  data: ApprovalRoundConflictResponse
+  status: 409
+}
+
+export type requestTaskApprovalInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type requestTaskApprovalInternalResponse422 = {
+  data: ApprovalReviewersRefusedResponse
+  status: 422
+}
+
+export type requestTaskApprovalInternalResponseSuccess = (requestTaskApprovalInternalResponse200) & {
+  headers: Headers;
+};
+export type requestTaskApprovalInternalResponseError = (requestTaskApprovalInternalResponse400 | requestTaskApprovalInternalResponse401 | requestTaskApprovalInternalResponse403 | requestTaskApprovalInternalResponse404 | requestTaskApprovalInternalResponse409 | requestTaskApprovalInternalResponse412 | requestTaskApprovalInternalResponse422) & {
+  headers: Headers;
+};
+
+export type requestTaskApprovalInternalResponse = (requestTaskApprovalInternalResponseSuccess | requestTaskApprovalInternalResponseError)
+
+
+export type voteOnTaskApprovalInternalResponse200 = {
+  data: TaskApprovalState
+  status: 200
+}
+
+export type voteOnTaskApprovalInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type voteOnTaskApprovalInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type voteOnTaskApprovalInternalResponse403 = {
+  data: ApprovalVoteForbiddenResponse
+  status: 403
+}
+
+export type voteOnTaskApprovalInternalResponse404 = {
+  data: ApprovalRoundNotFoundResponse
+  status: 404
+}
+
+export type voteOnTaskApprovalInternalResponse409 = {
+  data: ApprovalVoteConflictResponse
+  status: 409
+}
+
+export type voteOnTaskApprovalInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type voteOnTaskApprovalInternalResponse422 = {
+  data: ApprovalTransitionRefusedResponse
+  status: 422
+}
+
+export type voteOnTaskApprovalInternalResponseSuccess = (voteOnTaskApprovalInternalResponse200) & {
+  headers: Headers;
+};
+export type voteOnTaskApprovalInternalResponseError = (voteOnTaskApprovalInternalResponse400 | voteOnTaskApprovalInternalResponse401 | voteOnTaskApprovalInternalResponse403 | voteOnTaskApprovalInternalResponse404 | voteOnTaskApprovalInternalResponse409 | voteOnTaskApprovalInternalResponse412 | voteOnTaskApprovalInternalResponse422) & {
+  headers: Headers;
+};
+
+export type voteOnTaskApprovalInternalResponse = (voteOnTaskApprovalInternalResponseSuccess | voteOnTaskApprovalInternalResponseError)
+
+
+export type withdrawTaskApprovalVoteInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type withdrawTaskApprovalVoteInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type withdrawTaskApprovalVoteInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type withdrawTaskApprovalVoteInternalResponse403 = {
+  data: ApprovalVoteForbiddenResponse
+  status: 403
+}
+
+export type withdrawTaskApprovalVoteInternalResponse404 = {
+  data: ApprovalRoundNotFoundResponse
+  status: 404
+}
+
+export type withdrawTaskApprovalVoteInternalResponse409 = {
+  data: ApprovalRoundConflictResponse
+  status: 409
+}
+
+export type withdrawTaskApprovalVoteInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type withdrawTaskApprovalVoteInternalResponseSuccess = (withdrawTaskApprovalVoteInternalResponse204) & {
+  headers: Headers;
+};
+export type withdrawTaskApprovalVoteInternalResponseError = (withdrawTaskApprovalVoteInternalResponse400 | withdrawTaskApprovalVoteInternalResponse401 | withdrawTaskApprovalVoteInternalResponse403 | withdrawTaskApprovalVoteInternalResponse404 | withdrawTaskApprovalVoteInternalResponse409 | withdrawTaskApprovalVoteInternalResponse412) & {
+  headers: Headers;
+};
+
+export type withdrawTaskApprovalVoteInternalResponse = (withdrawTaskApprovalVoteInternalResponseSuccess | withdrawTaskApprovalVoteInternalResponseError)
+
+
 export type listTaskCommentsInternalResponse200 = {
   data: CommentPage
   status: 200
@@ -8849,6 +10615,181 @@ export type getHomeInternalResponseError = (getHomeInternalResponse400 | getHome
 };
 
 export type getHomeInternalResponse = (getHomeInternalResponseSuccess | getHomeInternalResponseError)
+
+
+export type getOnboardingInternalResponse200 = {
+  data: OnboardingState
+  status: 200
+}
+
+export type getOnboardingInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getOnboardingInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getOnboardingInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getOnboardingInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type getOnboardingInternalResponseSuccess = (getOnboardingInternalResponse200) & {
+  headers: Headers;
+};
+export type getOnboardingInternalResponseError = (getOnboardingInternalResponse400 | getOnboardingInternalResponse401 | getOnboardingInternalResponse403 | getOnboardingInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getOnboardingInternalResponse = (getOnboardingInternalResponseSuccess | getOnboardingInternalResponseError)
+
+
+export type updateOnboardingInternalResponse200 = {
+  data: OnboardingState
+  status: 200
+}
+
+export type updateOnboardingInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateOnboardingInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateOnboardingInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type updateOnboardingInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type updateOnboardingInternalResponse409 = {
+  data: OnboardingWizardClosedResponse
+  status: 409
+}
+
+export type updateOnboardingInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateOnboardingInternalResponseSuccess = (updateOnboardingInternalResponse200) & {
+  headers: Headers;
+};
+export type updateOnboardingInternalResponseError = (updateOnboardingInternalResponse400 | updateOnboardingInternalResponse401 | updateOnboardingInternalResponse403 | updateOnboardingInternalResponse404 | updateOnboardingInternalResponse409 | updateOnboardingInternalResponse412) & {
+  headers: Headers;
+};
+
+export type updateOnboardingInternalResponse = (updateOnboardingInternalResponseSuccess | updateOnboardingInternalResponseError)
+
+
+export type updateOnboardingChecklistInternalResponse200 = {
+  data: OnboardingState
+  status: 200
+}
+
+export type updateOnboardingChecklistInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateOnboardingChecklistInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateOnboardingChecklistInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type updateOnboardingChecklistInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type updateOnboardingChecklistInternalResponse409 = {
+  data: OnboardingChecklistUnavailableResponse
+  status: 409
+}
+
+export type updateOnboardingChecklistInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateOnboardingChecklistInternalResponseSuccess = (updateOnboardingChecklistInternalResponse200) & {
+  headers: Headers;
+};
+export type updateOnboardingChecklistInternalResponseError = (updateOnboardingChecklistInternalResponse400 | updateOnboardingChecklistInternalResponse401 | updateOnboardingChecklistInternalResponse403 | updateOnboardingChecklistInternalResponse404 | updateOnboardingChecklistInternalResponse409 | updateOnboardingChecklistInternalResponse412) & {
+  headers: Headers;
+};
+
+export type updateOnboardingChecklistInternalResponse = (updateOnboardingChecklistInternalResponseSuccess | updateOnboardingChecklistInternalResponseError)
+
+
+export type finishOnboardingInternalResponse201 = {
+  data: OnboardingState
+  status: 201
+}
+
+export type finishOnboardingInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type finishOnboardingInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type finishOnboardingInternalResponse403 = {
+  data: RoleForbiddenResponse
+  status: 403
+}
+
+export type finishOnboardingInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type finishOnboardingInternalResponse409 = {
+  data: OnboardingFinishConflictResponse
+  status: 409
+}
+
+export type finishOnboardingInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type finishOnboardingInternalResponse422 = {
+  data: IdempotencyKeyReusedResponse
+  status: 422
+}
+
+export type finishOnboardingInternalResponseSuccess = (finishOnboardingInternalResponse201) & {
+  headers: Headers;
+};
+export type finishOnboardingInternalResponseError = (finishOnboardingInternalResponse400 | finishOnboardingInternalResponse401 | finishOnboardingInternalResponse403 | finishOnboardingInternalResponse404 | finishOnboardingInternalResponse409 | finishOnboardingInternalResponse412 | finishOnboardingInternalResponse422) & {
+  headers: Headers;
+};
+
+export type finishOnboardingInternalResponse = (finishOnboardingInternalResponseSuccess | finishOnboardingInternalResponseError)
 
 
 export type listSpaceGrantsInternalResponse200 = {
@@ -10314,3 +12255,238 @@ export type deleteFavoriteInternalResponseError = (deleteFavoriteInternalRespons
 };
 
 export type deleteFavoriteInternalResponse = (deleteFavoriteInternalResponseSuccess | deleteFavoriteInternalResponseError)
+
+
+export type listSpaceCustomFieldsInternalResponse200 = {
+  data: CustomFieldDefinitionPage
+  status: 200
+}
+
+export type listSpaceCustomFieldsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listSpaceCustomFieldsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listSpaceCustomFieldsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listSpaceCustomFieldsInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type listSpaceCustomFieldsInternalResponseSuccess = (listSpaceCustomFieldsInternalResponse200) & {
+  headers: Headers;
+};
+export type listSpaceCustomFieldsInternalResponseError = (listSpaceCustomFieldsInternalResponse400 | listSpaceCustomFieldsInternalResponse401 | listSpaceCustomFieldsInternalResponse403 | listSpaceCustomFieldsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listSpaceCustomFieldsInternalResponse = (listSpaceCustomFieldsInternalResponseSuccess | listSpaceCustomFieldsInternalResponseError)
+
+
+export type createSpaceCustomFieldInternalResponse201 = {
+  data: CustomFieldDefinition
+  status: 201
+}
+
+export type createSpaceCustomFieldInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createSpaceCustomFieldInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createSpaceCustomFieldInternalResponse403 = {
+  data: CustomFieldManageForbiddenResponse
+  status: 403
+}
+
+export type createSpaceCustomFieldInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type createSpaceCustomFieldInternalResponse409 = {
+  data: CustomFieldCreationConflictResponse
+  status: 409
+}
+
+export type createSpaceCustomFieldInternalResponse422 = {
+  data: CustomFieldCreationRefusedResponse
+  status: 422
+}
+
+export type createSpaceCustomFieldInternalResponseSuccess = (createSpaceCustomFieldInternalResponse201) & {
+  headers: Headers;
+};
+export type createSpaceCustomFieldInternalResponseError = (createSpaceCustomFieldInternalResponse400 | createSpaceCustomFieldInternalResponse401 | createSpaceCustomFieldInternalResponse403 | createSpaceCustomFieldInternalResponse404 | createSpaceCustomFieldInternalResponse409 | createSpaceCustomFieldInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createSpaceCustomFieldInternalResponse = (createSpaceCustomFieldInternalResponseSuccess | createSpaceCustomFieldInternalResponseError)
+
+
+export type getSpaceCustomFieldInternalResponse200 = {
+  data: CustomFieldDefinition
+  status: 200
+}
+
+export type getSpaceCustomFieldInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getSpaceCustomFieldInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getSpaceCustomFieldInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getSpaceCustomFieldInternalResponse404 = {
+  data: CustomFieldNotFoundResponse
+  status: 404
+}
+
+export type getSpaceCustomFieldInternalResponseSuccess = (getSpaceCustomFieldInternalResponse200) & {
+  headers: Headers;
+};
+export type getSpaceCustomFieldInternalResponseError = (getSpaceCustomFieldInternalResponse400 | getSpaceCustomFieldInternalResponse401 | getSpaceCustomFieldInternalResponse403 | getSpaceCustomFieldInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getSpaceCustomFieldInternalResponse = (getSpaceCustomFieldInternalResponseSuccess | getSpaceCustomFieldInternalResponseError)
+
+
+export type updateSpaceCustomFieldInternalResponse200 = {
+  data: CustomFieldDefinition
+  status: 200
+}
+
+export type updateSpaceCustomFieldInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateSpaceCustomFieldInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateSpaceCustomFieldInternalResponse403 = {
+  data: CustomFieldManageForbiddenResponse
+  status: 403
+}
+
+export type updateSpaceCustomFieldInternalResponse404 = {
+  data: CustomFieldNotFoundResponse
+  status: 404
+}
+
+export type updateSpaceCustomFieldInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateSpaceCustomFieldInternalResponse422 = {
+  data: CustomFieldChangeRefusedResponse
+  status: 422
+}
+
+export type updateSpaceCustomFieldInternalResponseSuccess = (updateSpaceCustomFieldInternalResponse200) & {
+  headers: Headers;
+};
+export type updateSpaceCustomFieldInternalResponseError = (updateSpaceCustomFieldInternalResponse400 | updateSpaceCustomFieldInternalResponse401 | updateSpaceCustomFieldInternalResponse403 | updateSpaceCustomFieldInternalResponse404 | updateSpaceCustomFieldInternalResponse412 | updateSpaceCustomFieldInternalResponse422) & {
+  headers: Headers;
+};
+
+export type updateSpaceCustomFieldInternalResponse = (updateSpaceCustomFieldInternalResponseSuccess | updateSpaceCustomFieldInternalResponseError)
+
+
+export type retireSpaceCustomFieldInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type retireSpaceCustomFieldInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type retireSpaceCustomFieldInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type retireSpaceCustomFieldInternalResponse403 = {
+  data: CustomFieldManageForbiddenResponse
+  status: 403
+}
+
+export type retireSpaceCustomFieldInternalResponse404 = {
+  data: CustomFieldNotFoundResponse
+  status: 404
+}
+
+export type retireSpaceCustomFieldInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type retireSpaceCustomFieldInternalResponseSuccess = (retireSpaceCustomFieldInternalResponse204) & {
+  headers: Headers;
+};
+export type retireSpaceCustomFieldInternalResponseError = (retireSpaceCustomFieldInternalResponse400 | retireSpaceCustomFieldInternalResponse401 | retireSpaceCustomFieldInternalResponse403 | retireSpaceCustomFieldInternalResponse404 | retireSpaceCustomFieldInternalResponse412) & {
+  headers: Headers;
+};
+
+export type retireSpaceCustomFieldInternalResponse = (retireSpaceCustomFieldInternalResponseSuccess | retireSpaceCustomFieldInternalResponseError)
+
+
+export type listListCustomFieldsInternalResponse200 = {
+  data: CustomFieldDefinitionPage
+  status: 200
+}
+
+export type listListCustomFieldsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listListCustomFieldsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listListCustomFieldsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listListCustomFieldsInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type listListCustomFieldsInternalResponseSuccess = (listListCustomFieldsInternalResponse200) & {
+  headers: Headers;
+};
+export type listListCustomFieldsInternalResponseError = (listListCustomFieldsInternalResponse400 | listListCustomFieldsInternalResponse401 | listListCustomFieldsInternalResponse403 | listListCustomFieldsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listListCustomFieldsInternalResponse = (listListCustomFieldsInternalResponseSuccess | listListCustomFieldsInternalResponseError)
