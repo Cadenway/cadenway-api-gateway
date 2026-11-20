@@ -25,6 +25,7 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
             service: STORAGE_SERVICE,
             baseUrl: config.STORAGE_SERVICE_URL,
             signer,
+            allowedUnavailableProblemCodes: ['storage.unavailable'],
           }),
         ),
     },

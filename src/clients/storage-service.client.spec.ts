@@ -58,6 +58,7 @@ describe('StorageServiceClient', () => {
         service: STORAGE_SERVICE,
         baseUrl: 'http://storage-service.test',
         signer,
+        allowedUnavailableProblemCodes: ['storage.unavailable'],
         fetch: (input, init) => {
           calls.push({ url: input instanceof Request ? input.url : input.toString(), init });
           return Promise.resolve(answer);
@@ -77,6 +78,29 @@ describe('StorageServiceClient', () => {
     const principal = await verifier.verify(authorization.replace(/^Bearer /u, ''));
     expect(principal.organizationId).toBe(ATELIER_NORD_ID);
     expect(principal.actor.id).toBe(CAMILLE.id);
+  });
+
+  it.each([
+    ['storage.unavailable', 'storage.unavailable'],
+    ['internal.unexpected', 'upstream.unavailable'],
+  ])('handles a Storage 503 with code %s as %s', async (code, expected) => {
+    answer = Response.json(
+      {
+        type: 'https://storage-service.test/problems/unavailable',
+        title: 'Unavailable',
+        status: 503,
+        code,
+        detail: 'Object provider diagnostic',
+        details: { provider: 'internal-test' },
+      },
+      { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+    );
+    await expect(
+      runWithOrganizationContext(context, () => client.getTaskAttachmentDownload(taskKey, id)),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: expected, details: { service: STORAGE_SERVICE } },
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it('relays an idempotency key, validates the location and does not cache the capability', async () => {
