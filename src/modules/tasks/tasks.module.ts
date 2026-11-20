@@ -29,10 +29,15 @@ import { ListTasks } from './application/use-cases/queries/tasks/list-tasks/list
 import { taskDetailCoreSourceProvider } from './composition/providers/adapters/details/task-detail-core-source.provider.js';
 import { taskDetailPartsProvider } from './composition/providers/adapters/details/task-detail-parts.provider.js';
 import { getTaskDetailProvider } from './composition/providers/use-cases/details/get-task-detail.provider.js';
+import { taskTimeProviders } from './composition/providers/use-cases/time/task-time.provider.js';
+import { taskCollaborationProviders } from './composition/providers/use-cases/approval/task-collaboration.provider.js';
 import { createTaskRegistryAdapter } from './infrastructure/adapters/task-service/task-registry.adapter.js';
 import { TasksController } from './presentation/http/controllers/tasks/tasks.controller.js';
 import { LabelsController } from './presentation/http/controllers/labels/labels.controller.js';
 import { MyTasksController } from './presentation/http/controllers/my-tasks/my-tasks.controller.js';
+import { TaskTimeController } from './presentation/http/controllers/time/task-time.controller.js';
+import { TaskApprovalController } from './presentation/http/controllers/approval/task-approval.controller.js';
+import { OnboardingController } from './presentation/http/controllers/onboarding/onboarding.controller.js';
 
 /**
  * Constant TASK_REGISTRY
@@ -180,13 +185,21 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
  */
 @Module({
   imports: [AuthModule, RateLimitModule, ClientsModule],
-  providers: [...PROVIDERS, ...DETAIL_PROVIDERS],
+  providers: [
+    ...PROVIDERS,
+    ...DETAIL_PROVIDERS,
+    ...taskTimeProviders,
+    ...taskCollaborationProviders,
+  ],
   controllers: [
     ExecuteBulkTaskActionController,
     DuplicateTaskController,
     TasksController,
     LabelsController,
     MyTasksController,
+    TaskTimeController,
+    TaskApprovalController,
+    OnboardingController,
   ],
 })
 export class TasksModule {}

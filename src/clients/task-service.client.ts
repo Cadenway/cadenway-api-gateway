@@ -104,6 +104,34 @@ import {
   FollowTaskWatcherInternalResponse,
   ListTaskActivityInternalQueryParams,
   ListTaskActivityInternalResponse,
+  ListTaskTimeEntriesInternalQueryParams,
+  ListTaskTimeEntriesInternalResponse,
+  CreateTaskTimeEntryInternalBody,
+  CreateTaskTimeEntryInternalResponse,
+  GetTaskTimeEntryInternalResponse,
+  GetTaskTimeSummaryInternalResponse,
+  GetTaskStatusDurationsInternalResponse,
+  GetTaskApprovalInternalResponse,
+  RequestTaskApprovalInternalBody,
+  RequestTaskApprovalInternalResponse,
+  VoteOnTaskApprovalInternalBody,
+  VoteOnTaskApprovalInternalResponse,
+  GetOnboardingInternalResponse,
+  UpdateOnboardingInternalBody,
+  UpdateOnboardingInternalResponse,
+  UpdateOnboardingChecklistInternalBody,
+  UpdateOnboardingChecklistInternalResponse,
+  FinishOnboardingInternalBody,
+  FinishOnboardingInternalResponse,
+  ListSpaceCustomFieldsInternalQueryParams,
+  ListSpaceCustomFieldsInternalResponse,
+  CreateSpaceCustomFieldInternalBody,
+  CreateSpaceCustomFieldInternalResponse,
+  GetSpaceCustomFieldInternalResponse,
+  UpdateSpaceCustomFieldInternalBody,
+  UpdateSpaceCustomFieldInternalResponse,
+  ListListCustomFieldsInternalQueryParams,
+  ListListCustomFieldsInternalResponse,
   ListTasksInternalQueryParams,
   ListTasksInternalResponse,
   ListTrashInternalQueryParams,
@@ -324,6 +352,48 @@ function versionOf(operation: string, answer: GeneratedAnswer): number {
     throw outsideContract(TASK_SERVICE, operation, 'no strong ETag');
   }
   return Number(version);
+}
+
+/** A validated response body and the version returned in its ETag. */
+interface VersionedBody<TSchema extends z.ZodType> {
+  // #region Properties
+  /** The validated response body. */
+  readonly body: z.output<TSchema>;
+
+  /** The strong ETag version. */
+  readonly version: number;
+  // #endregion
+}
+
+/** A validated field definition and its ETag version. */
+interface VersionedField<TSchema extends z.ZodType> {
+  // #region Properties
+  /** The validated field definition. */
+  readonly field: z.output<TSchema>;
+
+  /** The strong ETag version. */
+  readonly version: number;
+  // #endregion
+}
+
+/** Validates a versioned response and requires agreement between its body and ETag. */
+async function versionedBody<TSchema extends z.ZodType>(
+  operation: string,
+  schema: TSchema,
+  pending: Promise<GeneratedAnswer>,
+  bodyVersion: (body: z.output<TSchema>) => number,
+): Promise<VersionedBody<TSchema>> {
+  const answer = await answered(TASK_SERVICE, operation, pending);
+  const body = expectBody(TASK_SERVICE, operation, answer, 200, schema);
+  const version = versionOf(operation, answer);
+  if (version !== bodyVersion(body)) {
+    throw outsideContract(
+      TASK_SERVICE,
+      operation,
+      'an ETag that disagrees with the response version',
+    );
+  }
+  return { body, version };
 }
 
 /**
@@ -1949,6 +2019,385 @@ export class TaskServiceClient {
       this.routes.listTaskActivityInternal(
         taskKey,
         toRequest(operation, ListTaskActivityInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads a page of work logs with the task-wide totals. */
+  public listTaskTimeEntries(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskTimeEntriesInternalResponse>> {
+    const operation = 'listTaskTimeEntriesInternal';
+    return call(
+      operation,
+      200,
+      ListTaskTimeEntriesInternalResponse,
+      this.routes.listTaskTimeEntriesInternal(
+        taskKey,
+        toRequest(operation, ListTaskTimeEntriesInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Records one work log and verifies that the internal location names it. */
+  public async createTaskTimeEntry(
+    taskKey: string,
+    body: unknown,
+    idempotencyKey: string | undefined,
+  ): Promise<z.output<typeof CreateTaskTimeEntryInternalResponse>> {
+    const operation = 'createTaskTimeEntryInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createTaskTimeEntryInternal(
+        taskKey,
+        toRequest(operation, CreateTaskTimeEntryInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', idempotencyKey)),
+      ),
+    );
+    const entry = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateTaskTimeEntryInternalResponse,
+    );
+    const location = `/internal/v1/tasks/${taskKey}/time-entries/${entry.id}`;
+    if (entry.taskKey !== taskKey || answer.headers.get('Location') !== location) {
+      throw outsideContract(
+        TASK_SERVICE,
+        operation,
+        'a Location that does not name the time entry',
+      );
+    }
+    return entry;
+  }
+
+  /** Reads a work log belonging to the requested task. */
+  public getTaskTimeEntry(
+    taskKey: string,
+    timeEntryId: string,
+  ): Promise<z.output<typeof GetTaskTimeEntryInternalResponse>> {
+    return call(
+      'getTaskTimeEntryInternal',
+      200,
+      GetTaskTimeEntryInternalResponse,
+      this.routes.getTaskTimeEntryInternal(taskKey, timeEntryId),
+    );
+  }
+
+  /** Removes a work log through the producer's author check. */
+  public deleteTaskTimeEntry(taskKey: string, timeEntryId: string): Promise<void> {
+    return acknowledged(
+      'deleteTaskTimeEntryInternal',
+      204,
+      this.routes.deleteTaskTimeEntryInternal(taskKey, timeEntryId, sentOnce()),
+    );
+  }
+
+  /** Reads the recorded and estimated time of a task. */
+  public getTaskTimeSummary(
+    taskKey: string,
+  ): Promise<z.output<typeof GetTaskTimeSummaryInternalResponse>> {
+    return call(
+      'getTaskTimeSummaryInternal',
+      200,
+      GetTaskTimeSummaryInternalResponse,
+      this.routes.getTaskTimeSummaryInternal(taskKey),
+    );
+  }
+
+  /** Reads the producer's measured status history for a task. */
+  public getTaskStatusDurations(
+    taskKey: string,
+  ): Promise<z.output<typeof GetTaskStatusDurationsInternalResponse>> {
+    return call(
+      'getTaskStatusDurationsInternal',
+      200,
+      GetTaskStatusDurationsInternalResponse,
+      this.routes.getTaskStatusDurationsInternal(taskKey),
+    );
+  }
+
+  /** Reads the visible task's approval round and task ETag. */
+  public getTaskApproval(
+    taskKey: string,
+  ): Promise<VersionedBody<typeof GetTaskApprovalInternalResponse>> {
+    return versionedBody(
+      'getTaskApprovalInternal',
+      GetTaskApprovalInternalResponse,
+      this.routes.getTaskApprovalInternal(taskKey),
+      (body) => body.taskVersion,
+    );
+  }
+
+  /** Starts a task approval round with the caller's task precondition. */
+  public requestTaskApproval(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedBody<typeof RequestTaskApprovalInternalResponse>> {
+    const operation = 'requestTaskApprovalInternal';
+    return versionedBody(
+      operation,
+      RequestTaskApprovalInternalResponse,
+      this.routes.requestTaskApprovalInternal(
+        taskKey,
+        toRequest(operation, RequestTaskApprovalInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (body) => body.taskVersion,
+    );
+  }
+
+  /** Records the caller's decision in the specified round. */
+  public voteOnTaskApproval(
+    taskKey: string,
+    roundId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedBody<typeof VoteOnTaskApprovalInternalResponse>> {
+    const operation = 'voteOnTaskApprovalInternal';
+    return versionedBody(
+      operation,
+      VoteOnTaskApprovalInternalResponse,
+      this.routes.voteOnTaskApprovalInternal(
+        taskKey,
+        roundId,
+        toRequest(operation, VoteOnTaskApprovalInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (body) => body.taskVersion,
+    );
+  }
+
+  /** Withdraws a vote and returns the task ETag from the producer. */
+  public async withdrawTaskApprovalVote(
+    taskKey: string,
+    roundId: string,
+    ifMatch: string | undefined,
+  ): Promise<{ version: number }> {
+    const operation = 'withdrawTaskApprovalVoteInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.withdrawTaskApprovalVoteInternal(
+        taskKey,
+        roundId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return { version: versionOf(operation, answer) };
+  }
+
+  /** Reads the actor's onboarding state in the current organization. */
+  public getOnboarding(
+    userId: string,
+  ): Promise<VersionedBody<typeof GetOnboardingInternalResponse>> {
+    return versionedBody(
+      'getOnboardingInternal',
+      GetOnboardingInternalResponse,
+      this.routes.getOnboardingInternal(userId),
+      (body) => body.version,
+    );
+  }
+
+  /** Updates the actor's wizard draft under its precondition. */
+  public updateOnboarding(
+    userId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedBody<typeof UpdateOnboardingInternalResponse>> {
+    const operation = 'updateOnboardingInternal';
+    return versionedBody(
+      operation,
+      UpdateOnboardingInternalResponse,
+      this.routes.updateOnboardingInternal(
+        userId,
+        toRequest(operation, UpdateOnboardingInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (body) => body.version,
+    );
+  }
+
+  /** Updates the actor's checklist under its precondition. */
+  public updateOnboardingChecklist(
+    userId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedBody<typeof UpdateOnboardingChecklistInternalResponse>> {
+    const operation = 'updateOnboardingChecklistInternal';
+    return versionedBody(
+      operation,
+      UpdateOnboardingChecklistInternalResponse,
+      this.routes.updateOnboardingChecklistInternal(
+        userId,
+        toRequest(operation, UpdateOnboardingChecklistInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (body) => body.version,
+    );
+  }
+
+  /** Completes onboarding and verifies the resulting space's location. */
+  public async finishOnboarding(
+    userId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+    key: string | undefined,
+  ): Promise<VersionedBody<typeof FinishOnboardingInternalResponse>> {
+    const operation = 'finishOnboardingInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (key !== undefined) headers['Idempotency-Key'] = key;
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.finishOnboardingInternal(
+        userId,
+        toRequest(operation, FinishOnboardingInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const state = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      FinishOnboardingInternalResponse,
+    );
+    const version = versionOf(operation, answer);
+    if (
+      state.provisioning === null ||
+      answer.headers.get('Location') !== `/internal/v1/spaces/${state.provisioning.spaceId}` ||
+      version !== state.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent provisioning response');
+    }
+    return { body: state, version };
+  }
+
+  /** Lists the active fields of a visible space. */
+  public listSpaceCustomFields(
+    spaceId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListSpaceCustomFieldsInternalResponse>> {
+    const operation = 'listSpaceCustomFieldsInternal';
+    return call(
+      operation,
+      200,
+      ListSpaceCustomFieldsInternalResponse,
+      this.routes.listSpaceCustomFieldsInternal(
+        spaceId,
+        toRequest(operation, ListSpaceCustomFieldsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates a definition and verifies its version and retrievable location. */
+  public async createSpaceCustomField(
+    spaceId: string,
+    body: unknown,
+    key: string | undefined,
+  ): Promise<VersionedField<typeof CreateSpaceCustomFieldInternalResponse>> {
+    const operation = 'createSpaceCustomFieldInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createSpaceCustomFieldInternal(
+        spaceId,
+        toRequest(operation, CreateSpaceCustomFieldInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const field = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateSpaceCustomFieldInternalResponse,
+    );
+    const version = versionOf(operation, answer);
+    const location = `/internal/v1/spaces/${spaceId}/custom-fields/${field.id}`.toLowerCase();
+    if (
+      field.spaceId.toLowerCase() !== spaceId.toLowerCase() ||
+      answer.headers.get('Location')?.toLowerCase() !== location ||
+      version !== field.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent custom field creation');
+    }
+    return { field, version };
+  }
+
+  /** Reads one field and its conditional write version. */
+  public async getSpaceCustomField(
+    spaceId: string,
+    fieldId: string,
+  ): Promise<VersionedField<typeof GetSpaceCustomFieldInternalResponse>> {
+    const { body: field, version } = await versionedBody(
+      'getSpaceCustomFieldInternal',
+      GetSpaceCustomFieldInternalResponse,
+      this.routes.getSpaceCustomFieldInternal(spaceId, fieldId),
+      (body) => body.version,
+    );
+    return { field, version };
+  }
+
+  /** Applies the provided field patch under its precondition. */
+  public async updateSpaceCustomField(
+    spaceId: string,
+    fieldId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedField<typeof UpdateSpaceCustomFieldInternalResponse>> {
+    const operation = 'updateSpaceCustomFieldInternal';
+    const { body: field, version } = await versionedBody(
+      operation,
+      UpdateSpaceCustomFieldInternalResponse,
+      this.routes.updateSpaceCustomFieldInternal(
+        spaceId,
+        fieldId,
+        toRequest(operation, UpdateSpaceCustomFieldInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (body) => body.version,
+    );
+    return { field, version };
+  }
+
+  /** Removes a definition from active use. */
+  public retireSpaceCustomField(
+    spaceId: string,
+    fieldId: string,
+    ifMatch: string | undefined,
+  ): Promise<void> {
+    return acknowledged(
+      'retireSpaceCustomFieldInternal',
+      204,
+      this.routes.retireSpaceCustomFieldInternal(
+        spaceId,
+        fieldId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /** Reads the fields of the space owning a visible list. */
+  public listListCustomFields(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListListCustomFieldsInternalResponse>> {
+    const operation = 'listListCustomFieldsInternal';
+    return call(
+      operation,
+      200,
+      ListListCustomFieldsInternalResponse,
+      this.routes.listListCustomFieldsInternal(
+        listId,
+        toRequest(operation, ListListCustomFieldsInternalQueryParams, query),
       ),
     );
   }

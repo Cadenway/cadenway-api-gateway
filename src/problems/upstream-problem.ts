@@ -33,8 +33,9 @@ const INTERNAL_ACCESS_CODES: ReadonlySet<string> = new Set<string>([
   'auth.organization-required',
 ]);
 
-/** Public codes whose contract forbids revealing recipient or dependency details. */
+/** Public codes whose contract forbids revealing recipient, reviewer or dependency details. */
 const NO_DETAILS_CODES: ReadonlySet<string> = new Set([
+  'approval.reviewer-invalid',
   'dependency.cycle',
   'mention.recipient-invalid',
   'watcher.recipient-invalid',

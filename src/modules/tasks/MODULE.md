@@ -9,6 +9,9 @@ limits, assignees, labels, who sees a task); the gateway decides none.
 ## Public entry points
 
 This module exposes its HTTP routes. It publishes no TypeScript entry points to other modules.
+The six operations in `openapi/public/time.yaml` relay work logs, totals and status durations to
+task-service. The creation relays `Idempotency-Key` and verifies the internal `Location` before
+returning its public path. The producer owns all work log authorization and duration calculations.
 
 | Entry point | Consumers |
 | ----------- | --------- |

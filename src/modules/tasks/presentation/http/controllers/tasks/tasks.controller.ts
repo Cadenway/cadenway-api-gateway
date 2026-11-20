@@ -234,6 +234,7 @@ const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
     'milestone.status-invalid',
     'milestone.dates-invalid',
     'recurrence.date-out-of-range',
+    'custom-field.value-invalid',
   ],
 };
 

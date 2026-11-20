@@ -280,7 +280,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(139);
+    expect(operations).toHaveLength(159);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -355,6 +355,10 @@ describe('the security of every route against the public contracts', () => {
         'listLabels',
         'listMyTasks',
         'getHome',
+        'getOnboarding',
+        'updateOnboarding',
+        'updateOnboardingChecklist',
+        'finishOnboarding',
         'deleteSpace',
         'deleteList',
         'listSpaceGrants',
@@ -386,6 +390,16 @@ describe('the security of every route against the public contracts', () => {
         'updateTaskComment',
         'deleteTaskComment',
         'listTaskParticipants',
+        'listTaskTimeEntries',
+        'createTaskTimeEntry',
+        'getTaskTimeEntry',
+        'deleteTaskTimeEntry',
+        'getTaskTimeSummary',
+        'getTaskStatusDurations',
+        'getTaskApproval',
+        'requestTaskApproval',
+        'voteOnTaskApproval',
+        'withdrawTaskApprovalVote',
         'listTaskWatchers',
         'followTaskWatcher',
         'unfollowTaskWatcher',
@@ -402,6 +416,12 @@ describe('the security of every route against the public contracts', () => {
         'deleteSavedView',
         'duplicateSavedView',
         'listSpaceMilestones',
+        'listSpaceCustomFields',
+        'createSpaceCustomField',
+        'getSpaceCustomField',
+        'updateSpaceCustomField',
+        'retireSpaceCustomField',
+        'listListCustomFields',
         'listTaskTemplates',
         'createTaskTemplate',
         'getTaskTemplate',
