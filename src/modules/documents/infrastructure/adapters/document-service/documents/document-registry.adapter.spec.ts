@@ -99,6 +99,28 @@ describe('Document registry adapter', () => {
     expect(failure).not.toHaveProperty('cause', expect.any(Error));
   });
 
+  it.each([
+    {},
+    { issues: [] },
+    { issues: [{ in: 'header', path: 'Authorization', code: 'invalid_format' }] },
+  ])('fails safely if no valid validation issue remains', async (details) => {
+    const documents = rejectingAdapter(400, 'request.invalid', details);
+
+    await expect(documents.list({ limit: 5 })).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('forwards a document body size refusal without upstream details', async () => {
+    const documents = rejectingAdapter(400, 'request.body-too-large', { limit: privateText });
+    const failure = await documents
+      .create({ spaceId, title: 'Notes' }, undefined)
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ problem: { status: 400, code: 'request.body-too-large' } });
+    expect(failure).not.toHaveProperty('problem.details');
+  });
+
   it('keeps only the access refusal roles on writes', async () => {
     const documents = rejectingAdapter(403, 'access.role-insufficient', {
       role: 'comment',
@@ -113,8 +135,12 @@ describe('Document registry adapter', () => {
       'problem.details',
       { role: 'comment', requiredRole: 'edit' },
     );
-    await expect(documents.get(documentId)).rejects.not.toHaveProperty('problem.details');
-    await expect(malformed.remove(documentId, '"1"')).rejects.not.toHaveProperty('problem.details');
+    await expect(documents.get(documentId)).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+    await expect(malformed.remove(documentId, '"1"')).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
   });
 
   it('keeps only a positive safe version on conditional writes', async () => {
@@ -127,10 +153,12 @@ describe('Document registry adapter', () => {
       'problem.details',
       { version: 3 },
     );
-    await expect(
-      documents.create({ spaceId, title: 'Notes' }, undefined),
-    ).rejects.not.toHaveProperty('problem.details');
-    await expect(malformed.remove(documentId, '"1"')).rejects.not.toHaveProperty('problem.details');
+    await expect(documents.create({ spaceId, title: 'Notes' }, undefined)).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+    await expect(malformed.remove(documentId, '"1"')).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
   });
 
   it.each([

@@ -28,6 +28,12 @@ const clientProblemCodes: ReadonlySet<string> = new Set([
   'space.not-found',
 ]);
 
+const codesWithRequiredDetails: ReadonlySet<string> = new Set([
+  'access.role-insufficient',
+  'request.invalid',
+  'request.version-mismatch',
+]);
+
 const issuePaths: Readonly<Record<'body' | 'header' | 'param' | 'query', readonly string[]>> = {
   body: ['', 'body', 'spaceId', 'title'],
   header: ['Idempotency-Key', 'If-Match'],
@@ -97,15 +103,16 @@ async function documentAnswer<T>(call: Promise<T>, operation: Operation): Promis
   } catch (error) {
     if (!(error instanceof ProblemException)) throw error;
     const status = documentProblemStatus.safeParse(error.problem.status);
-    if (!status.success) {
+    const { code } = error.problem;
+    const details = publicDetails(error.problem, operation);
+    if (!status.success || (details === undefined && codesWithRequiredDetails.has(code))) {
       throw new ProblemException({ status: 503, code: 'upstream.failed' });
     }
     // The shared transport owns 503 codes and only accepts explicitly configured owner codes.
-    const { code } = error.problem;
     throw new ProblemException({
       status: status.data,
       code: status.data === 503 || clientProblemCodes.has(code) ? code : 'upstream.error',
-      details: publicDetails(error.problem, operation),
+      details,
     });
   }
 }

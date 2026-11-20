@@ -57,11 +57,12 @@ const LIST: AcceptedProblems = {
 };
 const WRITE: AcceptedProblems = {
   ...READ,
+  400: ['request.invalid', 'request.body-too-large'],
   403: ['access.role-insufficient'],
   412: ['request.version-mismatch'],
 };
 const CREATE: AcceptedProblems = {
-  400: ['request.invalid'],
+  400: ['request.invalid', 'request.body-too-large'],
   403: ['access.role-insufficient'],
   404: ['organization.not-found', 'space.not-found', 'document.not-found'],
   409: ['idempotency.request-in-progress'],

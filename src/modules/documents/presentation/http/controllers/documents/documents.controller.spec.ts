@@ -92,6 +92,23 @@ describe('document public routes', () => {
     });
   });
 
+  it.each(['create', 'update'] as const)(
+    'preserves a body-too-large rejection from Document on %s',
+    async (operation) => {
+      const { controller, port, response } = fixture();
+      port[operation].mockRejectedValueOnce(
+        new ProblemException({ status: 400, code: 'request.body-too-large' }),
+      );
+      const call =
+        operation === 'create'
+          ? () => controller.create({ spaceId, title: 'Notes' }, undefined, response)
+          : () => controller.update({ documentId }, { title: 'Notes' }, '"3"', response);
+      await expect(call()).rejects.toMatchObject({
+        problem: { status: 400, code: 'request.body-too-large' },
+      });
+    },
+  );
+
   it.each([
     ['upstream.unavailable', 'upstream.failed'],
     ['upstream.circuit-open', 'upstream.failed'],
