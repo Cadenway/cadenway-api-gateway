@@ -14,7 +14,9 @@ implemented (see [Account security routes](#account-security-routes)) and covere
 tests and `tests/account-security.int-spec.ts`; the task core routes of `spaces.yaml`, `lists.yaml`
 and `tasks.yaml` and the client of task-service are implemented (see
 [Task core routes](#task-core-routes)) and covered by the route tests, the client tests and
-`tests/tasks.int-spec.ts`.
+`tests/tasks.int-spec.ts`; the sharing, access request, archive, trash and deletion routes are
+implemented (see [Access, archive and trash routes](#access-archive-and-trash-routes)) and covered
+by the route tests, the client tests and `tests/task-access-lifecycle.int-spec.ts`.
 
 ## Public and internal boundaries
 
@@ -293,7 +295,7 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
   `404 organization.not-found` (the caller left the organization) answers the
   `404 member.not-found` or `404 invitation.not-found` the operation declares. On the choice of
   organization, `404 session.not-found` answers `401 auth.session-expired`. `ETag` comes from the
-  `version` of the answer; `If-Match` is relayed unchanged.
+  `version` of the answer; `If-Match` is relayed unchanged unless blank (see Gateway Patterns).
 - **Invitation emails.** organization-service limits them; the gateway relays its refusals with
   their French titles, their `details` and `Retry-After`, the seconds until the instant of the
   details, rounded up:
@@ -324,6 +326,24 @@ request → auth guard (token) → scope guard → organization context → rate
         → controller → internal client(s) → mapping to openapi/public → response
 ```
 
+- Every route that relays `If-Match` reads it with `@IfMatchHeader()` (`src/presentation/http/`):
+  an absent header stays absent, a present but blank one answers `400 request.invalid` with an
+  issue `{ in: header, path: If-Match }` before any call, since the owning service would take it
+  for an absent one. Blank means that no member of its comma-separated list is left after
+  JavaScript `trim()`, as the owning service reads it: empty, white space only (a no-break space
+  included) or commas and white space only (the `", "` of two empty headers). Any other value,
+  `W/"7"` and `*` included, is relayed unchanged.
+- Every task-domain route whose operation marks `requestBody.required: true` reads its body with
+  `@RequiredBody(validator)`, which refuses with `400 request.invalid` before any call a request
+  declaring `Content-Length: 0` (issue `{ in: body, path: '', code: required }`), since the JSON
+  parser of `@cadenway/nest-common` hands it on as `{}`, and a `Content-Type` other than
+  `application/json` with no `charset` or `charset=utf-8` (issue `code: unsupported_media_type`),
+  since the form parser NestJS registers turns a body such as `&` into `{}` too. A literal `{}`
+  still reaches the validator. Known limit: any JSON body whose decoded text is empty (an empty
+  chunked body, an empty body under a `Content-Encoding`, a lone UTF-8 byte-order mark) also
+  arrives as `{}` and cannot be told apart in the gateway; that belongs to the parser of
+  cadenway-service-kit, which should leave such a body `undefined`.
+
 ### Task core routes
 
 - The 29 routes of `openapi/public/spaces.yaml`, `lists.yaml` and `tasks.yaml` call
@@ -342,6 +362,25 @@ request → auth guard (token) → scope guard → organization context → rate
   and each later secondary part (attachments, development links, comments) is read in parallel
   within 800 ms and named in `partial` when it cannot be read. None exists yet: `partial` is
   `[]`.
+
+### Access, archive and trash routes
+
+- The 23 routes of phase P3b-1 follow the task core rules above: the 10 of
+  `openapi/public/access.yaml` (grants of spaces and lists, access requests), the 6 of
+  `archives.yaml`, the 5 of `trash.yaml`, `DELETE /v1/spaces/{spaceId}` and
+  `DELETE /v1/lists/{listId}`. Reads need `tasks:read` and writes `tasks:write`; there is no
+  sharing scope.
+- task-service decides every role and state: `403 access.role-insufficient`,
+  `403 space.manage-forbidden`, `409 task.archived` and `404 task.trashed` (with the trash entry
+  in `details`, the detail aggregate included) are relayed as each public operation declares
+  them, on the task core routes too.
+- A grant change answers the `ETag` task-service gives for the version of the space or the list;
+  `POST /v1/access-requests` answers `202` without a body, and its
+  `429 access-request.limit-reached` gets `Retry-After` from `details.nextAvailableAt`.
+- Empty request bodies (`EmptyRequest`) refuse any member, as the contract declares.
+- The internal routes `GET /internal/v1/lists/{listId}/access` and
+  `GET /internal/v1/tasks/{taskKey}/access` belong to cadenway-realtime-gateway: the client of the
+  gateway has no method for them, and its tests check it.
 
 ### An aggregate
 
@@ -376,6 +415,12 @@ Every error leaves as `application/problem+json` (RFC 9457): `type`, `title`, `s
 - The response carries `X-Request-Id`, the reference the webapp displays.
 - The error filter comes from `@cadenway/nest-common`; an internal problem document is translated to
   the public contract, never forwarded.
+- Known limit: the `details` of a relayed problem are forwarded as task-service, identity-service or
+  organization-service sent them, without `service` but without a check of their members (the
+  public `Problem.details` is an open object). Today the internal and public `details` of every
+  relayed code are declared identical; an allow-list of the declared members per code in
+  `src/problems/` would keep a member a service adds later from reaching the applications before
+  the public contract declares it.
 
 ## Auth Tokens
 

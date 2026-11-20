@@ -3,7 +3,9 @@ import { ResilientRedisClient } from '@cadenway/nest-common/redis';
 import { Module, type Type } from '@nestjs/common';
 
 import { RedisModule } from './infrastructure/redis/redis.module.js';
+import { AccessModule } from './modules/access/access.module.js';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
+import { ArchivesModule } from './modules/archives/archives.module.js';
 import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
 import { ListsModule } from './modules/lists/lists.module.js';
@@ -13,6 +15,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { SessionsModule } from './modules/sessions/sessions.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
+import { TrashModule } from './modules/trash/trash.module.js';
 import { TwoStepVerificationModule } from './modules/two-step-verification/two-step-verification.module.js';
 
 /**
@@ -37,6 +40,9 @@ export const ROUTE_MODULES: readonly Type[] = [
   SpacesModule,
   ListsModule,
   TasksModule,
+  AccessModule,
+  ArchivesModule,
+  TrashModule,
 ];
 
 /**
@@ -74,8 +80,10 @@ export const SHUTDOWN_DELAY_MS: number = 3000;
  * - `ROUTE_MODULES` serve the public routes: `AuthRoutesModule`, `MeRoutesModule`,
  *   `SessionsModule` and `TwoStepVerificationModule` (the routes of `openapi/public/auth.yaml`),
  *   `OrganizationsModule`
- *   (`organizations.yaml`), `MembersModule` and `InvitationsModule` (`members.yaml`) and
- *   `ApiTokensModule` (`api-tokens.yaml`). Each applies the credential guard of `auth` and the
+ *   (`organizations.yaml`), `MembersModule` and `InvitationsModule` (`members.yaml`),
+ *   `ApiTokensModule` (`api-tokens.yaml`), `SpacesModule`, `ListsModule` and `TasksModule`
+ *   (`spaces.yaml`, `lists.yaml`, `tasks.yaml`), `AccessModule` (`access.yaml`), `ArchivesModule`
+ *   (`archives.yaml`) and `TrashModule` (`trash.yaml`). Each applies the credential guard of `auth` and the
  *   rate limit of `rate-limit`.
  * - `RedisModule` opens the Redis connection of the rate-limit counters.
  * - `HealthModule` serves `GET /health/live`, which checks nothing, and `GET /health/ready`, which

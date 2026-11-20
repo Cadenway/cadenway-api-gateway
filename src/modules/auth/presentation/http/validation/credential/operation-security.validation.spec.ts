@@ -278,7 +278,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(84);
+    expect(operations).toHaveLength(107);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -314,7 +314,7 @@ describe('the security of every route against the public contracts', () => {
     },
   );
 
-  it('derives a token scope only for the two member reads and the task core operations', () => {
+  it('derives a token scope only for the two member reads and the task operations', () => {
     const withToken: string[] = operations
       .filter((operation: ContractOperation) => apiTokenScopesOf(operation.security) !== undefined)
       .map((operation: ContractOperation) => operation.security.operationId)
@@ -353,6 +353,29 @@ describe('the security of every route against the public contracts', () => {
         'listLabels',
         'listMyTasks',
         'getHome',
+        'deleteSpace',
+        'deleteList',
+        'listSpaceGrants',
+        'setSpaceGrant',
+        'removeSpaceGrant',
+        'listListGrants',
+        'setListGrant',
+        'removeListGrant',
+        'createAccessRequest',
+        'listAccessRequests',
+        'approveAccessRequest',
+        'refuseAccessRequest',
+        'archiveList',
+        'unarchiveList',
+        'archiveTask',
+        'unarchiveTask',
+        'listArchivedLists',
+        'listArchivedTasks',
+        'trashTask',
+        'listTrash',
+        'purgeTrashEntry',
+        'restoreTrashEntry',
+        'emptyTrash',
       ].sort(),
     );
   });

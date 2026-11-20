@@ -3,9 +3,16 @@ import {
   AddChecklistItemInternalResponse,
   AddTaskLabelInternalBody,
   AddTaskLabelInternalResponse,
+  ApproveAccessRequestInternalBody,
+  ApproveAccessRequestInternalResponse,
+  ArchiveListInternalBody,
+  ArchiveListInternalResponse,
+  ArchiveTaskInternalBody,
+  ArchiveTaskInternalResponse,
   AssignTaskInternalResponse,
   CountTaskGroupsInternalQueryParams,
   CountTaskGroupsInternalResponse,
+  CreateAccessRequestInternalBody,
   CreateListInternalBody,
   CreateListInternalResponse,
   CreateSpaceInternalBody,
@@ -14,6 +21,8 @@ import {
   CreateSubtaskInternalResponse,
   CreateTaskInternalBody,
   CreateTaskInternalResponse,
+  EmptyTrashInternalBody,
+  EmptyTrashInternalResponse,
   GetHomeInternalQueryParams,
   GetHomeInternalResponse,
   GetListCountsInternalQueryParams,
@@ -24,14 +33,24 @@ import {
   GetSpaceOverviewInternalResponse,
   GetTaskDetailInternalResponse,
   GetTaskInternalResponse,
+  ListAccessRequestsInternalQueryParams,
+  ListAccessRequestsInternalResponse,
+  ListArchivedListsInternalQueryParams,
+  ListArchivedListsInternalResponse,
+  ListArchivedTasksInternalQueryParams,
+  ListArchivedTasksInternalResponse,
   ListLabelsInternalQueryParams,
   ListLabelsInternalResponse,
   ListListActivityInternalQueryParams,
   ListListActivityInternalResponse,
+  ListListGrantsInternalQueryParams,
+  ListListGrantsInternalResponse,
   ListListsInternalQueryParams,
   ListListsInternalResponse,
   ListMyTasksInternalQueryParams,
   ListMyTasksInternalResponse,
+  ListSpaceGrantsInternalQueryParams,
+  ListSpaceGrantsInternalResponse,
   ListSpacesInternalQueryParams,
   ListSpacesInternalResponse,
   ListSubtasksInternalQueryParams,
@@ -40,8 +59,24 @@ import {
   ListTaskActivityInternalResponse,
   ListTasksInternalQueryParams,
   ListTasksInternalResponse,
+  ListTrashInternalQueryParams,
+  ListTrashInternalResponse,
+  RefuseAccessRequestInternalBody,
+  RefuseAccessRequestInternalResponse,
   RemoveTaskLabelInternalBody,
   RemoveTaskLabelInternalResponse,
+  RestoreTrashEntryInternalBody,
+  RestoreTrashEntryInternalResponse,
+  SetListGrantInternalBody,
+  SetListGrantInternalResponse,
+  SetSpaceGrantInternalBody,
+  SetSpaceGrantInternalResponse,
+  TrashTaskInternalBody,
+  TrashTaskInternalResponse,
+  UnarchiveListInternalBody,
+  UnarchiveListInternalResponse,
+  UnarchiveTaskInternalBody,
+  UnarchiveTaskInternalResponse,
   UpdateChecklistItemInternalBody,
   UpdateChecklistItemInternalResponse,
   UpdateListInternalBody,
@@ -89,7 +124,7 @@ type TaskServiceRoutes = ReturnType<typeof getTaskServiceInternalRoutes>;
  *
  * @description
  * What a generated function of task-service resolves with, its headers included: the `ETag` of
- * an unassignment and the `Location` of a checklist item are read from them.
+ * an unassignment or of a grant and the `Location` of a checklist item are read from them.
  */
 interface GeneratedAnswer extends GeneratedResponse {
   // #region Properties
@@ -107,6 +142,40 @@ interface GeneratedAnswer extends GeneratedResponse {
 }
 
 /**
+ * Interface VersionedGrant
+ *
+ * @description
+ * A grant task-service gave or changed, with the version its `ETag` answers: the version of the
+ * space for a grant of a space, of the list for a grant of a list. The `Grant` of the contract
+ * carries no version of its own.
+ */
+export interface VersionedGrant {
+  // #region Properties
+  /**
+   * Property grant
+   *
+   * @description
+   * The grant, as the internal contract types it (`Grant`, the same for a space and a list).
+   *
+   * @type {z.output<typeof SetSpaceGrantInternalResponse>}
+   * @readonly
+   */
+  readonly grant: z.output<typeof SetSpaceGrantInternalResponse>;
+
+  /**
+   * Property version
+   *
+   * @description
+   * Version of the space or of the list after the change, from the strong `ETag` of the answer.
+   *
+   * @type {number}
+   * @readonly
+   */
+  readonly version: number;
+  // #endregion
+}
+
+/**
  * Constant EMPTY_REQUEST
  *
  * @description
@@ -120,7 +189,8 @@ const EMPTY_REQUEST: Readonly<Record<string, never>> = Object.freeze({});
  * Constant ETAG
  *
  * @description
- * A strong entity tag as task-service sends it: the version of the task between quotes.
+ * A strong entity tag as task-service sends it: the version of the space, the list or the task
+ * between quotes.
  *
  * @type {RegExp}
  */
@@ -166,6 +236,46 @@ async function call<TSchema extends z.ZodType>(
     status,
     schema,
   );
+}
+
+/**
+ * Function acknowledged
+ *
+ * @description
+ * Awaits a generated call of task-service whose success carries no body the gateway reads (a
+ * `204`, or the `202` of an access request) and checks its success status only.
+ *
+ * @param {string} operation - `operationId` of the call.
+ * @param {number} status - Success status of the operation.
+ * @param {Promise<GeneratedResponse>} pending - The generated call.
+ * @returns {Promise<void>} Once the call answered its success status.
+ * @throws {ProblemException} The relayed client error, or `503 upstream.*`.
+ */
+async function acknowledged(
+  operation: string,
+  status: number,
+  pending: Promise<GeneratedResponse>,
+): Promise<void> {
+  expectStatus(TASK_SERVICE, operation, await answered(TASK_SERVICE, operation, pending), status);
+}
+
+/**
+ * Function versionOf
+ *
+ * @description
+ * Reads the version a success of task-service answers in its strong `ETag`.
+ *
+ * @param {string} operation - `operationId` of the call.
+ * @param {GeneratedAnswer} answer - The success.
+ * @returns {number} The version of the space, the list or the task after the change.
+ * @throws {ProblemException} 503 `upstream.failed` without a strong `ETag`.
+ */
+function versionOf(operation: string, answer: GeneratedAnswer): number {
+  const version: string | undefined = ETAG.exec(answer.headers.get('ETag') ?? '')?.[1];
+  if (version === undefined) {
+    throw outsideContract(TASK_SERVICE, operation, 'no strong ETag');
+  }
+  return Number(version);
 }
 
 /**
@@ -222,12 +332,29 @@ function withHeaders(
 }
 
 /**
+ * Function sentOnce
+ *
+ * @description
+ * The request options of a mutation of task-service that is never retried (`idempotent: false`),
+ * whatever its method: every change but a creation with an `Idempotency-Key`. A `PUT` or a
+ * `DELETE` repeated after a lost answer would undo what another actor changed in between: a grant
+ * revoked, then given again by the repeat; an assignee removed, then assigned again.
+ *
+ * @param {InternalRequestInit} init - The options to send once, such as those of `withHeaders`.
+ * @returns {InternalRequestInit} The same options, never retried.
+ */
+function sentOnce(init: InternalRequestInit = {}): InternalRequestInit {
+  return { ...init, idempotent: false };
+}
+
+/**
  * Class TaskServiceClient
  *
  * @description
  * Outgoing adapter of task-service: the functions generated from
  * `openapi/internal/task-service.yaml`, called through one `InternalHttpClient` of
- * `@cadenway/nest-common`, behind the ports of the space, list and task routes.
+ * `@cadenway/nest-common`, behind the ports of the space, list, task, access, archive and trash
+ * routes.
  *
  * - Every call carries an internal token signed by the gateway with `aud: task-service`, for the
  *   user and organization of the current organization context. task-service decides who sees
@@ -235,11 +362,21 @@ function withHeaders(
  * - Every query and body is checked against the internal contract before it is sent, and every
  *   success after it is answered; a mismatching answer is `503 upstream.failed`.
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
- *   retry after a connection error or a `503` for an idempotent call (`GET`, a creation with an
- *   `Idempotency-Key`, the `PUT` and `DELETE` of an assignee without `If-Match`), and the circuit
- *   breaker of task-service.
+ *   retry after a connection error or a `503` for an idempotent call, and the circuit breaker of
+ *   task-service. Retried are every `GET` and a creation with an `Idempotency-Key`, which
+ *   task-service replays. Every other mutation is sent once (`sentOnce`), with or without
+ *   `If-Match`: the `PATCH` of a space, a list, a task or a checklist item; the `DELETE` of a space
+ *   or a list; the `PUT` and `DELETE` of an assignee and of a grant; the addition and removal of a
+ *   label; an access request, its approval and its refusal; an archive and its restoration; a move
+ *   to the trash, the erasure and the restoration of an entry and the emptying of the trash. A
+ *   change retried after its answer was lost could undo what another actor changed in between,
+ *   such as a grant revoked then given again, and a repeat of a change that succeeded under
+ *   `If-Match` would answer `412 request.version-mismatch`.
  * - `If-Match` and `Idempotency-Key` are relayed unchanged; task-service checks the version and
  *   replays a creation.
+ * - The access checks of a list and a task (`GET /internal/v1/lists/{listId}/access` and
+ *   `GET /internal/v1/tasks/{taskKey}/access`) have no method here: task-service accepts them from
+ *   the issuer `realtime-gateway` only and answers the gateway `403 auth.issuer-not-allowed`.
  */
 export class TaskServiceClient {
   // #region Properties
@@ -346,7 +483,8 @@ export class TaskServiceClient {
    * Method updateSpace
    *
    * @description
-   * `PATCH /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} spaceId - Id of the space.
    * @param {unknown} patch - JSON Merge Patch of the space.
@@ -366,8 +504,29 @@ export class TaskServiceClient {
       this.routes.updateSpaceInternal(
         spaceId,
         toRequest(operation, UpdateSpaceInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
+    );
+  }
+
+  /**
+   * Method deleteSpace
+   *
+   * @description
+   * `DELETE /internal/v1/spaces/{spaceId}`, with the `If-Match` of the public request: `204`
+   * without `ETag`. Its lists go with it and its tasks move to the trash. Never retried, with or
+   * without `If-Match`.
+   *
+   * @param {string} spaceId - Id of the space.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<void>} Once the space is deleted.
+   */
+  public deleteSpace(spaceId: string, ifMatch: string | undefined): Promise<void> {
+    const operation = 'deleteSpaceInternal';
+    return acknowledged(
+      operation,
+      204,
+      this.routes.deleteSpaceInternal(spaceId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
   }
 
@@ -474,7 +633,8 @@ export class TaskServiceClient {
    * Method updateList
    *
    * @description
-   * `PATCH /internal/v1/lists/{listId}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/lists/{listId}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} listId - Id of the list.
    * @param {unknown} patch - JSON Merge Patch of the list.
@@ -494,8 +654,28 @@ export class TaskServiceClient {
       this.routes.updateListInternal(
         listId,
         toRequest(operation, UpdateListInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
+    );
+  }
+
+  /**
+   * Method deleteList
+   *
+   * @description
+   * `DELETE /internal/v1/lists/{listId}`, with the `If-Match` of the public request: `204`
+   * without `ETag`. Never retried, with or without `If-Match`.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<void>} Once the list is deleted.
+   */
+  public deleteList(listId: string, ifMatch: string | undefined): Promise<void> {
+    const operation = 'deleteListInternal';
+    return acknowledged(
+      operation,
+      204,
+      this.routes.deleteListInternal(listId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
   }
 
@@ -654,7 +834,8 @@ export class TaskServiceClient {
    * Method updateTask
    *
    * @description
-   * `PATCH /internal/v1/tasks/{taskKey}`, with the `If-Match` of the public request.
+   * `PATCH /internal/v1/tasks/{taskKey}`, with the `If-Match` of the public request. Never
+   * retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} patch - JSON Merge Patch of the task.
@@ -674,7 +855,7 @@ export class TaskServiceClient {
       this.routes.updateTaskInternal(
         taskKey,
         toRequest(operation, UpdateTaskInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -810,7 +991,7 @@ export class TaskServiceClient {
    *
    * @description
    * `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}`, with the `If-Match`
-   * of the public request.
+   * of the public request. Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} checklistItemId - Id of the item.
@@ -833,7 +1014,7 @@ export class TaskServiceClient {
         taskKey,
         checklistItemId,
         toRequest(operation, UpdateChecklistItemInternalBody, patch),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -843,7 +1024,8 @@ export class TaskServiceClient {
    *
    * @description
    * `PUT /internal/v1/tasks/{taskKey}/assignees/{userId}`, with the `If-Match` of the public
-   * request.
+   * request. Never retried, with or without `If-Match`: a repeat after a lost answer would assign
+   * again an account another actor unassigned in between.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} userId - Account to assign.
@@ -863,7 +1045,7 @@ export class TaskServiceClient {
         taskKey,
         userId,
         EMPTY_REQUEST,
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -873,7 +1055,8 @@ export class TaskServiceClient {
    *
    * @description
    * `DELETE /internal/v1/tasks/{taskKey}/assignees/{userId}`, with the `If-Match` of the public
-   * request: `204` with the `ETag` of the task.
+   * request: `204` with the `ETag` of the task. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would unassign an account another actor assigned in between.
    *
    * @param {string} taskKey - Key of the task.
    * @param {string} userId - Account to unassign.
@@ -890,14 +1073,10 @@ export class TaskServiceClient {
     const answer: GeneratedAnswer = await answered(
       TASK_SERVICE,
       operation,
-      this.routes.unassignTaskInternal(taskKey, userId, withHeaders('If-Match', ifMatch)),
+      this.routes.unassignTaskInternal(taskKey, userId, sentOnce(withHeaders('If-Match', ifMatch))),
     );
     expectStatus(TASK_SERVICE, operation, answer, 204);
-    const version: string | undefined = ETAG.exec(answer.headers.get('ETag') ?? '')?.[1];
-    if (version === undefined) {
-      throw outsideContract(TASK_SERVICE, operation, 'no strong ETag');
-    }
-    return Number(version);
+    return versionOf(operation, answer);
   }
 
   /**
@@ -905,6 +1084,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/labels/add`, with the `If-Match` of the public request.
+   * Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} change - The label.
@@ -924,7 +1104,7 @@ export class TaskServiceClient {
       this.routes.addTaskLabelInternal(
         taskKey,
         toRequest(operation, AddTaskLabelInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -934,6 +1114,7 @@ export class TaskServiceClient {
    *
    * @description
    * `POST /internal/v1/tasks/{taskKey}/labels/remove`, with the `If-Match` of the public request.
+   * Never retried.
    *
    * @param {string} taskKey - Key of the task.
    * @param {unknown} change - The label.
@@ -953,7 +1134,7 @@ export class TaskServiceClient {
       this.routes.removeTaskLabelInternal(
         taskKey,
         toRequest(operation, RemoveTaskLabelInternalBody, change),
-        withHeaders('If-Match', ifMatch),
+        sentOnce(withHeaders('If-Match', ifMatch)),
       ),
     );
   }
@@ -1050,6 +1231,598 @@ export class TaskServiceClient {
       200,
       GetHomeInternalResponse,
       this.routes.getHomeInternal(userId, toRequest(operation, GetHomeInternalQueryParams, query)),
+    );
+  }
+
+  /**
+   * Method listSpaceGrants
+   *
+   * @description
+   * `GET /internal/v1/spaces/{spaceId}/grants`.
+   *
+   * @param {string} spaceId - Id of the space.
+   * @param {unknown} query - Cursor and page size.
+   * @returns {Promise<z.output<typeof ListSpaceGrantsInternalResponse>>} One page of grants.
+   */
+  public listSpaceGrants(
+    spaceId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListSpaceGrantsInternalResponse>> {
+    const operation = 'listSpaceGrantsInternal';
+    return call(
+      operation,
+      200,
+      ListSpaceGrantsInternalResponse,
+      this.routes.listSpaceGrantsInternal(
+        spaceId,
+        toRequest(operation, ListSpaceGrantsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /**
+   * Method setSpaceGrant
+   *
+   * @description
+   * `PUT /internal/v1/spaces/{spaceId}/grants/{userId}`, with the `If-Match` of the public
+   * request: `200` with the grant and the `ETag` of the space. Never retried, with or without
+   * `If-Match`: a repeat after a lost answer would give again a grant another manager revoked in
+   * between.
+   *
+   * @param {string} spaceId - Id of the space.
+   * @param {string} userId - Account given the role.
+   * @param {unknown} change - The role.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request, version of the space.
+   * @returns {Promise<VersionedGrant>} The grant and the version of the space.
+   * @throws {ProblemException} 503 `upstream.failed` without a strong `ETag`.
+   */
+  public async setSpaceGrant(
+    spaceId: string,
+    userId: string,
+    change: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedGrant> {
+    const operation = 'setSpaceGrantInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.setSpaceGrantInternal(
+        spaceId,
+        userId,
+        toRequest(operation, SetSpaceGrantInternalBody, change),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    const grant: z.output<typeof SetSpaceGrantInternalResponse> = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      SetSpaceGrantInternalResponse,
+    );
+    return { grant, version: versionOf(operation, answer) };
+  }
+
+  /**
+   * Method removeSpaceGrant
+   *
+   * @description
+   * `DELETE /internal/v1/spaces/{spaceId}/grants/{userId}`, with the `If-Match` of the public
+   * request: `204` with the `ETag` of the space. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would revoke a grant another manager gave in between.
+   *
+   * @param {string} spaceId - Id of the space.
+   * @param {string} userId - Account whose grant is removed.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request, version of the space.
+   * @returns {Promise<number>} The version of the space after the change.
+   * @throws {ProblemException} 503 `upstream.failed` without a strong `ETag`.
+   */
+  public async removeSpaceGrant(
+    spaceId: string,
+    userId: string,
+    ifMatch: string | undefined,
+  ): Promise<number> {
+    const operation = 'removeSpaceGrantInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.removeSpaceGrantInternal(
+        spaceId,
+        userId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return versionOf(operation, answer);
+  }
+
+  /**
+   * Method listListGrants
+   *
+   * @description
+   * `GET /internal/v1/lists/{listId}/grants`.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {unknown} query - Cursor and page size.
+   * @returns {Promise<z.output<typeof ListListGrantsInternalResponse>>} One page of grants.
+   */
+  public listListGrants(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListListGrantsInternalResponse>> {
+    const operation = 'listListGrantsInternal';
+    return call(
+      operation,
+      200,
+      ListListGrantsInternalResponse,
+      this.routes.listListGrantsInternal(
+        listId,
+        toRequest(operation, ListListGrantsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /**
+   * Method setListGrant
+   *
+   * @description
+   * `PUT /internal/v1/lists/{listId}/grants/{userId}`, with the `If-Match` of the public request:
+   * `200` with the grant and the `ETag` of the list. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would give again a grant another manager revoked in between.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {string} userId - Account given the role.
+   * @param {unknown} change - The role.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request, version of the list.
+   * @returns {Promise<VersionedGrant>} The grant and the version of the list.
+   * @throws {ProblemException} 503 `upstream.failed` without a strong `ETag`.
+   */
+  public async setListGrant(
+    listId: string,
+    userId: string,
+    change: unknown,
+    ifMatch: string | undefined,
+  ): Promise<VersionedGrant> {
+    const operation = 'setListGrantInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.setListGrantInternal(
+        listId,
+        userId,
+        toRequest(operation, SetListGrantInternalBody, change),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    const grant: z.output<typeof SetListGrantInternalResponse> = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      SetListGrantInternalResponse,
+    );
+    return { grant, version: versionOf(operation, answer) };
+  }
+
+  /**
+   * Method removeListGrant
+   *
+   * @description
+   * `DELETE /internal/v1/lists/{listId}/grants/{userId}`, with the `If-Match` of the public
+   * request: `204` with the `ETag` of the list. Never retried, with or without `If-Match`: a
+   * repeat after a lost answer would revoke a grant another manager gave in between.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {string} userId - Account whose grant is removed.
+   * @param {string | undefined} ifMatch - `If-Match` of the public request, version of the list.
+   * @returns {Promise<number>} The version of the list after the change.
+   * @throws {ProblemException} 503 `upstream.failed` without a strong `ETag`.
+   */
+  public async removeListGrant(
+    listId: string,
+    userId: string,
+    ifMatch: string | undefined,
+  ): Promise<number> {
+    const operation = 'removeListGrantInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.removeListGrantInternal(
+        listId,
+        userId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return versionOf(operation, answer);
+  }
+
+  /**
+   * Method createAccessRequest
+   *
+   * @description
+   * `POST /internal/v1/access-requests`: `202` with no body, whether the request was stored or
+   * not. Never retried.
+   *
+   * @param {unknown} creation - The one target and the message.
+   * @returns {Promise<void>} Once task-service took the request.
+   */
+  public createAccessRequest(creation: unknown): Promise<void> {
+    const operation = 'createAccessRequestInternal';
+    return acknowledged(
+      operation,
+      202,
+      this.routes.createAccessRequestInternal(
+        toRequest(operation, CreateAccessRequestInternalBody, creation),
+        sentOnce(),
+      ),
+    );
+  }
+
+  /**
+   * Method listAccessRequests
+   *
+   * @description
+   * `GET /internal/v1/access-requests`: the pending requests the actor may answer.
+   *
+   * @param {unknown} query - Space or list, cursor and page size.
+   * @returns {Promise<z.output<typeof ListAccessRequestsInternalResponse>>} One page of requests.
+   */
+  public listAccessRequests(
+    query: unknown,
+  ): Promise<z.output<typeof ListAccessRequestsInternalResponse>> {
+    const operation = 'listAccessRequestsInternal';
+    return call(
+      operation,
+      200,
+      ListAccessRequestsInternalResponse,
+      this.routes.listAccessRequestsInternal(
+        toRequest(operation, ListAccessRequestsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /**
+   * Method approveAccessRequest
+   *
+   * @description
+   * `POST /internal/v1/access-requests/{accessRequestId}/approval`. Never retried.
+   *
+   * @param {string} accessRequestId - Id of the request.
+   * @param {unknown} approval - The role to give.
+   * @returns {Promise<z.output<typeof ApproveAccessRequestInternalResponse>>} The request,
+   * approved.
+   */
+  public approveAccessRequest(
+    accessRequestId: string,
+    approval: unknown,
+  ): Promise<z.output<typeof ApproveAccessRequestInternalResponse>> {
+    const operation = 'approveAccessRequestInternal';
+    return call(
+      operation,
+      200,
+      ApproveAccessRequestInternalResponse,
+      this.routes.approveAccessRequestInternal(
+        accessRequestId,
+        toRequest(operation, ApproveAccessRequestInternalBody, approval),
+        sentOnce(),
+      ),
+    );
+  }
+
+  /**
+   * Method refuseAccessRequest
+   *
+   * @description
+   * `POST /internal/v1/access-requests/{accessRequestId}/refusal`. Never retried.
+   *
+   * @param {string} accessRequestId - Id of the request.
+   * @param {unknown} refusal - The empty body (`EmptyRequest`).
+   * @returns {Promise<z.output<typeof RefuseAccessRequestInternalResponse>>} The request,
+   * refused.
+   */
+  public refuseAccessRequest(
+    accessRequestId: string,
+    refusal: unknown,
+  ): Promise<z.output<typeof RefuseAccessRequestInternalResponse>> {
+    const operation = 'refuseAccessRequestInternal';
+    return call(
+      operation,
+      200,
+      RefuseAccessRequestInternalResponse,
+      this.routes.refuseAccessRequestInternal(
+        accessRequestId,
+        toRequest(operation, RefuseAccessRequestInternalBody, refusal),
+        sentOnce(),
+      ),
+    );
+  }
+
+  /**
+   * Method archiveList
+   *
+   * @description
+   * `POST /internal/v1/lists/{listId}/archive`, with the `If-Match` of the public request. Never
+   * retried.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<z.output<typeof ArchiveListInternalResponse>>} The list, archived.
+   */
+  public archiveList(
+    listId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof ArchiveListInternalResponse>> {
+    const operation = 'archiveListInternal';
+    return call(
+      operation,
+      200,
+      ArchiveListInternalResponse,
+      this.routes.archiveListInternal(
+        listId,
+        toRequest(operation, ArchiveListInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /**
+   * Method unarchiveList
+   *
+   * @description
+   * `POST /internal/v1/lists/{listId}/unarchive`, with the `If-Match` of the public request.
+   * Never retried.
+   *
+   * @param {string} listId - Id of the list.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<z.output<typeof UnarchiveListInternalResponse>>} The list, back in its
+   * space.
+   */
+  public unarchiveList(
+    listId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof UnarchiveListInternalResponse>> {
+    const operation = 'unarchiveListInternal';
+    return call(
+      operation,
+      200,
+      UnarchiveListInternalResponse,
+      this.routes.unarchiveListInternal(
+        listId,
+        toRequest(operation, UnarchiveListInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /**
+   * Method archiveTask
+   *
+   * @description
+   * `POST /internal/v1/tasks/{taskKey}/archive`, with the `If-Match` of the public request: the
+   * task and its subtasks at every level. Never retried.
+   *
+   * @param {string} taskKey - Key of the task.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<z.output<typeof ArchiveTaskInternalResponse>>} The task, archived.
+   */
+  public archiveTask(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof ArchiveTaskInternalResponse>> {
+    const operation = 'archiveTaskInternal';
+    return call(
+      operation,
+      200,
+      ArchiveTaskInternalResponse,
+      this.routes.archiveTaskInternal(
+        taskKey,
+        toRequest(operation, ArchiveTaskInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /**
+   * Method unarchiveTask
+   *
+   * @description
+   * `POST /internal/v1/tasks/{taskKey}/unarchive`, with the `If-Match` of the public request:
+   * the archive the task belongs to, from its root. Never retried.
+   *
+   * @param {string} taskKey - Key of the task.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<z.output<typeof UnarchiveTaskInternalResponse>>} The root of the archive,
+   * back in its list.
+   */
+  public unarchiveTask(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof UnarchiveTaskInternalResponse>> {
+    const operation = 'unarchiveTaskInternal';
+    return call(
+      operation,
+      200,
+      UnarchiveTaskInternalResponse,
+      this.routes.unarchiveTaskInternal(
+        taskKey,
+        toRequest(operation, UnarchiveTaskInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /**
+   * Method listArchivedLists
+   *
+   * @description
+   * `GET /internal/v1/archives/lists`.
+   *
+   * @param {unknown} query - Cursor and page size.
+   * @returns {Promise<z.output<typeof ListArchivedListsInternalResponse>>} One page of archived
+   * lists.
+   */
+  public listArchivedLists(
+    query: unknown,
+  ): Promise<z.output<typeof ListArchivedListsInternalResponse>> {
+    const operation = 'listArchivedListsInternal';
+    return call(
+      operation,
+      200,
+      ListArchivedListsInternalResponse,
+      this.routes.listArchivedListsInternal(
+        toRequest(operation, ListArchivedListsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /**
+   * Method listArchivedTasks
+   *
+   * @description
+   * `GET /internal/v1/archives/tasks`: the roots of the archived subtrees.
+   *
+   * @param {unknown} query - Cursor and page size.
+   * @returns {Promise<z.output<typeof ListArchivedTasksInternalResponse>>} One page of archived
+   * tasks.
+   */
+  public listArchivedTasks(
+    query: unknown,
+  ): Promise<z.output<typeof ListArchivedTasksInternalResponse>> {
+    const operation = 'listArchivedTasksInternal';
+    return call(
+      operation,
+      200,
+      ListArchivedTasksInternalResponse,
+      this.routes.listArchivedTasksInternal(
+        toRequest(operation, ListArchivedTasksInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /**
+   * Method trashTask
+   *
+   * @description
+   * `POST /internal/v1/tasks/{taskKey}/trash`, with the `If-Match` of the public request: the task
+   * and its subtasks at every level, as one entry. Never retried.
+   *
+   * @param {string} taskKey - Key of the task.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @param {string | undefined} ifMatch - `If-Match` of the public request.
+   * @returns {Promise<z.output<typeof TrashTaskInternalResponse>>} The trash entry.
+   */
+  public trashTask(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof TrashTaskInternalResponse>> {
+    const operation = 'trashTaskInternal';
+    return call(
+      operation,
+      200,
+      TrashTaskInternalResponse,
+      this.routes.trashTaskInternal(
+        taskKey,
+        toRequest(operation, TrashTaskInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /**
+   * Method listTrash
+   *
+   * @description
+   * `GET /internal/v1/trash/entries`: the entries the actor may restore.
+   *
+   * @param {unknown} query - Cursor and page size.
+   * @returns {Promise<z.output<typeof ListTrashInternalResponse>>} One page of trash entries.
+   */
+  public listTrash(query: unknown): Promise<z.output<typeof ListTrashInternalResponse>> {
+    const operation = 'listTrashInternal';
+    return call(
+      operation,
+      200,
+      ListTrashInternalResponse,
+      this.routes.listTrashInternal(toRequest(operation, ListTrashInternalQueryParams, query)),
+    );
+  }
+
+  /**
+   * Method purgeTrashEntry
+   *
+   * @description
+   * `DELETE /internal/v1/trash/entries/{entryId}`: `204`. The contract declares no `If-Match`.
+   * Never retried, like every change but a creation with an `Idempotency-Key`.
+   *
+   * @param {string} entryId - Id of the entry.
+   * @returns {Promise<void>} Once the entry is erased.
+   */
+  public purgeTrashEntry(entryId: string): Promise<void> {
+    return acknowledged(
+      'purgeTrashEntryInternal',
+      204,
+      this.routes.purgeTrashEntryInternal(entryId, sentOnce()),
+    );
+  }
+
+  /**
+   * Method restoreTrashEntry
+   *
+   * @description
+   * `POST /internal/v1/trash/entries/{entryId}/restore`. Never retried.
+   *
+   * @param {string} entryId - Id of the entry.
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @returns {Promise<z.output<typeof RestoreTrashEntryInternalResponse>>} The root of the entry,
+   * back in its list, and what came back with it.
+   */
+  public restoreTrashEntry(
+    entryId: string,
+    body: unknown,
+  ): Promise<z.output<typeof RestoreTrashEntryInternalResponse>> {
+    const operation = 'restoreTrashEntryInternal';
+    return call(
+      operation,
+      200,
+      RestoreTrashEntryInternalResponse,
+      this.routes.restoreTrashEntryInternal(
+        entryId,
+        toRequest(operation, RestoreTrashEntryInternalBody, body),
+        sentOnce(),
+      ),
+    );
+  }
+
+  /**
+   * Method emptyTrash
+   *
+   * @description
+   * `POST /internal/v1/trash/empty`: `202` with the count of the entries handed to the purge job.
+   * Never retried.
+   *
+   * @param {unknown} body - The empty body (`EmptyRequest`).
+   * @returns {Promise<z.output<typeof EmptyTrashInternalResponse>>} The count of the entries.
+   */
+  public emptyTrash(body: unknown): Promise<z.output<typeof EmptyTrashInternalResponse>> {
+    const operation = 'emptyTrashInternal';
+    return call(
+      operation,
+      202,
+      EmptyTrashInternalResponse,
+      this.routes.emptyTrashInternal(
+        toRequest(operation, EmptyTrashInternalBody, body),
+        sentOnce(),
+      ),
     );
   }
   // #endregion

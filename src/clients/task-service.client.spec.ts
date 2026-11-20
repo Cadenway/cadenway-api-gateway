@@ -8,13 +8,20 @@ import {
   type InternalPrincipal,
   type OrganizationContext,
 } from '@cadenway/nest-common';
+import { readFileSync } from 'node:fs';
+
 import { http, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ATELIER_NORD_ID, CAMILLE } from '../../tests/support/fake-identity.js';
-import { taskDetailCore } from '../../tests/support/fake-task.js';
-import { responseExample } from '../../tests/support/public-contract.js';
+import {
+  createFakeTask,
+  taskDetailCore,
+  type FakeTask,
+  type TaskServiceMethod,
+} from '../../tests/support/fake-task.js';
+import { responseExample, type SpecMethod } from '../../tests/support/public-contract.js';
 import {
   GATEWAY_ISSUER,
   generateSigningKeys,
@@ -36,6 +43,16 @@ const CAMILLE_IN_ATELIER_NORD: OrganizationContext = {
   role: 'owner',
   scopes: ['tasks:read', 'tasks:write'],
 };
+
+/**
+ * Ids of the space, the list, the access request, the trash entry and the checklist item of the
+ * calls.
+ */
+const SPACE_ID = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01';
+const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
+const ACCESS_REQUEST_ID = '019a7e00-1a2b-7c3d-8e4f-5a6b7c8d9e21';
+const ENTRY_ID = '019a7f00-1a2b-7c3d-8e4f-5a6b7c8d9e31';
+const ITEM_ID = '019a7c00-1a2b-7c3d-8e4f-5a6b7c8d9e10';
 
 /**
  * A call task-service received.
@@ -61,6 +78,255 @@ interface ReceivedCall {
   readonly principal: InternalPrincipal;
   // #endregion
 }
+
+/**
+ * A change the client sends to task-service.
+ */
+interface Change {
+  // #region Properties
+  /** Name of the method of the client. */
+  readonly name: string;
+
+  /** HTTP method of the internal route. */
+  readonly method: 'post' | 'put' | 'patch' | 'delete';
+
+  /** Internal path the change is sent to. */
+  readonly path: string;
+
+  /** Whether the method relays an `If-Match`. */
+  readonly conditional: boolean;
+
+  /** Sends the change through `client`, with `ifMatch` when the method relays one. */
+  readonly send: (client: TaskServiceClient, ifMatch: string | undefined) => Promise<unknown>;
+  // #endregion
+}
+
+/**
+ * One change, sent with or without `If-Match`.
+ */
+interface ChangeCase extends Change {
+  // #region Properties
+  /** `If-Match` of the call, or none. */
+  readonly ifMatch: string | undefined;
+
+  /** Name of the case in the test title. */
+  readonly label: string;
+  // #endregion
+}
+
+/**
+ * Every change of task-service the client sends but a creation with an `Idempotency-Key`.
+ */
+const CHANGES: readonly Change[] = [
+  {
+    name: 'updateSpace',
+    method: 'patch',
+    path: `/internal/v1/spaces/${SPACE_ID}`,
+    conditional: true,
+    send: (client, ifMatch) => client.updateSpace(SPACE_ID, { name: 'Produit' }, ifMatch),
+  },
+  {
+    name: 'deleteSpace',
+    method: 'delete',
+    path: `/internal/v1/spaces/${SPACE_ID}`,
+    conditional: true,
+    send: (client, ifMatch) => client.deleteSpace(SPACE_ID, ifMatch),
+  },
+  {
+    name: 'updateList',
+    method: 'patch',
+    path: `/internal/v1/lists/${LIST_ID}`,
+    conditional: true,
+    send: (client, ifMatch) => client.updateList(LIST_ID, { name: 'Sprint 14' }, ifMatch),
+  },
+  {
+    name: 'deleteList',
+    method: 'delete',
+    path: `/internal/v1/lists/${LIST_ID}`,
+    conditional: true,
+    send: (client, ifMatch) => client.deleteList(LIST_ID, ifMatch),
+  },
+  {
+    name: 'updateTask',
+    method: 'patch',
+    path: '/internal/v1/tasks/CAD-482',
+    conditional: true,
+    send: (client, ifMatch) => client.updateTask('CAD-482', { name: 'Renommée' }, ifMatch),
+  },
+  {
+    name: 'updateChecklistItem',
+    method: 'patch',
+    path: `/internal/v1/tasks/CAD-482/checklist-items/${ITEM_ID}`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.updateChecklistItem('CAD-482', ITEM_ID, { done: true }, ifMatch),
+  },
+  {
+    name: 'assignTask',
+    method: 'put',
+    path: `/internal/v1/tasks/CAD-482/assignees/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.assignTask('CAD-482', CAMILLE.id, ifMatch),
+  },
+  {
+    name: 'unassignTask',
+    method: 'delete',
+    path: `/internal/v1/tasks/CAD-482/assignees/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.unassignTask('CAD-482', CAMILLE.id, ifMatch),
+  },
+  {
+    name: 'addTaskLabel',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/labels/add',
+    conditional: true,
+    send: (client, ifMatch) => client.addTaskLabel('CAD-482', { name: 'Sécurité' }, ifMatch),
+  },
+  {
+    name: 'removeTaskLabel',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/labels/remove',
+    conditional: true,
+    send: (client, ifMatch) => client.removeTaskLabel('CAD-482', { name: 'Front' }, ifMatch),
+  },
+  {
+    name: 'setSpaceGrant',
+    method: 'put',
+    path: `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, ifMatch),
+  },
+  {
+    name: 'removeSpaceGrant',
+    method: 'delete',
+    path: `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, ifMatch),
+  },
+  {
+    name: 'setListGrant',
+    method: 'put',
+    path: `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.setListGrant(LIST_ID, CAMILLE.id, { role: 'comment' }, ifMatch),
+  },
+  {
+    name: 'removeListGrant',
+    method: 'delete',
+    path: `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.removeListGrant(LIST_ID, CAMILLE.id, ifMatch),
+  },
+  {
+    name: 'createAccessRequest',
+    method: 'post',
+    path: '/internal/v1/access-requests',
+    conditional: false,
+    send: (client) => client.createAccessRequest({ spaceId: SPACE_ID }),
+  },
+  {
+    name: 'approveAccessRequest',
+    method: 'post',
+    path: `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/approval`,
+    conditional: false,
+    send: (client) => client.approveAccessRequest(ACCESS_REQUEST_ID, { role: 'view' }),
+  },
+  {
+    name: 'refuseAccessRequest',
+    method: 'post',
+    path: `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/refusal`,
+    conditional: false,
+    send: (client) => client.refuseAccessRequest(ACCESS_REQUEST_ID, {}),
+  },
+  {
+    name: 'archiveList',
+    method: 'post',
+    path: `/internal/v1/lists/${LIST_ID}/archive`,
+    conditional: true,
+    send: (client, ifMatch) => client.archiveList(LIST_ID, {}, ifMatch),
+  },
+  {
+    name: 'unarchiveList',
+    method: 'post',
+    path: `/internal/v1/lists/${LIST_ID}/unarchive`,
+    conditional: true,
+    send: (client, ifMatch) => client.unarchiveList(LIST_ID, {}, ifMatch),
+  },
+  {
+    name: 'archiveTask',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/archive',
+    conditional: true,
+    send: (client, ifMatch) => client.archiveTask('CAD-482', {}, ifMatch),
+  },
+  {
+    name: 'unarchiveTask',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/unarchive',
+    conditional: true,
+    send: (client, ifMatch) => client.unarchiveTask('CAD-482', {}, ifMatch),
+  },
+  {
+    name: 'trashTask',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/trash',
+    conditional: true,
+    send: (client, ifMatch) => client.trashTask('CAD-482', {}, ifMatch),
+  },
+  {
+    name: 'purgeTrashEntry',
+    method: 'delete',
+    path: `/internal/v1/trash/entries/${ENTRY_ID}`,
+    conditional: false,
+    send: (client) => client.purgeTrashEntry(ENTRY_ID),
+  },
+  {
+    name: 'restoreTrashEntry',
+    method: 'post',
+    path: `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
+    conditional: false,
+    send: (client) => client.restoreTrashEntry(ENTRY_ID, {}),
+  },
+  {
+    name: 'emptyTrash',
+    method: 'post',
+    path: '/internal/v1/trash/empty',
+    conditional: false,
+    send: (client) => client.emptyTrash({}),
+  },
+];
+
+/**
+ * Every change, without `If-Match`, then with one when its method relays it.
+ */
+const CHANGE_CASES: readonly ChangeCase[] = CHANGES.flatMap((change: Change) =>
+  (change.conditional ? [undefined, '"3"'] : [undefined]).map((ifMatch: string | undefined) => ({
+    ...change,
+    ifMatch,
+    label: `${change.name} ${ifMatch === undefined ? 'without' : 'with'} If-Match`,
+  })),
+);
+
+/**
+ * The failures after which the internal HTTP client retries an idempotent call: what task-service
+ * answers, then the code the call is rejected with when it is not retried.
+ */
+const RETRYABLE_FAILURES: readonly (readonly [string, () => Response, string])[] = [
+  ['a connection error', () => HttpResponse.error(), 'upstream.unreachable'],
+  [
+    'a 503',
+    () =>
+      HttpResponse.json(
+        { type: 'about:blank', status: 503, code: 'service.unavailable' },
+        {
+          status: 503,
+        },
+      ),
+    'upstream.unavailable',
+  ],
+];
 
 describe('TaskServiceClient against task-service over HTTP', () => {
   const server: SetupServer = setupServer();
@@ -122,6 +388,17 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     return runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, call);
   }
 
+  /**
+   * Builds a client with its own internal HTTP client, hence its own circuit breaker.
+   *
+   * @returns The client.
+   */
+  function newClient(): TaskServiceClient {
+    return new TaskServiceClient(
+      new InternalHttpClient({ service: TASK_SERVICE, baseUrl: BASE_URL, signer }),
+    );
+  }
+
   beforeAll(async () => {
     server.listen({ onUnhandledFrame: 'error' });
     const keys: SigningKeys = generateSigningKeys();
@@ -138,9 +415,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
   beforeEach(() => {
     calls = [];
     // Built after `listen`: the internal HTTP client takes the `fetch` msw intercepts.
-    client = new TaskServiceClient(
-      new InternalHttpClient({ service: TASK_SERVICE, baseUrl: BASE_URL, signer }),
-    );
+    client = newClient();
   });
 
   afterEach(() => {
@@ -503,5 +778,636 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     expect(
       calls.map((call: ReceivedCall) => `${call.method} ${call.url.split('?')[0] ?? ''}`),
     ).toEqual(routes.map(([method, internalPath]) => `${method.toUpperCase()} ${internalPath}`));
+  });
+
+  /**
+   * Builds the answer of a public example, which the internal contract shares.
+   *
+   * @param method - Method of the public operation.
+   * @param path - Path of the public operation.
+   * @param status - Success status of the operation.
+   * @param headers - Further headers.
+   * @returns A function building the answer.
+   */
+  function example(
+    method: SpecMethod,
+    path: string,
+    status = 200,
+    headers: Record<string, string> = {},
+  ): () => Response {
+    return () => json(responseExample(method, path, status), status, headers);
+  }
+
+  /**
+   * Builds an answer without a body.
+   *
+   * @param status - The status.
+   * @param headers - Further headers.
+   * @returns A function building the answer.
+   */
+  function empty(status: number, headers: Record<string, string> = {}): () => Response {
+    return () => new Response(null, { status, headers });
+  }
+
+  it('sends every deletion, grant, access request, archive and trash call to its internal path, and none to an access check', async () => {
+    const routes: readonly [
+      'get' | 'post' | 'put' | 'delete',
+      string,
+      () => Response,
+      () => Promise<unknown>,
+    ][] = [
+      [
+        'delete',
+        `/internal/v1/spaces/${SPACE_ID}`,
+        empty(204),
+        () => client.deleteSpace(SPACE_ID, '"3"'),
+      ],
+      [
+        'delete',
+        `/internal/v1/lists/${LIST_ID}`,
+        empty(204),
+        () => client.deleteList(LIST_ID, undefined),
+      ],
+      [
+        'get',
+        `/internal/v1/spaces/${SPACE_ID}/grants`,
+        example('get', '/v1/spaces/{spaceId}/grants'),
+        () => client.listSpaceGrants(SPACE_ID, { limit: 20 }),
+      ],
+      [
+        'put',
+        `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        example('put', '/v1/spaces/{spaceId}/grants/{userId}', 200, { ETag: '"8"' }),
+        () => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      ],
+      [
+        'delete',
+        `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        empty(204, { ETag: '"9"' }),
+        () => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined),
+      ],
+      [
+        'get',
+        `/internal/v1/lists/${LIST_ID}/grants`,
+        example('get', '/v1/lists/{listId}/grants'),
+        () => client.listListGrants(LIST_ID, { limit: 20 }),
+      ],
+      [
+        'put',
+        `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        example('put', '/v1/lists/{listId}/grants/{userId}', 200, { ETag: '"4"' }),
+        () => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'comment' }, undefined),
+      ],
+      [
+        'delete',
+        `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        empty(204, { ETag: '"5"' }),
+        () => client.removeListGrant(LIST_ID, CAMILLE.id, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/access-requests',
+        empty(202),
+        () => client.createAccessRequest({ spaceId: SPACE_ID, message: null }),
+      ],
+      [
+        'get',
+        '/internal/v1/access-requests',
+        example('get', '/v1/access-requests'),
+        () => client.listAccessRequests({ limit: 20 }),
+      ],
+      [
+        'post',
+        `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/approval`,
+        example('post', '/v1/access-requests/{accessRequestId}/approval'),
+        () => client.approveAccessRequest(ACCESS_REQUEST_ID, { role: 'view' }),
+      ],
+      [
+        'post',
+        `/internal/v1/access-requests/${ACCESS_REQUEST_ID}/refusal`,
+        example('post', '/v1/access-requests/{accessRequestId}/refusal'),
+        () => client.refuseAccessRequest(ACCESS_REQUEST_ID, {}),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/archive`,
+        example('post', '/v1/lists/{listId}/archive'),
+        () => client.archiveList(LIST_ID, {}, undefined),
+      ],
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/unarchive`,
+        example('post', '/v1/lists/{listId}/unarchive'),
+        () => client.unarchiveList(LIST_ID, {}, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/archive',
+        example('post', '/v1/tasks/{taskKey}/archive'),
+        () => client.archiveTask('CAD-482', {}, undefined),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/unarchive',
+        example('post', '/v1/tasks/{taskKey}/unarchive'),
+        () => client.unarchiveTask('CAD-482', {}, undefined),
+      ],
+      [
+        'get',
+        '/internal/v1/archives/lists',
+        example('get', '/v1/archives/lists'),
+        () => client.listArchivedLists({ limit: 20 }),
+      ],
+      [
+        'get',
+        '/internal/v1/archives/tasks',
+        example('get', '/v1/archives/tasks'),
+        () => client.listArchivedTasks({ limit: 20 }),
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/trash',
+        example('post', '/v1/tasks/{taskKey}/trash'),
+        () => client.trashTask('CAD-482', {}, undefined),
+      ],
+      [
+        'get',
+        '/internal/v1/trash/entries',
+        example('get', '/v1/trash/entries'),
+        () => client.listTrash({ limit: 20 }),
+      ],
+      [
+        'delete',
+        `/internal/v1/trash/entries/${ENTRY_ID}`,
+        empty(204),
+        () => client.purgeTrashEntry(ENTRY_ID),
+      ],
+      [
+        'post',
+        `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
+        example('post', '/v1/trash/entries/{entryId}/restore'),
+        () => client.restoreTrashEntry(ENTRY_ID, {}),
+      ],
+      [
+        'post',
+        '/internal/v1/trash/empty',
+        example('post', '/v1/trash/empty', 202),
+        () => client.emptyTrash({}),
+      ],
+    ];
+    for (const [method, internalPath, reply] of routes) {
+      answer(method, internalPath, reply);
+    }
+
+    for (const [, , , call] of routes) {
+      await asCamille(call);
+    }
+
+    const sent: readonly string[] = calls.map(
+      (call: ReceivedCall) => `${call.method} ${call.url.split('?')[0] ?? ''}`,
+    );
+    expect(sent).toEqual(
+      routes.map(([method, internalPath]) => `${method.toUpperCase()} ${internalPath}`),
+    );
+    expect(sent.filter((line: string) => line.endsWith('/access'))).toEqual([]);
+  });
+
+  it('exposes no access check of a list or a task, which task-service reserves to the realtime gateway', () => {
+    const methods: readonly string[] = Object.getOwnPropertyNames(TaskServiceClient.prototype);
+    const source: string = readFileSync(
+      new URL('./task-service.client.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(methods.filter((name: string) => /^check|Access$/u.test(name))).toEqual([]);
+    expect(source).not.toContain('checkListAccessInternal');
+    expect(source).not.toContain('checkTaskAccessInternal');
+  });
+
+  it('answers a success status other than the contract declares as 503 upstream.failed', async () => {
+    const cases: readonly ['delete' | 'post', string, () => Promise<unknown>][] = [
+      ['delete', `/internal/v1/spaces/${SPACE_ID}`, () => client.deleteSpace(SPACE_ID, undefined)],
+      ['delete', `/internal/v1/lists/${LIST_ID}`, () => client.deleteList(LIST_ID, undefined)],
+      [
+        'post',
+        '/internal/v1/access-requests',
+        () => client.createAccessRequest({ spaceId: SPACE_ID }),
+      ],
+      ['delete', `/internal/v1/trash/entries/${ENTRY_ID}`, () => client.purgeTrashEntry(ENTRY_ID)],
+      ['post', '/internal/v1/trash/empty', () => client.emptyTrash({})],
+    ];
+    for (const [method, internalPath] of cases) {
+      answer(method, internalPath, () => json({ entryCount: 2 }, 200));
+    }
+
+    for (const [, , call] of cases) {
+      await expect(asCamille(call)).rejects.toMatchObject({
+        problem: { status: 503, code: 'upstream.failed', details: { service: TASK_SERVICE } },
+      });
+    }
+  });
+
+  it('resolves an access request with nothing and the emptying of the trash with its validated count', async () => {
+    answer('post', '/internal/v1/access-requests', empty(202));
+    answer('post', '/internal/v1/trash/empty', () => json({ entryCount: 2, extra: true }, 202));
+
+    await expect(
+      asCamille(() => client.createAccessRequest({ taskKey: 'DIR-12', message: null })),
+    ).resolves.toBeUndefined();
+    await expect(asCamille(() => client.emptyTrash({}))).resolves.toEqual({ entryCount: 2 });
+    expect(calls.map((call: ReceivedCall) => call.body)).toEqual([
+      { taskKey: 'DIR-12', message: null },
+      {},
+    ]);
+  });
+
+  it('refuses to send a grant, an approval, an access request or a page outside the internal contract, without calling', async () => {
+    const cases: readonly [() => Promise<unknown>, string][] = [
+      [() => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'owner' }, undefined), 'role'],
+      [() => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'admin' }, undefined), 'role'],
+      [() => client.approveAccessRequest(ACCESS_REQUEST_ID, {}), 'role'],
+      [() => client.createAccessRequest({ spaceId: 'not-an-id' }), 'spaceId'],
+      [() => client.listAccessRequests({ listId: 'not-an-id' }), 'listId'],
+      [() => client.listSpaceGrants(SPACE_ID, { limit: 101 }), 'limit'],
+      [() => client.listListGrants(LIST_ID, { limit: 0 }), 'limit'],
+      [() => client.listArchivedLists({ limit: 0 }), 'limit'],
+      [() => client.listArchivedTasks({ limit: 101 }), 'limit'],
+      [() => client.listTrash({ limit: 0 }), 'limit'],
+    ];
+
+    for (const [call, member] of cases) {
+      await expect(asCamille(async () => call())).rejects.toThrow(
+        `outside the internal contract: ${member}`,
+      );
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('relays the filters of the access requests and the empty body of an action with its If-Match', async () => {
+    answer('get', '/internal/v1/access-requests', example('get', '/v1/access-requests'));
+    answer(
+      'post',
+      '/internal/v1/tasks/CAD-482/archive',
+      example('post', '/v1/tasks/{taskKey}/archive'),
+    );
+
+    await asCamille(() => client.listAccessRequests({ spaceId: SPACE_ID, limit: 20 }));
+    await asCamille(() => client.archiveTask('CAD-482', {}, '"12"'));
+
+    expect(calls[0]?.url).toBe(`/internal/v1/access-requests?spaceId=${SPACE_ID}&limit=20`);
+    expect(calls[1]).toMatchObject({ body: {}, ifMatch: '"12"' });
+  });
+
+  it.each(CHANGE_CASES)(
+    'sends $label once, after a connection error and after a 503',
+    async (change: ChangeCase) => {
+      for (const [failure, fail, code] of RETRYABLE_FAILURES) {
+        server.resetHandlers();
+        calls = [];
+        answer(change.method, change.path, fail);
+        // A fresh breaker for each failure, so that the answer is the failure itself.
+        const once: TaskServiceClient = newClient();
+
+        await expect(
+          asCamille(() => change.send(once, change.ifMatch)),
+          failure,
+        ).rejects.toMatchObject({
+          problem: { status: 503, code, details: { service: TASK_SERVICE } },
+        });
+        expect(
+          calls.map((call: ReceivedCall) => ({
+            method: call.method,
+            url: call.url,
+            ifMatch: call.ifMatch,
+          })),
+          failure,
+        ).toEqual([
+          {
+            method: change.method.toUpperCase(),
+            url: change.path,
+            ifMatch: change.ifMatch ?? null,
+          },
+        ]);
+      }
+    },
+  );
+
+  it('never gives again a grant another manager revoked while the answer of its PUT was lost', async () => {
+    const grants: readonly {
+      readonly path: string;
+      readonly give: (client: TaskServiceClient) => Promise<unknown>;
+      readonly revoke: (client: TaskServiceClient) => Promise<unknown>;
+    }[] = [
+      {
+        path: `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+        give: (manager) => manager.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined),
+        revoke: (manager) => manager.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined),
+      },
+      {
+        path: `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+        give: (manager) => manager.setListGrant(LIST_ID, CAMILLE.id, { role: 'edit' }, undefined),
+        revoke: (manager) => manager.removeListGrant(LIST_ID, CAMILLE.id, undefined),
+      },
+    ];
+
+    for (const grant of grants) {
+      for (const [failure, fail, code] of RETRYABLE_FAILURES) {
+        server.resetHandlers();
+        // The fake task-service: the role it stores, and every change it committed.
+        let role: string | undefined;
+        const committed: string[] = [];
+        const secondManager: TaskServiceClient = newClient();
+        server.use(
+          http.put(`${BASE_URL}${grant.path}`, async ({ request }) => {
+            const change = (await request.json()) as { role: string };
+            role = change.role;
+            committed.push(`PUT ${change.role}`);
+            if (committed.length === 1) {
+              // The answer is lost after the commit; meanwhile a second manager revokes the grant.
+              await asCamille(() => grant.revoke(secondManager));
+            }
+            return fail();
+          }),
+          http.delete(`${BASE_URL}${grant.path}`, () => {
+            role = undefined;
+            committed.push('DELETE');
+            return new Response(null, { status: 204, headers: { ETag: '"9"' } });
+          }),
+        );
+
+        await expect(
+          asCamille(() => grant.give(newClient())),
+          failure,
+        ).rejects.toMatchObject({
+          problem: { status: 503, code },
+        });
+        expect(committed, failure).toEqual(['PUT edit', 'DELETE']);
+        expect(role, failure).toBeUndefined();
+      }
+    }
+  });
+
+  it.each(RETRYABLE_FAILURES)(
+    'still retries a read and a creation with Idempotency-Key once after %s',
+    async (_failure: string, fail: () => Response) => {
+      const cases: readonly ['get' | 'post', string, () => Response, () => Promise<unknown>][] = [
+        [
+          'get',
+          `/internal/v1/spaces/${SPACE_ID}`,
+          example('get', '/v1/spaces/{spaceId}'),
+          () => client.getSpace(SPACE_ID),
+        ],
+        [
+          'get',
+          `/internal/v1/spaces/${SPACE_ID}/grants`,
+          example('get', '/v1/spaces/{spaceId}/grants'),
+          () => client.listSpaceGrants(SPACE_ID, { limit: 20 }),
+        ],
+        [
+          'get',
+          '/internal/v1/trash/entries',
+          example('get', '/v1/trash/entries'),
+          () => client.listTrash({ limit: 20 }),
+        ],
+        [
+          'post',
+          '/internal/v1/spaces',
+          example('post', '/v1/spaces', 201),
+          () => client.createSpace({ name: 'RH', prefix: 'RH' }, 'creation-1'),
+        ],
+        [
+          'post',
+          `/internal/v1/spaces/${SPACE_ID}/lists`,
+          example('post', '/v1/spaces/{spaceId}/lists', 201),
+          () => client.createList(SPACE_ID, { name: 'Sprint 15' }, 'creation-2'),
+        ],
+        [
+          'post',
+          `/internal/v1/lists/${LIST_ID}/tasks`,
+          example('post', '/v1/lists/{listId}/tasks', 201),
+          () => client.createTask(LIST_ID, { name: 'Tester' }, 'creation-3'),
+        ],
+        [
+          'post',
+          '/internal/v1/tasks/CAD-482/subtasks',
+          example('post', '/v1/tasks/{taskKey}/subtasks', 201),
+          () => client.createSubtask('CAD-482', { name: 'Tester' }, 'creation-4'),
+        ],
+      ];
+      for (const [method, internalPath, reply] of cases) {
+        let attempts = 0;
+        answer(method, internalPath, () => {
+          attempts += 1;
+          return attempts === 1 ? fail() : reply();
+        });
+      }
+
+      for (const [, , , call] of cases) {
+        await asCamille(call);
+      }
+
+      expect(
+        calls.map((call: ReceivedCall) => `${call.method} ${call.url.split('?')[0] ?? ''}`),
+      ).toEqual(
+        cases.flatMap(([method, internalPath]) => {
+          const line = `${method.toUpperCase()} ${internalPath}`;
+          return [line, line];
+        }),
+      );
+      expect(
+        calls
+          .map((call: ReceivedCall) => call.idempotencyKey)
+          .filter((key: string | null) => key !== null),
+      ).toEqual([
+        'creation-1',
+        'creation-1',
+        'creation-2',
+        'creation-2',
+        'creation-3',
+        'creation-3',
+        'creation-4',
+        'creation-4',
+      ]);
+    },
+  );
+
+  it('reads the version of the space or the list from the strong ETag of a grant', async () => {
+    const spaceGrant: unknown = responseExample('put', '/v1/spaces/{spaceId}/grants/{userId}', 200);
+    const listGrant: unknown = responseExample('put', '/v1/lists/{listId}/grants/{userId}', 200);
+    answer('put', `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`, () =>
+      json(spaceGrant, 200, { ETag: '"8"' }),
+    );
+    answer('put', `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`, () =>
+      json(listGrant, 200, { ETag: '"4"' }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+      empty(204, { ETag: '"9"' }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+      empty(204, { ETag: '"5"' }),
+    );
+
+    await expect(
+      asCamille(() => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, '"7"')),
+    ).resolves.toEqual({ grant: spaceGrant, version: 8 });
+    await expect(
+      asCamille(() => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'comment' }, '"3"')),
+    ).resolves.toEqual({ grant: listGrant, version: 4 });
+    await expect(
+      asCamille(() => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, '"8"')),
+    ).resolves.toBe(9);
+    await expect(asCamille(() => client.removeListGrant(LIST_ID, CAMILLE.id, '"4"'))).resolves.toBe(
+      5,
+    );
+    expect(calls.map((call: ReceivedCall) => call.ifMatch)).toEqual(['"7"', '"3"', '"8"', '"4"']);
+    expect(calls.slice(0, 2).map((call: ReceivedCall) => call.body)).toEqual([
+      { role: 'edit' },
+      { role: 'comment' },
+    ]);
+  });
+
+  it('answers a grant without a strong ETag as 503 upstream.failed', async () => {
+    let etag: Record<string, string> = {};
+    answer('put', `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`, () =>
+      json(responseExample('put', '/v1/spaces/{spaceId}/grants/{userId}', 200), 200, etag),
+    );
+    answer('put', `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`, () =>
+      json(responseExample('put', '/v1/lists/{listId}/grants/{userId}', 200), 200, etag),
+    );
+    answer(
+      'delete',
+      `/internal/v1/spaces/${SPACE_ID}/grants/${CAMILLE.id}`,
+      () => new Response(null, { status: 204, headers: etag }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/lists/${LIST_ID}/grants/${CAMILLE.id}`,
+      () => new Response(null, { status: 204, headers: etag }),
+    );
+    const grantCalls: readonly (() => Promise<unknown>)[] = [
+      () => client.setSpaceGrant(SPACE_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      () => client.setListGrant(LIST_ID, CAMILLE.id, { role: 'edit' }, undefined),
+      () => client.removeSpaceGrant(SPACE_ID, CAMILLE.id, undefined),
+      () => client.removeListGrant(LIST_ID, CAMILLE.id, undefined),
+    ];
+
+    const invalid: readonly Record<string, string>[] = [{}, { ETag: 'W/"8"' }, { ETag: '8' }];
+    for (const headers of invalid) {
+      etag = headers;
+      for (const call of grantCalls) {
+        await expect(asCamille(call)).rejects.toMatchObject({
+          problem: { status: 503, code: 'upstream.failed', details: { service: TASK_SERVICE } },
+        });
+      }
+    }
+  });
+
+  it('keeps the access members of a space and a list through the internal validation', async () => {
+    const space: unknown = responseExample('get', '/v1/spaces/{spaceId}', 200);
+    const list: unknown = responseExample('get', '/v1/lists/{listId}', 200);
+    answer('get', `/internal/v1/spaces/${SPACE_ID}`, () => json(space));
+    answer('get', `/internal/v1/lists/${LIST_ID}`, () => json(list));
+
+    const read: unknown = await asCamille(() => client.getSpace(SPACE_ID));
+    const readList: unknown = await asCamille(() => client.getList(LIST_ID));
+
+    expect(read).toEqual(space);
+    expect(read).toHaveProperty('callerRole');
+    expect(read).toHaveProperty('callerCanManage');
+    expect(readList).toEqual(list);
+    for (const member of ['organizationAccess', 'archivedAt', 'archivedBy', 'callerRole']) {
+      expect(readList).toHaveProperty(member);
+    }
+  });
+
+  it('keeps the archive and trash members of every answer through the internal validation', async () => {
+    const cases: readonly [
+      'get' | 'post',
+      string,
+      string,
+      () => Promise<unknown>,
+      readonly string[],
+    ][] = [
+      [
+        'post',
+        `/internal/v1/lists/${LIST_ID}/archive`,
+        '/v1/lists/{listId}/archive',
+        () => client.archiveList(LIST_ID, {}, undefined),
+        ['archivedAt', 'archivedBy', 'organizationAccess', 'callerRole'],
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/archive',
+        '/v1/tasks/{taskKey}/archive',
+        () => client.archiveTask('CAD-482', {}, undefined),
+        ['archivedAt', 'archivedBy'],
+      ],
+      [
+        'get',
+        '/internal/v1/archives/lists',
+        '/v1/archives/lists',
+        () => client.listArchivedLists({}),
+        ['items.0.list.archivedAt', 'items.0.list.archivedBy', 'items.0.taskCount'],
+      ],
+      [
+        'get',
+        '/internal/v1/archives/tasks',
+        '/v1/archives/tasks',
+        () => client.listArchivedTasks({}),
+        ['items.0.archivedAt', 'items.0.archivedBy', 'items.0.subtaskCount'],
+      ],
+      [
+        'post',
+        '/internal/v1/tasks/CAD-482/trash',
+        '/v1/tasks/{taskKey}/trash',
+        () => client.trashTask('CAD-482', {}, undefined),
+        ['parentKey', 'subtaskCount', 'list.state', 'trashedAt', 'trashedBy', 'purgeAt'],
+      ],
+      [
+        'get',
+        '/internal/v1/trash/entries',
+        '/v1/trash/entries',
+        () => client.listTrash({}),
+        ['items.0.trashedAt', 'items.0.trashedBy', 'items.0.purgeAt', 'items.0.list.state'],
+      ],
+      [
+        'post',
+        `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
+        '/v1/trash/entries/{entryId}/restore',
+        () => client.restoreTrashEntry(ENTRY_ID, {}),
+        ['subtaskCount', 'detached', 'listRestored', 'spaceRestored'],
+      ],
+    ];
+    for (const [method, internalPath, publicPath] of cases) {
+      answer(method, internalPath, example(method, publicPath));
+    }
+
+    for (const [method, , publicPath, call, members] of cases) {
+      const read: unknown = await asCamille(call);
+      expect(read).toEqual(responseExample(method, publicPath, 200));
+      for (const member of members) {
+        expect(read).toHaveProperty(member.split('.'));
+      }
+    }
+  });
+
+  it('builds a fake of task-service whose every call answers an example the internal contract accepts', async () => {
+    const fake: FakeTask = createFakeTask();
+    const names = Object.keys(fake) as TaskServiceMethod[];
+
+    await expect(
+      Promise.all(
+        names.map((name: TaskServiceMethod) => (fake[name] as unknown as () => Promise<unknown>)()),
+      ),
+    ).resolves.toHaveLength(names.length);
+    expect([...names].sort()).toEqual(
+      Object.getOwnPropertyNames(TaskServiceClient.prototype)
+        .filter((name: string) => name !== 'constructor')
+        .sort(),
+    );
   });
 });

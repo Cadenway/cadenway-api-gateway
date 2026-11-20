@@ -3,6 +3,7 @@ import {
   CreateListHeader,
   CreateListParams,
   CreateListResponse,
+  DeleteListParams,
   GetListCountsParams,
   GetListCountsQueryParams,
   GetListCountsResponse,
@@ -20,10 +21,11 @@ import {
 } from '@cadenway/contracts/validators/public/lists';
 import { ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
+  Delete,
   Get,
   Headers,
+  HttpCode,
   Inject,
   Param,
   Patch,
@@ -40,14 +42,19 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import {
+  IfMatchHeader,
+  toRequestHeader,
+} from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { CreateList } from '../../../../application/use-cases/commands/lists/create-list/create-list.use-case.js';
 import { ListLists } from '../../../../application/use-cases/queries/lists/list-lists/list-lists.use-case.js';
 import { GetList } from '../../../../application/use-cases/queries/lists/get-list/get-list.use-case.js';
 import { UpdateList } from '../../../../application/use-cases/commands/lists/update-list/update-list.use-case.js';
+import { DeleteList } from '../../../../application/use-cases/commands/lists/delete-list/delete-list.use-case.js';
 import { GetListCounts } from '../../../../application/use-cases/queries/lists/get-list-counts/get-list-counts.use-case.js';
 import { ListListActivity } from '../../../../application/use-cases/queries/activity/list-list-activity/list-list-activity.use-case.js';
 
@@ -73,6 +80,7 @@ const TASK_SERVICE: string = 'task-service';
  */
 const CREATE_LIST_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
+  403: ['access.role-insufficient'],
   404: ['space.not-found', 'organization.not-found'],
   409: ['idempotency.request-in-progress'],
   422: ['list.sprint-dates-invalid', 'idempotency.key-reused'],
@@ -117,9 +125,26 @@ const GET_LIST_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_LIST_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
+  403: ['access.role-insufficient'],
   404: ['list.not-found', 'organization.not-found'],
   412: ['request.version-mismatch'],
   422: ['list.sprint-dates-invalid'],
+};
+
+/**
+ * Constant DELETE_LIST_PROBLEMS
+ *
+ * @description
+ * Client errors of task-service that `DELETE /v1/lists/{listId}` answers as they
+ * are: the codes its public operation declares. Any other is `503 upstream.failed`.
+ *
+ * @type {AcceptedProblems}
+ */
+const DELETE_LIST_PROBLEMS: AcceptedProblems = {
+  400: ['request.invalid'],
+  403: ['access.role-insufficient'],
+  404: ['list.not-found', 'organization.not-found'],
+  412: ['request.version-mismatch'],
 };
 
 /**
@@ -168,7 +193,7 @@ const LIST_LIST_ACTIVITY_QUERY = ListListActivityQueryParams.extend({
  * Class ListsController
  *
  * @description
- * The list and sprint routes of `openapi/public/lists.yaml`: create and list the lists of a space, read and change a list, its counts and its activity.
+ * The list and sprint routes of `openapi/public/lists.yaml`: create and list the lists of a space, read, change and delete a list, its counts and its activity.
  *
  * Every route accepts the session cookie or a personal API token with `tasks:read` (reads) or
  * `tasks:write` (writes, spaces and lists included), on the current organization:
@@ -227,6 +252,17 @@ export class ListsController {
   private readonly listChange: UpdateList;
 
   /**
+   * Property listDeletion
+   *
+   * @description
+   * Use case `DeleteList`.
+   *
+   * @type {DeleteList}
+   * @readonly
+   */
+  private readonly listDeletion: DeleteList;
+
+  /**
    * Property countsReading
    *
    * @description
@@ -260,6 +296,7 @@ export class ListsController {
    * @param {ListLists} listListing - Use case `ListLists`.
    * @param {GetList} listReading - Use case `GetList`.
    * @param {UpdateList} listChange - Use case `UpdateList`.
+   * @param {DeleteList} listDeletion - Use case `DeleteList`.
    * @param {GetListCounts} countsReading - Use case `GetListCounts`.
    * @param {ListListActivity} activityListing - Use case `ListListActivity`.
    * @constructor
@@ -269,6 +306,7 @@ export class ListsController {
     @Inject(ListLists) listListing: ListLists,
     @Inject(GetList) listReading: GetList,
     @Inject(UpdateList) listChange: UpdateList,
+    @Inject(DeleteList) listDeletion: DeleteList,
     @Inject(GetListCounts) countsReading: GetListCounts,
     @Inject(ListListActivity) activityListing: ListListActivity,
   ) {
@@ -276,6 +314,7 @@ export class ListsController {
     this.listListing = listListing;
     this.listReading = listReading;
     this.listChange = listChange;
+    this.listDeletion = listDeletion;
     this.countsReading = countsReading;
     this.activityListing = activityListing;
   }
@@ -302,7 +341,7 @@ export class ListsController {
   })
   public async createList(
     @Param(new ZodValidationPipe(CreateListParams)) params: z.output<typeof CreateListParams>,
-    @Body(new ZodValidationPipe(CreateListBody)) body: z.output<typeof CreateListBody>,
+    @RequiredBody(CreateListBody) body: z.output<typeof CreateListBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateListResponse>> {
@@ -399,8 +438,8 @@ export class ListsController {
   })
   public async updateList(
     @Param(new ZodValidationPipe(UpdateListParams)) params: z.output<typeof UpdateListParams>,
-    @Body(new ZodValidationPipe(UpdateListBody)) body: z.output<typeof UpdateListBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(UpdateListBody) body: z.output<typeof UpdateListBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateListResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -409,6 +448,34 @@ export class ListsController {
       await relayProblems(UPDATE_LIST_PROBLEMS, () =>
         this.listChange.execute(params.listId, body, ifMatch),
       ),
+    );
+  }
+
+  /**
+   * Method deleteList
+   *
+   * @description
+   * `DELETE /v1/lists/{listId}`: deletes a list or a sprint, archived or not, `If-Match` relayed
+   * unchanged. `204` without a body nor an `ETag`, as the contract declares; task-service moves its
+   * tasks to the trash afterwards.
+   *
+   * @param {z.output<typeof DeleteListParams>} params - The path parameters.
+   * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
+   * @returns {Promise<void>} Resolves once the list is deleted.
+   */
+  @Delete('lists/:listId')
+  @HttpCode(204)
+  @CredentialGuard.requires({
+    operationId: 'deleteList',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
+    organization: true,
+  })
+  public async deleteList(
+    @Param(new ZodValidationPipe(DeleteListParams)) params: z.output<typeof DeleteListParams>,
+    @IfMatchHeader() ifMatch: string | undefined,
+  ): Promise<void> {
+    await relayProblems(DELETE_LIST_PROBLEMS, () =>
+      this.listDeletion.execute(params.listId, ifMatch),
     );
   }
 

@@ -6,9 +6,10 @@ import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenwa
  * @description
  * French `title` of the public problems the web application shows to the person as they are,
  * by `code`, taken from the examples of `openapi/public/` (`auth.yaml`, `organizations.yaml`,
- * `members.yaml`, `api-tokens.yaml`, `spaces.yaml`, `lists.yaml`, `tasks.yaml`) of
- * `@cadenway/contracts`, the account security codes of 0.7.0, the two-step verification codes of
- * 0.8.0 and the task core codes of 0.9.0 included (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
+ * `members.yaml`, `api-tokens.yaml`, `spaces.yaml`, `lists.yaml`, `tasks.yaml`, `access.yaml`,
+ * `archives.yaml`, `trash.yaml`) of `@cadenway/contracts`, the account security codes of 0.7.0,
+ * the two-step verification codes of 0.8.0, the task core codes of 0.9.0 and the access, archive
+ * and trash codes of 0.10.0 included (the French titles decision of docs/integration.md: the gateway owns this mapping). Every
  * other code keeps the English reason phrase of its status, which `ProblemException` fills in.
  * The text is the same
  * for every occurrence of a code; the punctuation (the space before a colon, the typographic
@@ -144,6 +145,27 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['task.label-limit-reached', '20 étiquettes au plus par tâche.'],
   ['task.checklist-limit-reached', '100 éléments au plus par checklist.'],
   ['checklist-item.not-found', 'Élément de checklist introuvable.'],
+  ['access.role-insufficient', 'Il faut le droit « Peut modifier » pour cette action.'],
+  [
+    'space.manage-forbidden',
+    'Seuls le propriétaire de l’espace et les administrateurs le partagent et le suppriment.',
+  ],
+  [
+    'access.grantee-invalid',
+    'Cette personne ne fait pas partie de l’organisation : invitez-la d’abord.',
+  ],
+  ['access.guest-space-forbidden', 'Les invités n’ont accès qu’à des listes précises.'],
+  ['access.owner-unchangeable', 'L’accès du propriétaire de l’espace ne se modifie pas.'],
+  ['access.grant-limit-reached', '200 personnes au plus par espace ou par liste.'],
+  ['access-request.not-found', 'Demande d’accès introuvable.'],
+  ['access-request.already-decided', 'Cette demande d’accès a déjà reçu une réponse.'],
+  ['access-request.limit-reached', 'Trop de demandes d’accès : réessayez plus tard.'],
+  [
+    'task.archived',
+    'Cette tâche est archivée : restaurez-la depuis les Archives pour la modifier.',
+  ],
+  ['task.trashed', 'Cette tâche a été supprimée'],
+  ['trash-entry.not-found', 'Cet élément n’est plus dans la corbeille.'],
 ]);
 
 /**

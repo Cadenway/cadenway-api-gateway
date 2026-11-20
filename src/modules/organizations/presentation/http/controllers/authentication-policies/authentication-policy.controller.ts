@@ -1,7 +1,7 @@
 import type { AuthenticationPolicy } from '@cadenway/contracts/types/public/organizations';
 import { UpdateAuthenticationPolicyBody } from '@cadenway/contracts/validators/public/organizations';
 import { ZodValidationPipe } from '@cadenway/nest-common';
-import { Body, Controller, Get, Headers, Inject, Patch, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Patch, Req, Res, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
 
@@ -14,6 +14,7 @@ import {
   relayUpstream,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import type { AuthenticationPolicyChanges } from '../../../../application/models/authentication-policies/authentication-policy-changes.model.js';
@@ -221,7 +222,7 @@ export class AuthenticationPolicyController {
   public async updateAuthenticationPolicy(
     @Body(new ZodValidationPipe(UpdateAuthenticationPolicyBody))
     body: z.output<typeof UpdateAuthenticationPolicyBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthenticationPolicy> {

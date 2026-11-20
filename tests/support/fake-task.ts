@@ -1,12 +1,16 @@
 import {
   AddChecklistItemInternalResponse,
   AddTaskLabelInternalResponse,
+  ApproveAccessRequestInternalResponse,
+  ArchiveListInternalResponse,
+  ArchiveTaskInternalResponse,
   AssignTaskInternalResponse,
   CountTaskGroupsInternalResponse,
   CreateListInternalResponse,
   CreateSpaceInternalResponse,
   CreateSubtaskInternalResponse,
   CreateTaskInternalResponse,
+  EmptyTrashInternalResponse,
   GetHomeInternalResponse,
   GetListCountsInternalResponse,
   GetListInternalResponse,
@@ -14,15 +18,28 @@ import {
   GetSpaceOverviewInternalResponse,
   GetTaskDetailInternalResponse,
   GetTaskInternalResponse,
+  ListAccessRequestsInternalResponse,
+  ListArchivedListsInternalResponse,
+  ListArchivedTasksInternalResponse,
   ListLabelsInternalResponse,
   ListListActivityInternalResponse,
+  ListListGrantsInternalResponse,
   ListListsInternalResponse,
   ListMyTasksInternalResponse,
+  ListSpaceGrantsInternalResponse,
   ListSpacesInternalResponse,
   ListSubtasksInternalResponse,
   ListTaskActivityInternalResponse,
   ListTasksInternalResponse,
+  ListTrashInternalResponse,
+  RefuseAccessRequestInternalResponse,
   RemoveTaskLabelInternalResponse,
+  RestoreTrashEntryInternalResponse,
+  SetListGrantInternalResponse,
+  SetSpaceGrantInternalResponse,
+  TrashTaskInternalResponse,
+  UnarchiveListInternalResponse,
+  UnarchiveTaskInternalResponse,
   UpdateChecklistItemInternalResponse,
   UpdateListInternalResponse,
   UpdateSpaceInternalResponse,
@@ -84,6 +101,26 @@ export function taskDetailCore(): z.output<typeof GetTaskDetailInternalResponse>
 export const UNASSIGNED_VERSION = 13;
 
 /**
+ * Version of the space the fake answers on giving or changing a grant of the space.
+ */
+export const SPACE_GRANT_VERSION = 8;
+
+/**
+ * Version of the space the fake answers on removing a grant of the space.
+ */
+export const SPACE_GRANT_REMOVED_VERSION = 9;
+
+/**
+ * Version of the list the fake answers on giving or changing a grant of the list.
+ */
+export const LIST_GRANT_VERSION = 4;
+
+/**
+ * Version of the list the fake answers on removing a grant of the list.
+ */
+export const LIST_GRANT_REMOVED_VERSION = 5;
+
+/**
  * Id of the checklist item the fake answers on the addition.
  */
 export const ADDED_CHECKLIST_ITEM_ID = '019a7c00-1a2b-7c3d-8e4f-5a6b7c8d9e99';
@@ -129,6 +166,7 @@ export function createFakeTask(): FakeTask {
     createSpace: vi.fn(task(CreateSpaceInternalResponse, 'post', '/v1/spaces', 201)),
     getSpace: vi.fn(task(GetSpaceInternalResponse, 'get', '/v1/spaces/{spaceId}')),
     updateSpace: vi.fn(task(UpdateSpaceInternalResponse, 'patch', '/v1/spaces/{spaceId}')),
+    deleteSpace: vi.fn(() => Promise.resolve()),
     getSpaceOverview: vi.fn(
       task(GetSpaceOverviewInternalResponse, 'get', '/v1/spaces/{spaceId}/overview'),
     ),
@@ -136,6 +174,7 @@ export function createFakeTask(): FakeTask {
     listLists: vi.fn(task(ListListsInternalResponse, 'get', '/v1/spaces/{spaceId}/lists')),
     getList: vi.fn(task(GetListInternalResponse, 'get', '/v1/lists/{listId}')),
     updateList: vi.fn(task(UpdateListInternalResponse, 'patch', '/v1/lists/{listId}')),
+    deleteList: vi.fn(() => Promise.resolve()),
     getListCounts: vi.fn(task(GetListCountsInternalResponse, 'get', '/v1/lists/{listId}/counts')),
     listListActivity: vi.fn(
       task(ListListActivityInternalResponse, 'get', '/v1/lists/{listId}/activity'),
@@ -186,5 +225,66 @@ export function createFakeTask(): FakeTask {
     listLabels: vi.fn(task(ListLabelsInternalResponse, 'get', '/v1/labels')),
     listMyTasks: vi.fn(task(ListMyTasksInternalResponse, 'get', '/v1/me/tasks')),
     getHome: vi.fn(task(GetHomeInternalResponse, 'get', '/v1/me/home')),
+    listSpaceGrants: vi.fn(
+      task(ListSpaceGrantsInternalResponse, 'get', '/v1/spaces/{spaceId}/grants'),
+    ),
+    setSpaceGrant: vi.fn(() =>
+      Promise.resolve({
+        grant: internalExample(
+          SetSpaceGrantInternalResponse,
+          'put',
+          '/v1/spaces/{spaceId}/grants/{userId}',
+        ),
+        version: SPACE_GRANT_VERSION,
+      }),
+    ),
+    removeSpaceGrant: vi.fn(() => Promise.resolve(SPACE_GRANT_REMOVED_VERSION)),
+    listListGrants: vi.fn(task(ListListGrantsInternalResponse, 'get', '/v1/lists/{listId}/grants')),
+    setListGrant: vi.fn(() =>
+      Promise.resolve({
+        grant: internalExample(
+          SetListGrantInternalResponse,
+          'put',
+          '/v1/lists/{listId}/grants/{userId}',
+        ),
+        version: LIST_GRANT_VERSION,
+      }),
+    ),
+    removeListGrant: vi.fn(() => Promise.resolve(LIST_GRANT_REMOVED_VERSION)),
+    createAccessRequest: vi.fn(() => Promise.resolve()),
+    listAccessRequests: vi.fn(
+      task(ListAccessRequestsInternalResponse, 'get', '/v1/access-requests'),
+    ),
+    approveAccessRequest: vi.fn(
+      task(
+        ApproveAccessRequestInternalResponse,
+        'post',
+        '/v1/access-requests/{accessRequestId}/approval',
+      ),
+    ),
+    refuseAccessRequest: vi.fn(
+      task(
+        RefuseAccessRequestInternalResponse,
+        'post',
+        '/v1/access-requests/{accessRequestId}/refusal',
+      ),
+    ),
+    archiveList: vi.fn(task(ArchiveListInternalResponse, 'post', '/v1/lists/{listId}/archive')),
+    unarchiveList: vi.fn(
+      task(UnarchiveListInternalResponse, 'post', '/v1/lists/{listId}/unarchive'),
+    ),
+    archiveTask: vi.fn(task(ArchiveTaskInternalResponse, 'post', '/v1/tasks/{taskKey}/archive')),
+    unarchiveTask: vi.fn(
+      task(UnarchiveTaskInternalResponse, 'post', '/v1/tasks/{taskKey}/unarchive'),
+    ),
+    listArchivedLists: vi.fn(task(ListArchivedListsInternalResponse, 'get', '/v1/archives/lists')),
+    listArchivedTasks: vi.fn(task(ListArchivedTasksInternalResponse, 'get', '/v1/archives/tasks')),
+    trashTask: vi.fn(task(TrashTaskInternalResponse, 'post', '/v1/tasks/{taskKey}/trash')),
+    listTrash: vi.fn(task(ListTrashInternalResponse, 'get', '/v1/trash/entries')),
+    purgeTrashEntry: vi.fn(() => Promise.resolve()),
+    restoreTrashEntry: vi.fn(
+      task(RestoreTrashEntryInternalResponse, 'post', '/v1/trash/entries/{entryId}/restore'),
+    ),
+    emptyTrash: vi.fn(task(EmptyTrashInternalResponse, 'post', '/v1/trash/empty', 202)),
   };
 }

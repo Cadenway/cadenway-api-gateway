@@ -18,6 +18,7 @@ export function createSpaceRegistryAdapter(client: TaskServiceClient): SpaceRegi
     createSpace: (creation, idempotencyKey) => client.createSpace(creation, idempotencyKey),
     getSpace: (spaceId) => client.getSpace(spaceId),
     updateSpace: (spaceId, patch, ifMatch) => client.updateSpace(spaceId, patch, ifMatch),
+    deleteSpace: (spaceId, ifMatch) => client.deleteSpace(spaceId, ifMatch),
     getSpaceOverview: (spaceId, query) => client.getSpaceOverview(spaceId, query),
   };
 }

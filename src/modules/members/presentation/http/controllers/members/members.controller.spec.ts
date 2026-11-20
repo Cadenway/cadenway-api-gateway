@@ -293,6 +293,22 @@ const CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'PATCH /v1/members/{memberId} refuses a blank If-Match before any call',
+    method: 'patch',
+    path: '/v1/members/{memberId}',
+    url: MEMBER_URL,
+    body: { role: 'member' },
+    headers: { 'If-Match': '' },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { organization }) => {
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'If-Match' }] },
+      });
+      expect(organization.changeMemberRole).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'PATCH /v1/members/{memberId} refuses role owner before any call',
     method: 'patch',
     path: '/v1/members/{memberId}',

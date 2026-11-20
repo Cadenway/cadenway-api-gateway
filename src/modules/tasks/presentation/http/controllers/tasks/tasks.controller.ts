@@ -46,7 +46,6 @@ import {
 } from '@cadenway/contracts/validators/public/tasks';
 import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
-  Body,
   Controller,
   Delete,
   Get,
@@ -69,8 +68,12 @@ import {
   relayProblems,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
-import { toRequestHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import {
+  IfMatchHeader,
+  toRequestHeader,
+} from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import type { TaskDetail } from '../../../../application/models/details/task-detail.model.js';
@@ -143,6 +146,7 @@ const LIST_TASKS_QUERY = ListTasksQueryParams.extend({
  */
 const CREATE_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
+  403: ['access.role-insufficient'],
   404: ['list.not-found', 'organization.not-found'],
   409: ['idempotency.request-in-progress'],
   422: [
@@ -196,7 +200,7 @@ const COUNT_TASK_GROUPS_QUERY = CountTaskGroupsQueryParams.extend({
  */
 const GET_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -210,7 +214,9 @@ const GET_TASK_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: [
     'task.status-hidden',
@@ -235,7 +241,7 @@ const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
  */
 const GET_TASK_DETAIL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -249,7 +255,7 @@ const GET_TASK_DETAIL_PROBLEMS: AcceptedProblems = {
  */
 const LIST_SUBTASKS_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -263,8 +269,9 @@ const LIST_SUBTASKS_PROBLEMS: AcceptedProblems = {
  */
 const CREATE_SUBTASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
-  409: ['idempotency.request-in-progress'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived', 'idempotency.request-in-progress'],
   422: [
     'task.subtask-depth-exceeded',
     'task.subtask-limit-reached',
@@ -288,8 +295,9 @@ const CREATE_SUBTASK_PROBLEMS: AcceptedProblems = {
  */
 const ADD_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
-  409: ['idempotency.request-in-progress'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived', 'idempotency.request-in-progress'],
   422: ['task.checklist-limit-reached', 'idempotency.key-reused'],
 };
 
@@ -304,7 +312,9 @@ const ADD_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
  */
 const UPDATE_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['checklist-item.not-found', 'task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['checklist-item.not-found', 'task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -319,7 +329,9 @@ const UPDATE_CHECKLIST_ITEM_PROBLEMS: AcceptedProblems = {
  */
 const ASSIGN_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: ['task.assignee-invalid', 'task.assignee-limit-reached'],
 };
@@ -335,7 +347,9 @@ const ASSIGN_TASK_PROBLEMS: AcceptedProblems = {
  */
 const UNASSIGN_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -350,7 +364,9 @@ const UNASSIGN_TASK_PROBLEMS: AcceptedProblems = {
  */
 const ADD_TASK_LABEL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
   422: ['task.label-limit-reached'],
 };
@@ -366,7 +382,9 @@ const ADD_TASK_LABEL_PROBLEMS: AcceptedProblems = {
  */
 const REMOVE_TASK_LABEL_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  403: ['access.role-insufficient'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
+  409: ['task.archived'],
   412: ['request.version-mismatch'],
 };
 
@@ -381,7 +399,7 @@ const REMOVE_TASK_LABEL_PROBLEMS: AcceptedProblems = {
  */
 const LIST_TASK_ACTIVITY_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
-  404: ['task.not-found', 'organization.not-found'],
+  404: ['task.not-found', 'task.trashed', 'organization.not-found'],
 };
 
 /**
@@ -398,6 +416,18 @@ const LIST_TASK_ACTIVITY_QUERY = ListTaskActivityQueryParams.extend({
 });
 
 /**
+ * Constant ASSIGN_TASK_BODY
+ *
+ * @description
+ * Validator of the body of `PUT /v1/tasks/{taskKey}/assignees/{userId}`: an empty object, with no
+ * other member. The contract's `EmptyRequest` declares `additionalProperties: false`, which the
+ * generated validator does not enforce, so a body with any member answers `400 request.invalid`.
+ *
+ * @type {z.ZodType<Record<string, never>>}
+ */
+const ASSIGN_TASK_BODY: z.ZodType<Record<string, never>> = AssignTaskBody.strict();
+
+/**
  * Class TasksController
  *
  * @description
@@ -407,9 +437,11 @@ const LIST_TASK_ACTIVITY_QUERY = ListTaskActivityQueryParams.extend({
  * `tasks:write` (writes, spaces and lists included), on the current organization:
  * `CredentialGuard` answers `403 auth.scope-missing`, `403 organization.not-selected` and
  * `403 organization.mfa-required` before any call, and `RateLimitGuard` counts the credential.
- * task-service decides everything; the gateway relays the client errors each public operation
- * declares, with their French titles, and maps every answer to the public contract through its
- * public validator.
+ * task-service decides everything, the roles on a list (`403 access.role-insufficient`), a task
+ * in the trash (`404 task.trashed`, with its `details`) and an archived task (`409 task.archived`
+ * on a change, an ordinary answer on a read) included; the gateway relays the client errors each
+ * public operation declares, with their French titles, and maps every answer to the public
+ * contract through its public validator.
  */
 @Controller('v1')
 @UseGuards(CredentialGuard, RateLimitGuard)
@@ -691,7 +723,7 @@ export class TasksController {
   })
   public async createTask(
     @Param(new ZodValidationPipe(CreateTaskParams)) params: z.output<typeof CreateTaskParams>,
-    @Body(new ZodValidationPipe(CreateTaskBody)) body: z.output<typeof CreateTaskBody>,
+    @RequiredBody(CreateTaskBody) body: z.output<typeof CreateTaskBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateTaskResponse>> {
@@ -789,8 +821,8 @@ export class TasksController {
   })
   public async updateTask(
     @Param(new ZodValidationPipe(UpdateTaskParams)) params: z.output<typeof UpdateTaskParams>,
-    @Body(new ZodValidationPipe(UpdateTaskBody)) body: z.output<typeof UpdateTaskBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(UpdateTaskBody) body: z.output<typeof UpdateTaskBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateTaskResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -889,7 +921,7 @@ export class TasksController {
   })
   public async createSubtask(
     @Param(new ZodValidationPipe(CreateSubtaskParams)) params: z.output<typeof CreateSubtaskParams>,
-    @Body(new ZodValidationPipe(CreateSubtaskBody)) body: z.output<typeof CreateSubtaskBody>,
+    @RequiredBody(CreateSubtaskBody) body: z.output<typeof CreateSubtaskBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CreateSubtaskResponse>> {
@@ -931,7 +963,7 @@ export class TasksController {
   public async addChecklistItem(
     @Param(new ZodValidationPipe(AddChecklistItemParams))
     params: z.output<typeof AddChecklistItemParams>,
-    @Body(new ZodValidationPipe(AddChecklistItemBody)) body: z.output<typeof AddChecklistItemBody>,
+    @RequiredBody(AddChecklistItemBody) body: z.output<typeof AddChecklistItemBody>,
     @Headers('idempotency-key') idempotencyKeyHeader: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof AddChecklistItemResponse>> {
@@ -976,9 +1008,9 @@ export class TasksController {
   public async updateChecklistItem(
     @Param(new ZodValidationPipe(UpdateChecklistItemParams))
     params: z.output<typeof UpdateChecklistItemParams>,
-    @Body(new ZodValidationPipe(UpdateChecklistItemBody))
+    @RequiredBody(UpdateChecklistItemBody)
     body: z.output<typeof UpdateChecklistItemBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof UpdateChecklistItemResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -997,7 +1029,7 @@ export class TasksController {
    * `PUT /v1/tasks/{taskKey}/assignees/{userId}`: assigns a member, with `If-Match` relayed unchanged. The empty body is checked and not relayed.
    *
    * @param {z.output<typeof AssignTaskParams>} params - The path parameters.
-   * @param {z.output<typeof AssignTaskBody>} body - The body, validated.
+   * @param {z.output<typeof ASSIGN_TASK_BODY>} body - The empty body, validated.
    * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
    * @returns {Promise<z.output<typeof AssignTaskResponse>>} The answer, mapped to the public contract.
    */
@@ -1009,8 +1041,8 @@ export class TasksController {
   })
   public async assignTask(
     @Param(new ZodValidationPipe(AssignTaskParams)) params: z.output<typeof AssignTaskParams>,
-    @Body(new ZodValidationPipe(AssignTaskBody)) body: z.output<typeof AssignTaskBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(ASSIGN_TASK_BODY) body: z.output<typeof ASSIGN_TASK_BODY>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof AssignTaskResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -1042,7 +1074,7 @@ export class TasksController {
   })
   public async unassignTask(
     @Param(new ZodValidationPipe(UnassignTaskParams)) params: z.output<typeof UnassignTaskParams>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     const version: number = await relayProblems(UNASSIGN_TASK_PROBLEMS, () =>
@@ -1071,8 +1103,8 @@ export class TasksController {
   })
   public async addTaskLabel(
     @Param(new ZodValidationPipe(AddTaskLabelParams)) params: z.output<typeof AddTaskLabelParams>,
-    @Body(new ZodValidationPipe(AddTaskLabelBody)) body: z.output<typeof AddTaskLabelBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(AddTaskLabelBody) body: z.output<typeof AddTaskLabelBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof AddTaskLabelResponse>> {
     return conformBody(
       TASK_SERVICE,
@@ -1105,8 +1137,8 @@ export class TasksController {
   public async removeTaskLabel(
     @Param(new ZodValidationPipe(RemoveTaskLabelParams))
     params: z.output<typeof RemoveTaskLabelParams>,
-    @Body(new ZodValidationPipe(RemoveTaskLabelBody)) body: z.output<typeof RemoveTaskLabelBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @RequiredBody(RemoveTaskLabelBody) body: z.output<typeof RemoveTaskLabelBody>,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<z.output<typeof RemoveTaskLabelResponse>> {
     return conformBody(
       TASK_SERVICE,

@@ -31,7 +31,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   left the organization) answers the `404 member.not-found` the public operation declares.
 - `role` of the list is a comma-separated query parameter (`role=owner,admin`); `limit` is read
   from its text before the validator of the contract checks it.
-- `If-Match` is relayed unchanged; the `ETag` of an answer is its `version`.
+- `If-Match` is relayed unchanged, a blank one refused with `400 request.invalid` before any
+  call; the `ETag` of an answer is its `version`.
 - `twoStepVerificationEnabled` (column "Deux étapes") is passed on as organization-service sends
   it: present for the owner and the admins, absent for anyone else. The gateway decides nothing
   about who sees it.

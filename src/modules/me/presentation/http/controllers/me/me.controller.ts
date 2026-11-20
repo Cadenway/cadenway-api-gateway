@@ -15,7 +15,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Inject,
   Patch,
@@ -42,6 +41,7 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { browserClient } from '../../../../../../presentation/http/mappers/browser-client.mapper.js';
 import { toCurrentUser } from '../../../../../../presentation/http/mappers/current-user.mapper.js';
 import { GetCurrentUser } from '../../../../application/use-cases/queries/me/get-current-user/get-current-user.use-case.js';
@@ -404,7 +404,7 @@ export class MeController {
   public async updateCurrentUser(
     @Body(new ZodValidationPipe(UpdateCurrentUserBody))
     body: z.output<typeof UpdateCurrentUserBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
     @Req() request: Request,
   ): Promise<CurrentUser> {
     const session: RequestSession = sessionOf(request);

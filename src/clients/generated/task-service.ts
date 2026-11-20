@@ -99,6 +99,12 @@ export interface SpaceStatuses {
 export type TaskKey = string;
 
 /**
+ * A role of `AccessRole`, as a resource carries it. Later versions may add roles
+ * (`x-extensible-enum`): a client treats an unknown one as `view`.
+ */
+export type AccessRoleValue = string;
+
+/**
  * A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task
  * keys, its appearance, who sees it and how it names its statuses. `nextKey` is the key the
  * next task created in the space would take now ("Les tâches seront numérotées CAD-1,
@@ -122,10 +128,26 @@ export interface Space {
   nextKey: TaskKey;
   createdAt: string;
   /**
-     * Version of the space, also sent as `ETag`.
+     * Version of the space, also sent as `ETag`; a change of its grants adds one too.
      * @minimum 1
      */
   version: number;
+  /**
+     * The role of the caller on the space itself (see "Access" in
+     * `openapi/public/spaces.yaml`): the highest of the rule of the organization, the owner
+     * of the space and a grant of the space. `null` when the caller sees the space only
+     * through the grants of some of its lists, as a guest does: they see those lists only,
+     * and create no list in the space. Absent, it reads as `edit`, the rule before grants
+     * existed.
+     */
+  callerRole?: AccessRoleValue | null;
+  /**
+     * Whether the caller manages the space: changes its visibility, shares it and deletes it;
+     * its settings and statuses need `edit` only. `true` for the owner of the space, and for
+     * the owner and the admins of the organization when the space is `organization`. Absent,
+     * the web application offers the actions and handles their `403`.
+     */
+  callerCanManage?: boolean;
 }
 
 /**
@@ -281,7 +303,8 @@ export const LookColor = {
 
 /**
  * Who sees a space ("Confidentialité"): `organization` ("Tout Atelier Nord": every member of
- * the organization but the guests) or `private` ("Privé": its owner only in this version).
+ * the organization but the guests) or `private` ("Privé": its owner and the people it is
+ * shared with).
  */
 export type Visibility = typeof Visibility[keyof typeof Visibility];
 
@@ -357,6 +380,19 @@ export interface Sprint {
 }
 
 /**
+ * Who made a change: a person (`user`, `id` is the account), an automation rule
+ * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
+ * example `task-service` when a removed member leaves the assignees). Later versions add
+ * actor types (the public intake form of the mockup, "Formulaire public") and members (the
+ * Git provider): a client shows an unknown type as is.
+ */
+export interface Actor {
+  type: string;
+  /** @minLength 1 */
+  id: string;
+}
+
+/**
  * A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of
  * their creation.
  */
@@ -371,10 +407,34 @@ export interface TaskList {
   sprint: Sprint | null;
   createdAt: string;
   /**
-     * Version of the list, also sent as `ETag`.
+     * Version of the list, also sent as `ETag`; a change of its grants, an archive and a
+     * restoration add one too.
      * @minimum 1
      */
   version: number;
+  /**
+     * The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir
+     * cette liste"), on by default. In a space of the whole organization, on, every owner,
+     * admin and member of the organization has `edit` on the list; off, only the owner of
+     * the space and the people the space or the list is shared with see it. In a private
+     * space it changes nothing. Absent, it reads as `true`.
+     */
+  organizationAccess?: boolean;
+  /**
+     * When the list was archived ("archivée le 3 nov."); `null` for a list that is not.
+     * An archived list is left out of the lists of its space, of the overview and of
+     * "Accueil", and reads by its id. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
+  /**
+     * The role of the caller on the list (see "Access" in `openapi/public/spaces.yaml`):
+     * reads need any role, changes to the list and its tasks need `edit`. Absent, it reads
+     * as `edit`, the rule before grants existed.
+     */
+  callerRole?: AccessRoleValue;
 }
 
 /**
@@ -469,6 +529,11 @@ export interface ListCreation {
      * `null` for a list.
      */
   sprint?: SprintInput | null;
+  /**
+     * The switch "Accès de l’organisation" of the new list; absent, it is on (`true`), as
+     * for every list created before the switch existed.
+     */
+  organizationAccess?: boolean;
 }
 
 /**
@@ -480,6 +545,11 @@ export interface ListPatch {
   icon?: LookIcon | null;
   color?: LookColor;
   sprint?: SprintInput | null;
+  /**
+     * Turns the switch "Accès de l’organisation" on or off ("Tous les membres de Atelier
+     * Nord peuvent voir cette liste").
+     */
+  organizationAccess?: boolean;
 }
 
 /**
@@ -609,19 +679,6 @@ export interface ChecklistCounts {
 }
 
 /**
- * Who made a change: a person (`user`, `id` is the account), an automation rule
- * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
- */
-export interface Actor {
-  type: string;
-  /** @minLength 1 */
-  id: string;
-}
-
-/**
  * A task, with its description and its checklist.
  */
 export interface Task {
@@ -682,10 +739,20 @@ export interface Task {
   updatedAt: string;
   /**
      * Version of the task, also sent as `ETag`; every change adds one, a change of its
-     * assignees, labels or checklist included.
+     * assignees, labels or checklist, an archive and a restoration included.
      * @minimum 1
      */
   version: number;
+  /**
+     * When the task was archived, with the subtree it heads or belongs to ("archivée le 5
+     * nov."); `null` for a task that is not. An archived task is left out of every
+     * collection and count, reads by its key and refuses changes (`409 task.archived`) until
+     * it is restored. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the task; `null` for a task that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
 }
 
 /**
@@ -1090,9 +1157,245 @@ export interface ActivityEntry {
   assignee?: ActivityEntryAssignee;
 }
 
-export interface SpaceCreated {
-  space: Space;
-  firstList: TaskList;
+/**
+ * The access of one person to a space or a list ("Personnes ayant accès"), given by someone
+ * who manages it. A space or a list holds 200 grants at most. The owner of the space holds
+ * none: they always have `edit` ("Propriétaire").
+ */
+export interface Grant {
+  /** Account of the person, a current member or guest of the organization. */
+  userId: string;
+  role: AccessRoleValue;
+  /** When the person was given this role. */
+  grantedAt: string;
+  grantedBy: Actor;
+}
+
+/**
+ * A role given by a grant ("Droit d’accès"): `edit` ("Peut modifier"), `comment` ("Peut
+ * commenter", which reads like `view` until comments exist) or `view` ("Lecture seule"),
+ * from the most to the least. The owner of a space ("Propriétaire") holds no grant: they
+ * always have `edit` on it and on its lists.
+ */
+export type AccessRole = typeof AccessRole[keyof typeof AccessRole];
+
+
+export const AccessRole = {
+  edit: 'edit',
+  comment: 'comment',
+  view: 'view',
+} as const;
+
+/**
+ * The role to give ("Droit d’accès"); it replaces the role the person had there.
+ */
+export interface GrantChange {
+  role: AccessRole;
+}
+
+/**
+ * What a request asks for: `space`, `list` or `task`. Later versions may add targets
+ * (`x-extensible-enum`).
+ */
+export type AccessRequestTargetValue = string;
+
+/**
+ * `pending` until someone who manages the target answers, then `approved` or `refused`. Later
+ * versions may add states (`x-extensible-enum`).
+ */
+export type AccessRequestStateValue = string;
+
+/**
+ * A request for access, as the people who manage its target read it. The requester never
+ * reads it: they learn the answer from the inbox (cadenway-notification-service). It has no
+ * `version` of its own to send back: it changes once, from `pending`, and a second answer
+ * gets `409 access-request.already-decided`; its events carry `1`, then `2`.
+ */
+export interface AccessRequest {
+  id: string;
+  target: AccessRequestTargetValue;
+  /** The space of the target. */
+  spaceId: string;
+  /**
+     * The list of a list or task target; `null` for a space.
+     * @nullable
+     */
+  listId: string | null;
+  /** The task of a task target, with its name and status as they are now; `null` otherwise. */
+  task: TaskRef | null;
+  requester: UserRef;
+  /**
+     * The message of the requester, 500 characters at most; `null` when there is none.
+     * @nullable
+     */
+  message: string | null;
+  state: AccessRequestStateValue;
+  /** The role an approval gave; `null` while pending or when refused. */
+  role: AccessRoleValue | null;
+  createdAt: string;
+  /**
+     * When it was approved or refused; `null` while pending.
+     * @nullable
+     */
+  decidedAt: string | null;
+  /** Who approved or refused it; `null` while pending. */
+  decidedBy: Actor | null;
+}
+
+/**
+ * A request for access ("Demander l’accès"): exactly one of `spaceId`, `listId` and
+ * `taskKey`, as the link the caller followed names the target; none or several answer
+ * `400 request.invalid`.
+ */
+export interface AccessRequestCreation {
+  /** A space to have a role on. */
+  spaceId?: string;
+  /** A list to see. */
+  listId?: string;
+  /** A task to see, through its list. */
+  taskKey?: TaskKey;
+  /**
+     * "Message pour Léa (facultatif)", trimmed; `null` or an empty text for none.
+     * @maxLength 500
+     * @nullable
+     */
+  message?: string | null;
+}
+
+/**
+ * The role an approval gives the requester ("Droit d’accès").
+ */
+export interface AccessRequestApproval {
+  role: AccessRole;
+}
+
+/**
+ * A list of the archives ("Archives", tab "Listes").
+ */
+export interface ArchivedList {
+  /** The list, with `archivedAt` and `archivedBy`. */
+  list: TaskList;
+  /**
+     * Its top-level tasks, subtasks left out ("14 tâches").
+     * @minimum 0
+     */
+  taskCount: number;
+}
+
+/**
+ * `active` for a list of the sidebar, `archived` for a list of the archives ("Liste
+ * archivée"), `deleted` for a deleted list ("Liste supprimée"), which comes back when one of
+ * its tasks is restored. Later versions may add states (`x-extensible-enum`).
+ */
+export type ListStateValue = string;
+
+/**
+ * The list of an archived or trashed task, with its name and state as they are now.
+ */
+export interface ListRef {
+  id: string;
+  spaceId: string;
+  /** "Nom", 80 characters at most. */
+  name: string;
+  state: ListStateValue;
+}
+
+/**
+ * A task of the archives ("Archives", tab "Tâches"): the root of a subtree archived together,
+ * which comes back together.
+ */
+export interface ArchivedTask {
+  task: TaskSummary;
+  /** Its list, `archived` when the list is archived too ("Liste archivée"). */
+  list: ListRef;
+  /**
+     * The subtasks archived with it, at every level.
+     * @minimum 0
+     */
+  subtaskCount: number;
+  /** "archivée le 5 nov." */
+  archivedAt: string;
+  archivedBy: Actor;
+}
+
+/**
+ * One element of the trash ("Corbeille"): a task and its subtasks at every level, deleted
+ * together, which come back or are erased together. Deleting a subtask makes an entry of its
+ * own subtree; deleting a list or a space makes one entry per top-level task.
+ */
+export interface TrashEntry {
+  id: string;
+  /** The task at the root of the entry, with its name and status. */
+  task: TaskRef;
+  /**
+     * The parent the root had when it was deleted ("Sous-tâche de CAD-482"); `null` for a
+     * top-level task.
+     */
+  parentKey: TaskKey | null;
+  /**
+     * The subtasks deleted with it, at every level ("Avec 3 sous-tâches").
+     * @minimum 0
+     */
+  subtaskCount: number;
+  /** The list the entry comes back to; `deleted` reads "Liste supprimée". */
+  list: ListRef;
+  /** "Supprimée il y a 2 jours" */
+  trashedAt: string;
+  trashedBy: Actor;
+  /**
+     * When the entry is erased for good, 30 days after `trashedAt` ("Effacée définitivement
+     * dans 28 jours").
+     */
+  purgeAt: string;
+}
+
+/**
+ * What a restoration brought back ("CAD-452 restaurée", "Avec 2 sous-tâches, de retour dans
+ * Sprint 14.").
+ */
+export interface TrashRestored {
+  /** The root of the entry, back in its list. */
+  task: Task;
+  /** The list it is back in. */
+  list: TaskList;
+  /**
+     * The subtasks that came back with it, at every level.
+     * @minimum 0
+     */
+  subtaskCount: number;
+  /**
+     * Whether the root left its parent, which is no longer live or can no longer take it
+     * (", détachée de son parent supprimé"); it is then a top-level task.
+     */
+  detached: boolean;
+  /** Whether its list, deleted, came back with it, at the end of its space. */
+  listRestored: boolean;
+  /** Whether the space of that list, deleted, came back too, at the end of the sidebar. */
+  spaceRestored: boolean;
+}
+
+/**
+ * What "Vider la corbeille" took out ("Corbeille vidée", "12 éléments effacés définitivement.").
+ */
+export interface TrashEmptied {
+  /**
+     * Entries that left the trash, to be erased for good.
+     * @minimum 0
+     */
+  entryCount: number;
+}
+
+/**
+ * What the realtime gateway needs to let a socket join the room of a list or a task: the role
+ * of the actor and where the list or the task is.
+ */
+export interface AccessCheck {
+  role: AccessRoleValue;
+  spaceId: string;
+  /** The list checked, or the list of the task checked. */
+  listId: string;
+  /** The task checked; `null` for a list. */
+  taskKey: TaskKey | null;
 }
 
 /**
@@ -1100,6 +1403,46 @@ export interface SpaceCreated {
  * @nullable
  */
 export type NextCursor = string | null;
+
+export interface GrantPage {
+  items: Grant[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface AccessRequestPage {
+  items: AccessRequest[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface ArchivedListPage {
+  items: ArchivedList[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface ArchivedTaskPage {
+  items: ArchivedTask[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface TrashEntryPage {
+  items: TrashEntry[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+export interface SpaceCreated {
+  space: Space;
+  firstList: TaskList;
+}
 
 export interface SpacePage {
   items: Space[];
@@ -1254,10 +1597,37 @@ export type RoleForbiddenResponse = Problem;
 /**
  * - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
  *   of the organization, change its visibility;
+ * - `access.role-insufficient`: the actor sees the space without `edit` on it;
+ *   `details.role` is their role there (`null` for a space they see only through some of its
+ *   lists), `details.requiredRole` is `edit`;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
  *   the internal token.
  */
 export type SpaceWriteForbiddenResponse = Problem;
+
+/**
+ * - `space.manage-forbidden`: the actor does not manage the space: neither its owner nor,
+ *   for a space `organization`, the owner or an admin of the organization;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type ManageForbiddenResponse = Problem;
+
+/**
+ * - `access.role-insufficient`: the actor sees the list, or the space for a creation of a
+ *   list, without `edit` on it; `details.role` is their role there (`null` for a space they
+ *   see only through some of its lists), `details.requiredRole` is `edit`;
+ * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`: see
+ *   the internal token.
+ */
+export type WriteForbiddenResponse = Problem;
+
+/**
+ * The internal token is valid but is not from `realtime-gateway` (`auth.issuer-not-allowed`),
+ * its actor is not `user` (`auth.actor-not-allowed`), or it carries no organization
+ * (`auth.organization-required`).
+ */
+export type AccessCheckRefusedResponse = Problem;
 
 /**
  * `organization.not-found`: task-service does not hold the actor as a member of the
@@ -1284,10 +1654,62 @@ export type SpaceNotFoundResponse = Problem;
 export type ListNotFoundResponse = Problem;
 
 /**
- * - `task.not-found`: no task with this key that the actor sees;
+ * - `task.not-found`: no task with this key that the actor sees, or a task in the trash the
+ *   actor could not change;
+ * - `task.trashed`: the task is in the trash and the actor could change its list, with
+ *   `details.key`, `details.name`, `details.entryId`, `details.rootKey`,
+ *   `details.trashedAt`, `details.trashedBy` and `details.purgeAt` (see `TaskNotFound` in
+ *   `openapi/public/tasks.yaml`); the access checks never answer it;
  * - `organization.not-found`: see `OrganizationNotFound`.
  */
 export type TaskNotFoundResponse = Problem;
+
+/**
+ * - `trash-entry.not-found`: no entry with this id that the actor may restore;
+ * - `organization.not-found`: see `OrganizationNotFound`.
+ */
+export type TrashEntryNotFoundResponse = Problem;
+
+/**
+ * - `access-request.not-found`: no request with this id that the actor may answer;
+ * - `organization.not-found`: see `OrganizationNotFound`.
+ */
+export type AccessRequestNotFoundResponse = Problem;
+
+/**
+ * `access-request.already-decided`: the request was approved or refused first, with `details.state`.
+ */
+export type AccessRequestDecidedResponse = Problem;
+
+/**
+ * `access-request.limit-reached`: the actor asked 10 times within the last hour;
+ * `details.nextAvailableAt` is when the oldest request counted leaves the hour, and
+ * `Retry-After` the seconds until then, from which the gateway answers its own.
+ */
+export type AccessRequestLimitReachedResponse = Problem;
+
+/**
+ * A grant rule refuses the request, with the codes of the public route:
+ * `access.grantee-invalid` (`details.userId`), `access.guest-space-forbidden`,
+ * `access.owner-unchangeable` or `access.grant-limit-reached`.
+ */
+export type GrantRefusedResponse = Problem;
+
+/**
+ * `access.owner-unchangeable`: the person is the owner of the space, who always has `edit`.
+ */
+export type OwnerUnchangeableResponse = Problem;
+
+/**
+ * `task.archived`: the task, or the parent a patch names, is archived; `details.key` names it.
+ */
+export type TaskArchivedResponse = Problem;
+
+/**
+ * `task.archived` (`details.key`): the task that would hold the new subtask or checklist item
+ * is archived; or `idempotency.request-in-progress`.
+ */
+export type TaskCreationConflictResponse = Problem;
 
 /**
  * - `checklist-item.not-found`: the task has no item with this id;
@@ -1359,6 +1781,16 @@ export type ChecklistItemRefusedResponse = Problem;
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
  */
 export type VersionMismatchResponse = Problem;
+
+/**
+ * Keep the requests of this space, its lists and their tasks.
+ */
+export type SpaceIdFilterParameter = string;
+
+/**
+ * Keep the requests of this list and its tasks.
+ */
+export type ListIdFilterParameter = string;
 
 /**
  * `"<version>"` the change was made from.
@@ -1729,6 +2161,76 @@ export type GetHomeInternalParams = {
   today: TodayParameter;
 };
 
+export type ListSpaceGrantsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListListGrantsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListAccessRequestsInternalParams = {
+  /** Keep the requests of this space, its lists and their tasks. */
+  spaceId?: SpaceIdFilterParameter;
+  /** Keep the requests of this list and its tasks. */
+  listId?: ListIdFilterParameter;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListArchivedListsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListArchivedTasksInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListTrashInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
 export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
 export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
@@ -1808,8 +2310,9 @@ const getListSpacesInternalUrl = (params?: ListSpacesInternalParams,) => {
 }
 
 /**
- * Lists the spaces the actor sees, in the order of their creation. Internal token: actor
- * `user`, organization required.
+ * Lists the spaces the actor sees, as `GET /v1/spaces` says: in the order of the sidebar, a
+ * space restored from the trash at the end, and for a guest the spaces of the lists shared
+ * with them. Internal token: actor `user`, organization required.
  * @summary List the spaces
  */
 const listSpacesInternal = async (params?: ListSpacesInternalParams, options?: RequestInit): Promise<listSpacesInternalResponse> => {
@@ -1874,8 +2377,10 @@ const getUpdateSpaceInternalUrl = (spaceId: string,) => {
 }
 
 /**
- * Applies a JSON Merge Patch to a space the actor sees, as `PATCH /v1/spaces/{spaceId}` says:
- * `403 space.visibility-forbidden`, `409 space.prefix-taken`, `412 request.version-mismatch`,
+ * Applies a JSON Merge Patch to a space the actor has `edit` on, as
+ * `PATCH /v1/spaces/{spaceId}` says: `403 access.role-insufficient` without it,
+ * `403 space.visibility-forbidden` for a change of the visibility by an actor who does not
+ * manage the space, `409 space.prefix-taken`, `412 request.version-mismatch`,
  * `422 space.status-required`. Emits `space.updated.v1` when something changed. Internal
  * token: actor `user`, organization required.
  * @summary Change a space
@@ -1897,6 +2402,43 @@ const updateSpaceInternal = async (spaceId: string,
 
   const data: updateSpaceInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateSpaceInternalResponse
+}
+
+
+
+const getDeleteSpaceInternalUrl = (spaceId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}`
+}
+
+/**
+ * Deletes a space the actor manages, as `DELETE /v1/spaces/{spaceId}` says
+ * (`403 space.manage-forbidden`, `412 request.version-mismatch`): the space and its lists
+ * become tombstones that every route answers `404`, its pending access requests are dropped,
+ * and the deletion job moves its tasks to the trash. Emits `space.deleted.v1`, then
+ * `task.trashed.v1` for each task the job moves. Internal token: actor `user`, organization
+ * required.
+ * @summary Delete a space
+ */
+const deleteSpaceInternal = async (spaceId: string, options?: RequestInit): Promise<deleteSpaceInternalResponse> => {
+
+  const res = await fetchFn(getDeleteSpaceInternalUrl(spaceId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSpaceInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteSpaceInternalResponse
 }
 
 
@@ -1953,9 +2495,10 @@ const getCreateListInternalUrl = (spaceId: string,) => {
 }
 
 /**
- * Creates a list in a space the actor sees, as `POST /v1/spaces/{spaceId}/lists` says:
- * `422 list.sprint-dates-invalid` for an end before the start. Emits `list.created.v1`.
- * Internal token: actor `user`, organization required.
+ * Creates a list in a space the actor has `edit` on, as `POST /v1/spaces/{spaceId}/lists`
+ * says: `403 access.role-insufficient` without it, `422 list.sprint-dates-invalid` for an end
+ * before the start, `organizationAccess` on unless the body turns it off. Emits
+ * `list.created.v1`. Internal token: actor `user`, organization required.
  * @summary Create a list or a sprint
  */
 const createListInternal = async (spaceId: string,
@@ -1996,8 +2539,8 @@ const getListListsInternalUrl = (spaceId: string,
 }
 
 /**
- * Lists the lists of a space the actor sees, in the order of their creation. Internal token:
- * actor `user`, organization required.
+ * Lists the lists of a space that the actor sees, in the order of the sidebar, archived
+ * lists left out. Internal token: actor `user`, organization required.
  * @summary List the lists of a space
  */
 const listListsInternal = async (spaceId: string,
@@ -2030,8 +2573,9 @@ const getGetListInternalUrl = (listId: string,) => {
 }
 
 /**
- * Returns a list the actor sees; any other answers `404 list.not-found`. Internal token: actor
- * `user`, organization required.
+ * Returns a list the actor sees, an archived one included, with `callerRole`; any other, a
+ * deleted one included, answers `404 list.not-found`. Internal token: actor `user`,
+ * organization required.
  * @summary Read a list
  */
 const getListInternal = async (listId: string, options?: RequestInit): Promise<getListInternalResponse> => {
@@ -2063,9 +2607,11 @@ const getUpdateListInternalUrl = (listId: string,) => {
 }
 
 /**
- * Applies a JSON Merge Patch to a list the actor sees, as `PATCH /v1/lists/{listId}` says:
- * `412 request.version-mismatch`, `422 list.sprint-dates-invalid`. Emits `list.updated.v1`
- * when something changed. Internal token: actor `user`, organization required.
+ * Applies a JSON Merge Patch to a list the actor has `edit` on, as `PATCH /v1/lists/{listId}`
+ * says: `403 access.role-insufficient`, `412 request.version-mismatch`,
+ * `422 list.sprint-dates-invalid`. Emits `list.updated.v1` when its name, appearance or
+ * sprint changed, `list.access-changed.v1` when `organizationAccess` did. Internal token:
+ * actor `user`, organization required.
  * @summary Change a list or a sprint
  */
 const updateListInternal = async (listId: string,
@@ -2085,6 +2631,43 @@ const updateListInternal = async (listId: string,
 
   const data: updateListInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateListInternalResponse
+}
+
+
+
+const getDeleteListInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}`
+}
+
+/**
+ * Deletes a list the actor has `edit` on, archived or not, as `DELETE /v1/lists/{listId}`
+ * says (`403 access.role-insufficient`, `412 request.version-mismatch`): the list becomes a
+ * tombstone that every route answers `404`, its pending access requests and those of its
+ * tasks are dropped, and the deletion job moves its tasks to the trash. Emits
+ * `list.deleted.v1`, then `task.trashed.v1` for each task the job moves. Internal token:
+ * actor `user`, organization required.
+ * @summary Delete a list or a sprint
+ */
+const deleteListInternal = async (listId: string, options?: RequestInit): Promise<deleteListInternalResponse> => {
+
+  const res = await fetchFn(getDeleteListInternalUrl(listId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteListInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteListInternalResponse
 }
 
 
@@ -2309,8 +2892,10 @@ const getGetTaskInternalUrl = (taskKey: string,) => {
 }
 
 /**
- * Returns a task the actor sees; any other key answers `404 task.not-found`. Internal token:
- * actor `user`, organization required.
+ * Returns a task the actor sees, an archived one included; any other key answers
+ * `404 task.not-found`, and a task in the trash `404 task.trashed` with its `details` when
+ * the actor could change its list. Every route of a key answers a task in the trash so.
+ * Internal token: actor `user`, organization required.
  * @summary Read a task
  */
 const getTaskInternal = async (taskKey: string, options?: RequestInit): Promise<getTaskInternalResponse> => {
@@ -2346,11 +2931,13 @@ const getUpdateTaskInternalUrl = (taskKey: string,) => {
  * the status and its cancel reason, checked against the statuses of the space the task is in
  * after the patch, the due date that moves the start and keeps the duration, the move of the
  * task and its subtasks, the parent, `If-Match` required with `description`
- * (`400 request.invalid` with an issue on the header). Records the changes of status,
- * priority and due date, the changes of the priority and the due date of a task by the same
- * actor within 60 seconds merged into one entry. Emits `task.updated.v1` and
- * `task.status-changed.v1` as the public route says. Internal token: actor `user`,
- * organization required.
+ * (`400 request.invalid` with an issue on the header), `edit` on the list of the task and on
+ * the list it moves to (`403 access.role-insufficient`), `409 task.archived` for an archived
+ * task or parent. Records the changes of status, priority and due date, the changes of the
+ * priority and the due date of a task by the same actor within 60 seconds merged into one
+ * entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
+ * assignee, label, subtask and checklist routes below refuse an archived task the same way.
+ * Internal token: actor `user`, organization required.
  * @summary Change a task
  */
 const updateTaskInternal = async (taskKey: string,
@@ -2531,9 +3118,12 @@ const getGetTaskDetailInternalUrl = (taskKey: string,) => {
 }
 
 /**
- * Returns task-service's part of the task detail: the task, its space, its list, its parent
- * and its direct subtasks, read in one transaction. The gateway adds `partial` and, in later
- * versions, the parts of other services. Internal token: actor `user`, organization required.
+ * Returns task-service's part of the task detail: the task, its space, its list with
+ * `callerRole`, its parent and its direct subtasks, read in one transaction, as
+ * `GET /v1/tasks/{taskKey}/detail` says: the subtasks archived or in the trash left out, but
+ * for an archived task, whose detail shows the subtasks archived with it. The gateway adds
+ * `partial` and, in later versions, the parts of other services. Internal token: actor
+ * `user`, organization required.
  * @summary Read the detail of a task
  */
 const getTaskDetailInternal = async (taskKey: string, options?: RequestInit): Promise<getTaskDetailInternalResponse> => {
@@ -2573,8 +3163,9 @@ const getListSubtasksInternalUrl = (taskKey: string,
 }
 
 /**
- * Lists the direct subtasks of a task the actor sees, in the order of their creation.
- * Internal token: actor `user`, organization required.
+ * Lists the direct subtasks of a task the actor sees, in the order of their creation, those
+ * archived or in the trash left out, but for an archived task, which lists the subtasks
+ * archived with it. Internal token: actor `user`, organization required.
  * @summary List the subtasks of a task
  */
 const listSubtasksInternal = async (taskKey: string,
@@ -2608,9 +3199,12 @@ const getCreateSubtaskInternalUrl = (taskKey: string,) => {
 
 /**
  * Creates a subtask of a task the actor sees, in its list, as
- * `POST /v1/tasks/{taskKey}/subtasks` says: `422 task.subtask-depth-exceeded`,
- * `422 task.subtask-limit-reached` and the refusals of a creation. Emits `task.created.v1` and
- * `task.assigned.v1` per assignee. Internal token: actor `user`, organization required.
+ * `POST /v1/tasks/{taskKey}/subtasks` says: `edit` on the list
+ * (`403 access.role-insufficient`), `409 task.archived` for an archived parent,
+ * `422 task.subtask-depth-exceeded`, `422 task.subtask-limit-reached`, the archived subtasks
+ * and those in the trash not counted among the 25, and the refusals of a creation. Emits
+ * `task.created.v1` and `task.assigned.v1` per assignee. Internal token: actor `user`,
+ * organization required.
  * @summary Create a subtask
  */
 const createSubtaskInternal = async (taskKey: string,
@@ -2875,7 +3469,890 @@ const getHomeInternal = async (userId: string,
 
 
 
-return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl };
+const getListSpaceGrantsInternalUrl = (spaceId: string,
+    params?: ListSpaceGrantsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/spaces/${spaceId}/grants?${stringifiedParams}` : `/internal/v1/spaces/${spaceId}/grants`
+}
+
+/**
+ * Lists the grants of a space the actor sees, in the order they were first given, as
+ * `GET /v1/spaces/{spaceId}/grants` says. Internal token: actor `user`, organization
+ * required.
+ * @summary List the grants of a space
+ */
+const listSpaceGrantsInternal = async (spaceId: string,
+    params?: ListSpaceGrantsInternalParams, options?: RequestInit): Promise<listSpaceGrantsInternalResponse> => {
+
+  const res = await fetchFn(getListSpaceGrantsInternalUrl(spaceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSpaceGrantsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSpaceGrantsInternalResponse
+}
+
+
+
+const getSetSpaceGrantInternalUrl = (spaceId: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/grants/${userId}`
+}
+
+/**
+ * Gives a person a role on a space the actor manages, or changes it, as
+ * `PUT /v1/spaces/{spaceId}/grants/{userId}` says: `403 space.manage-forbidden`,
+ * `412 request.version-mismatch`, `422 access.grantee-invalid`,
+ * `422 access.guest-space-forbidden`, `422 access.owner-unchangeable`,
+ * `422 access.grant-limit-reached`; the same role again answers `200` with the same version.
+ * Emits `space.access-changed.v1` when it changed. Internal token: actor `user`, organization
+ * required.
+ * @summary Give or change a role on a space
+ */
+const setSpaceGrantInternal = async (spaceId: string,
+    userId: string,
+    grantChange: GrantChange, options?: RequestInit): Promise<setSpaceGrantInternalResponse> => {
+
+  const res = await fetchFn(getSetSpaceGrantInternalUrl(spaceId,userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(grantChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setSpaceGrantInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setSpaceGrantInternalResponse
+}
+
+
+
+const getRemoveSpaceGrantInternalUrl = (spaceId: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/grants/${userId}`
+}
+
+/**
+ * Removes the grant of a person on a space the actor manages, as
+ * `DELETE /v1/spaces/{spaceId}/grants/{userId}` says; without one, `204` with the same
+ * version; the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version
+ * after the change. Emits `space.access-changed.v1` when there was a grant. Internal token:
+ * actor `user`, organization required.
+ * @summary Remove a role on a space
+ */
+const removeSpaceGrantInternal = async (spaceId: string,
+    userId: string, options?: RequestInit): Promise<removeSpaceGrantInternalResponse> => {
+
+  const res = await fetchFn(getRemoveSpaceGrantInternalUrl(spaceId,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeSpaceGrantInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removeSpaceGrantInternalResponse
+}
+
+
+
+const getListListGrantsInternalUrl = (listId: string,
+    params?: ListListGrantsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/lists/${listId}/grants?${stringifiedParams}` : `/internal/v1/lists/${listId}/grants`
+}
+
+/**
+ * Lists the grants of a list the actor sees, in the order they were first given, as
+ * `GET /v1/lists/{listId}/grants` says. Internal token: actor `user`, organization required.
+ * @summary List the grants of a list
+ */
+const listListGrantsInternal = async (listId: string,
+    params?: ListListGrantsInternalParams, options?: RequestInit): Promise<listListGrantsInternalResponse> => {
+
+  const res = await fetchFn(getListListGrantsInternalUrl(listId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listListGrantsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listListGrantsInternalResponse
+}
+
+
+
+const getSetListGrantInternalUrl = (listId: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/grants/${userId}`
+}
+
+/**
+ * Gives a person a role on a list the actor has `edit` on, or changes it, as
+ * `PUT /v1/lists/{listId}/grants/{userId}` says: `403 access.role-insufficient`,
+ * `412 request.version-mismatch`, `422 access.grantee-invalid`,
+ * `422 access.owner-unchangeable`, `422 access.grant-limit-reached`; the same role again
+ * answers `200` with the same version. Emits `list.access-changed.v1` when it changed.
+ * Internal token: actor `user`, organization required.
+ * @summary Give or change a role on a list
+ */
+const setListGrantInternal = async (listId: string,
+    userId: string,
+    grantChange: GrantChange, options?: RequestInit): Promise<setListGrantInternalResponse> => {
+
+  const res = await fetchFn(getSetListGrantInternalUrl(listId,userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(grantChange)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setListGrantInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setListGrantInternalResponse
+}
+
+
+
+const getRemoveListGrantInternalUrl = (listId: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/grants/${userId}`
+}
+
+/**
+ * Removes the grant of a person on a list the actor has `edit` on, as
+ * `DELETE /v1/lists/{listId}/grants/{userId}` says; without one, `204` with the same version;
+ * the owner of the space, `422 access.owner-unchangeable`. `ETag` gives the version after the
+ * change. Emits `list.access-changed.v1` when there was a grant. Internal token: actor
+ * `user`, organization required.
+ * @summary Remove a role on a list
+ */
+const removeListGrantInternal = async (listId: string,
+    userId: string, options?: RequestInit): Promise<removeListGrantInternalResponse> => {
+
+  const res = await fetchFn(getRemoveListGrantInternalUrl(listId,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: removeListGrantInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removeListGrantInternalResponse
+}
+
+
+
+const getCreateAccessRequestInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/access-requests`
+}
+
+/**
+ * Records a request of the actor for access, as `POST /v1/access-requests` says: always
+ * `202` with no body, a request stored only for a target of the organization, live or
+ * archived, on which the actor has no role, once per requester and target while pending, a
+ * space not for a guest; `400 request.invalid` for none or several targets;
+ * `429 access-request.limit-reached` with `Retry-After` beyond 10 requests within the hour.
+ * Emits `space.access-requested.v1`, `list.access-requested.v1` or
+ * `task.access-requested.v1` when stored. Internal token: actor `user`, organization
+ * required.
+ * @summary Ask for access
+ */
+const createAccessRequestInternal = async (accessRequestCreation: AccessRequestCreation, options?: RequestInit): Promise<createAccessRequestInternalResponse> => {
+
+  const res = await fetchFn(getCreateAccessRequestInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(accessRequestCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createAccessRequestInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as createAccessRequestInternalResponse
+}
+
+
+
+const getListAccessRequestsInternalUrl = (params?: ListAccessRequestsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/access-requests?${stringifiedParams}` : `/internal/v1/access-requests`
+}
+
+/**
+ * Lists the pending requests the actor may answer, the most recent first, as
+ * `GET /v1/access-requests` says. Internal token: actor `user`, organization required.
+ * @summary List the pending access requests
+ */
+const listAccessRequestsInternal = async (params?: ListAccessRequestsInternalParams, options?: RequestInit): Promise<listAccessRequestsInternalResponse> => {
+
+  const res = await fetchFn(getListAccessRequestsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAccessRequestsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAccessRequestsInternalResponse
+}
+
+
+
+const getApproveAccessRequestInternalUrl = (accessRequestId: string,) => {
+
+
+
+
+  return `/internal/v1/access-requests/${accessRequestId}/approval`
+}
+
+/**
+ * Approves a pending request the actor may answer with a role, as
+ * `POST /v1/access-requests/{accessRequestId}/approval` says: the grant of the space or of
+ * the list, `404 access-request.not-found`, `409 access-request.already-decided`, and the
+ * refusals of a grant. Emits the `…access-request-decided.v1` of the target and the
+ * `space.access-changed.v1` or `list.access-changed.v1` of the grant. Internal token: actor
+ * `user`, organization required.
+ * @summary Approve an access request
+ */
+const approveAccessRequestInternal = async (accessRequestId: string,
+    accessRequestApproval: AccessRequestApproval, options?: RequestInit): Promise<approveAccessRequestInternalResponse> => {
+
+  const res = await fetchFn(getApproveAccessRequestInternalUrl(accessRequestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(accessRequestApproval)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: approveAccessRequestInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as approveAccessRequestInternalResponse
+}
+
+
+
+const getRefuseAccessRequestInternalUrl = (accessRequestId: string,) => {
+
+
+
+
+  return `/internal/v1/access-requests/${accessRequestId}/refusal`
+}
+
+/**
+ * Refuses a pending request the actor may answer, as
+ * `POST /v1/access-requests/{accessRequestId}/refusal` says: `404 access-request.not-found`,
+ * `409 access-request.already-decided`. Emits the `…access-request-decided.v1` of the target.
+ * Internal token: actor `user`, organization required.
+ * @summary Refuse an access request
+ */
+const refuseAccessRequestInternal = async (accessRequestId: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<refuseAccessRequestInternalResponse> => {
+
+  const res = await fetchFn(getRefuseAccessRequestInternalUrl(accessRequestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: refuseAccessRequestInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as refuseAccessRequestInternalResponse
+}
+
+
+
+const getArchiveListInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/archive`
+}
+
+/**
+ * Archives a list the actor has `edit` on, as `POST /v1/lists/{listId}/archive` says; an
+ * archived one answers `200` with the same version. Emits `list.archived.v1`. Internal token:
+ * actor `user`, organization required.
+ * @summary Archive a list or a sprint
+ */
+const archiveListInternal = async (listId: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<archiveListInternalResponse> => {
+
+  const res = await fetchFn(getArchiveListInternalUrl(listId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: archiveListInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as archiveListInternalResponse
+}
+
+
+
+const getUnarchiveListInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/unarchive`
+}
+
+/**
+ * Restores an archived list the actor has `edit` on at the end of its space, as
+ * `POST /v1/lists/{listId}/unarchive` says; a list that is not archived answers `200` with
+ * the same version. Emits `list.unarchived.v1`. Internal token: actor `user`, organization
+ * required.
+ * @summary Restore an archived list
+ */
+const unarchiveListInternal = async (listId: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<unarchiveListInternalResponse> => {
+
+  const res = await fetchFn(getUnarchiveListInternalUrl(listId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unarchiveListInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as unarchiveListInternalResponse
+}
+
+
+
+const getArchiveTaskInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/archive`
+}
+
+/**
+ * Archives a task and its subtasks at every level, as `POST /v1/tasks/{taskKey}/archive`
+ * says: `edit` on its list (`403 access.role-insufficient`), an archived one answers `200`
+ * with the same version, the subtasks archived before keep their own archive. Emits
+ * `task.archived.v1` for each task archived, the root first. Internal token: actor `user`,
+ * organization required.
+ * @summary Archive a task with its subtasks
+ */
+const archiveTaskInternal = async (taskKey: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<archiveTaskInternalResponse> => {
+
+  const res = await fetchFn(getArchiveTaskInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: archiveTaskInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as archiveTaskInternalResponse
+}
+
+
+
+const getUnarchiveTaskInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/unarchive`
+}
+
+/**
+ * Restores the archive a task belongs to, from its root, as
+ * `POST /v1/tasks/{taskKey}/unarchive` says: its list restored with it when archived, the
+ * root detached from a parent that is no longer live or can no longer take it, a task that is
+ * not archived `200` with the same version. Emits `list.unarchived.v1` for a list restored
+ * with it, then `task.unarchived.v1` for each task, the root first. Internal token: actor
+ * `user`, organization required.
+ * @summary Restore an archived task with its subtasks
+ */
+const unarchiveTaskInternal = async (taskKey: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<unarchiveTaskInternalResponse> => {
+
+  const res = await fetchFn(getUnarchiveTaskInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unarchiveTaskInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as unarchiveTaskInternalResponse
+}
+
+
+
+const getListArchivedListsInternalUrl = (params?: ListArchivedListsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/archives/lists?${stringifiedParams}` : `/internal/v1/archives/lists`
+}
+
+/**
+ * Lists the archived lists the actor sees, the most recently archived first, as
+ * `GET /v1/archives/lists` says. Internal token: actor `user`, organization required.
+ * @summary List the archived lists
+ */
+const listArchivedListsInternal = async (params?: ListArchivedListsInternalParams, options?: RequestInit): Promise<listArchivedListsInternalResponse> => {
+
+  const res = await fetchFn(getListArchivedListsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listArchivedListsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listArchivedListsInternalResponse
+}
+
+
+
+const getListArchivedTasksInternalUrl = (params?: ListArchivedTasksInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/archives/tasks?${stringifiedParams}` : `/internal/v1/archives/tasks`
+}
+
+/**
+ * Lists the roots of the archived subtrees the actor sees, the most recently archived first,
+ * as `GET /v1/archives/tasks` says. Internal token: actor `user`, organization required.
+ * @summary List the archived tasks
+ */
+const listArchivedTasksInternal = async (params?: ListArchivedTasksInternalParams, options?: RequestInit): Promise<listArchivedTasksInternalResponse> => {
+
+  const res = await fetchFn(getListArchivedTasksInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listArchivedTasksInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listArchivedTasksInternalResponse
+}
+
+
+
+const getTrashTaskInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/trash`
+}
+
+/**
+ * Moves a task and its subtasks at every level to the trash as one entry, as
+ * `POST /v1/tasks/{taskKey}/trash` says: `edit` on its list (`403 access.role-insufficient`),
+ * `409 task.archived`, `404 task.trashed` for a task in the trash already. Emits
+ * `task.trashed.v1` for each task of the entry, the root first. Internal token: actor `user`,
+ * organization required.
+ * @summary Delete a task with its subtasks
+ */
+const trashTaskInternal = async (taskKey: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<trashTaskInternalResponse> => {
+
+  const res = await fetchFn(getTrashTaskInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: trashTaskInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as trashTaskInternalResponse
+}
+
+
+
+const getListTrashInternalUrl = (params?: ListTrashInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/trash/entries?${stringifiedParams}` : `/internal/v1/trash/entries`
+}
+
+/**
+ * Lists the trash entries the actor may restore, the most recently deleted first, as
+ * `GET /v1/trash/entries` says. Internal token: actor `user`, organization required.
+ * @summary List the trash
+ */
+const listTrashInternal = async (params?: ListTrashInternalParams, options?: RequestInit): Promise<listTrashInternalResponse> => {
+
+  const res = await fetchFn(getListTrashInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTrashInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTrashInternalResponse
+}
+
+
+
+const getPurgeTrashEntryInternalUrl = (entryId: string,) => {
+
+
+
+
+  return `/internal/v1/trash/entries/${entryId}`
+}
+
+/**
+ * Erases an entry the actor may restore at once, as `DELETE /v1/trash/entries/{entryId}`
+ * says; any other answers `404 trash-entry.not-found`. Emits `task.purged.v1` for each task
+ * of the entry. Internal token: actor `user`, organization required.
+ * @summary Erase a trash entry for good
+ */
+const purgeTrashEntryInternal = async (entryId: string, options?: RequestInit): Promise<purgeTrashEntryInternalResponse> => {
+
+  const res = await fetchFn(getPurgeTrashEntryInternalUrl(entryId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: purgeTrashEntryInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as purgeTrashEntryInternalResponse
+}
+
+
+
+const getRestoreTrashEntryInternalUrl = (entryId: string,) => {
+
+
+
+
+  return `/internal/v1/trash/entries/${entryId}/restore`
+}
+
+/**
+ * Brings an entry the actor may restore back to its list, as
+ * `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
+ * longer live or can no longer take it, a deleted list and space brought back with it; any
+ * other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
+ * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
+ * root first. Internal token: actor `user`, organization required.
+ * @summary Restore a trash entry
+ */
+const restoreTrashEntryInternal = async (entryId: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<restoreTrashEntryInternalResponse> => {
+
+  const res = await fetchFn(getRestoreTrashEntryInternalUrl(entryId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: restoreTrashEntryInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as restoreTrashEntryInternalResponse
+}
+
+
+
+const getEmptyTrashInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/trash/empty`
+}
+
+/**
+ * Takes every entry the actor may restore out of the trash at once and hands them to the
+ * purge job, as `POST /v1/trash/empty` says: `202` with their count. Emits `task.purged.v1`
+ * for each task as the job erases it. Internal token: actor `user`, organization required.
+ * @summary Empty the trash
+ */
+const emptyTrashInternal = async (emptyRequest: EmptyRequest, options?: RequestInit): Promise<emptyTrashInternalResponse> => {
+
+  const res = await fetchFn(getEmptyTrashInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: emptyTrashInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as emptyTrashInternalResponse
+}
+
+
+
+const getCheckListAccessInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/access`
+}
+
+/**
+ * Answers whether the actor, the person of a socket of the realtime gateway, sees a list and
+ * with which role, before the socket joins the room of the list. A list they do not see, a
+ * deleted one included, answers `404 list.not-found`, as everywhere; an archived list they
+ * see answers its role. One indexed read of the grants of the actor on the list and its
+ * space, with the space and the copy of the members; nothing is written and nothing is
+ * emitted.
+ *
+ * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+ * other), actor `user`, organization required.
+ * @summary Check the access of a person to a list
+ */
+const checkListAccessInternal = async (listId: string, options?: RequestInit): Promise<checkListAccessInternalResponse> => {
+
+  const res = await fetchFn(getCheckListAccessInternalUrl(listId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkListAccessInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkListAccessInternalResponse
+}
+
+
+
+const getCheckTaskAccessInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/access`
+}
+
+/**
+ * Answers whether the actor, the person of a socket of the realtime gateway, sees a task and
+ * with which role, the role of its list, before the socket joins the room of the task. A
+ * task they do not see, a task in the trash included, answers `404 task.not-found`, never
+ * `task.trashed`; an archived task they see answers its role. One indexed read, as for a
+ * list; nothing is written and nothing is emitted.
+ *
+ * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
+ * other), actor `user`, organization required.
+ * @summary Check the access of a person to a task
+ */
+const checkTaskAccessInternal = async (taskKey: string, options?: RequestInit): Promise<checkTaskAccessInternalResponse> => {
+
+  const res = await fetchFn(getCheckTaskAccessInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkTaskAccessInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkTaskAccessInternalResponse
+}
+
+
+
+return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl };
 };
 
 export type createSpaceInternalResponse201 = {
@@ -3043,6 +4520,46 @@ export type updateSpaceInternalResponseError = (updateSpaceInternalResponse400 |
 export type updateSpaceInternalResponse = (updateSpaceInternalResponseSuccess | updateSpaceInternalResponseError)
 
 
+export type deleteSpaceInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteSpaceInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteSpaceInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteSpaceInternalResponse403 = {
+  data: ManageForbiddenResponse
+  status: 403
+}
+
+export type deleteSpaceInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type deleteSpaceInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteSpaceInternalResponseSuccess = (deleteSpaceInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteSpaceInternalResponseError = (deleteSpaceInternalResponse400 | deleteSpaceInternalResponse401 | deleteSpaceInternalResponse403 | deleteSpaceInternalResponse404 | deleteSpaceInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteSpaceInternalResponse = (deleteSpaceInternalResponseSuccess | deleteSpaceInternalResponseError)
+
+
 export type getSpaceOverviewInternalResponse200 = {
   data: SpaceOverview
   status: 200
@@ -3094,7 +4611,7 @@ export type createListInternalResponse401 = {
 }
 
 export type createListInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
@@ -3209,7 +4726,7 @@ export type updateListInternalResponse401 = {
 }
 
 export type updateListInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
@@ -3236,6 +4753,46 @@ export type updateListInternalResponseError = (updateListInternalResponse400 | u
 };
 
 export type updateListInternalResponse = (updateListInternalResponseSuccess | updateListInternalResponseError)
+
+
+export type deleteListInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteListInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteListInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteListInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type deleteListInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type deleteListInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteListInternalResponseSuccess = (deleteListInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteListInternalResponseError = (deleteListInternalResponse400 | deleteListInternalResponse401 | deleteListInternalResponse403 | deleteListInternalResponse404 | deleteListInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteListInternalResponse = (deleteListInternalResponseSuccess | deleteListInternalResponseError)
 
 
 export type getListCountsInternalResponse200 = {
@@ -3324,7 +4881,7 @@ export type createTaskInternalResponse401 = {
 }
 
 export type createTaskInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
@@ -3474,13 +5031,18 @@ export type updateTaskInternalResponse401 = {
 }
 
 export type updateTaskInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type updateTaskInternalResponse404 = {
   data: TaskNotFoundResponse
   status: 404
+}
+
+export type updateTaskInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type updateTaskInternalResponse412 = {
@@ -3496,7 +5058,7 @@ export type updateTaskInternalResponse422 = {
 export type updateTaskInternalResponseSuccess = (updateTaskInternalResponse200) & {
   headers: Headers;
 };
-export type updateTaskInternalResponseError = (updateTaskInternalResponse400 | updateTaskInternalResponse401 | updateTaskInternalResponse403 | updateTaskInternalResponse404 | updateTaskInternalResponse412 | updateTaskInternalResponse422) & {
+export type updateTaskInternalResponseError = (updateTaskInternalResponse400 | updateTaskInternalResponse401 | updateTaskInternalResponse403 | updateTaskInternalResponse404 | updateTaskInternalResponse409 | updateTaskInternalResponse412 | updateTaskInternalResponse422) & {
   headers: Headers;
 };
 
@@ -3519,13 +5081,18 @@ export type assignTaskInternalResponse401 = {
 }
 
 export type assignTaskInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type assignTaskInternalResponse404 = {
   data: TaskNotFoundResponse
   status: 404
+}
+
+export type assignTaskInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type assignTaskInternalResponse412 = {
@@ -3541,7 +5108,7 @@ export type assignTaskInternalResponse422 = {
 export type assignTaskInternalResponseSuccess = (assignTaskInternalResponse200) & {
   headers: Headers;
 };
-export type assignTaskInternalResponseError = (assignTaskInternalResponse400 | assignTaskInternalResponse401 | assignTaskInternalResponse403 | assignTaskInternalResponse404 | assignTaskInternalResponse412 | assignTaskInternalResponse422) & {
+export type assignTaskInternalResponseError = (assignTaskInternalResponse400 | assignTaskInternalResponse401 | assignTaskInternalResponse403 | assignTaskInternalResponse404 | assignTaskInternalResponse409 | assignTaskInternalResponse412 | assignTaskInternalResponse422) & {
   headers: Headers;
 };
 
@@ -3564,13 +5131,18 @@ export type unassignTaskInternalResponse401 = {
 }
 
 export type unassignTaskInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type unassignTaskInternalResponse404 = {
   data: TaskNotFoundResponse
   status: 404
+}
+
+export type unassignTaskInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type unassignTaskInternalResponse412 = {
@@ -3581,7 +5153,7 @@ export type unassignTaskInternalResponse412 = {
 export type unassignTaskInternalResponseSuccess = (unassignTaskInternalResponse204) & {
   headers: Headers;
 };
-export type unassignTaskInternalResponseError = (unassignTaskInternalResponse400 | unassignTaskInternalResponse401 | unassignTaskInternalResponse403 | unassignTaskInternalResponse404 | unassignTaskInternalResponse412) & {
+export type unassignTaskInternalResponseError = (unassignTaskInternalResponse400 | unassignTaskInternalResponse401 | unassignTaskInternalResponse403 | unassignTaskInternalResponse404 | unassignTaskInternalResponse409 | unassignTaskInternalResponse412) & {
   headers: Headers;
 };
 
@@ -3604,13 +5176,18 @@ export type addTaskLabelInternalResponse401 = {
 }
 
 export type addTaskLabelInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type addTaskLabelInternalResponse404 = {
   data: TaskNotFoundResponse
   status: 404
+}
+
+export type addTaskLabelInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type addTaskLabelInternalResponse412 = {
@@ -3626,7 +5203,7 @@ export type addTaskLabelInternalResponse422 = {
 export type addTaskLabelInternalResponseSuccess = (addTaskLabelInternalResponse200) & {
   headers: Headers;
 };
-export type addTaskLabelInternalResponseError = (addTaskLabelInternalResponse400 | addTaskLabelInternalResponse401 | addTaskLabelInternalResponse403 | addTaskLabelInternalResponse404 | addTaskLabelInternalResponse412 | addTaskLabelInternalResponse422) & {
+export type addTaskLabelInternalResponseError = (addTaskLabelInternalResponse400 | addTaskLabelInternalResponse401 | addTaskLabelInternalResponse403 | addTaskLabelInternalResponse404 | addTaskLabelInternalResponse409 | addTaskLabelInternalResponse412 | addTaskLabelInternalResponse422) & {
   headers: Headers;
 };
 
@@ -3649,13 +5226,18 @@ export type removeTaskLabelInternalResponse401 = {
 }
 
 export type removeTaskLabelInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type removeTaskLabelInternalResponse404 = {
   data: TaskNotFoundResponse
   status: 404
+}
+
+export type removeTaskLabelInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type removeTaskLabelInternalResponse412 = {
@@ -3666,7 +5248,7 @@ export type removeTaskLabelInternalResponse412 = {
 export type removeTaskLabelInternalResponseSuccess = (removeTaskLabelInternalResponse200) & {
   headers: Headers;
 };
-export type removeTaskLabelInternalResponseError = (removeTaskLabelInternalResponse400 | removeTaskLabelInternalResponse401 | removeTaskLabelInternalResponse403 | removeTaskLabelInternalResponse404 | removeTaskLabelInternalResponse412) & {
+export type removeTaskLabelInternalResponseError = (removeTaskLabelInternalResponse400 | removeTaskLabelInternalResponse401 | removeTaskLabelInternalResponse403 | removeTaskLabelInternalResponse404 | removeTaskLabelInternalResponse409 | removeTaskLabelInternalResponse412) & {
   headers: Headers;
 };
 
@@ -3759,7 +5341,7 @@ export type createSubtaskInternalResponse401 = {
 }
 
 export type createSubtaskInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
@@ -3769,7 +5351,7 @@ export type createSubtaskInternalResponse404 = {
 }
 
 export type createSubtaskInternalResponse409 = {
-  data: RequestInProgressResponse
+  data: TaskCreationConflictResponse
   status: 409
 }
 
@@ -3804,7 +5386,7 @@ export type addChecklistItemInternalResponse401 = {
 }
 
 export type addChecklistItemInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
@@ -3814,7 +5396,7 @@ export type addChecklistItemInternalResponse404 = {
 }
 
 export type addChecklistItemInternalResponse409 = {
-  data: RequestInProgressResponse
+  data: TaskCreationConflictResponse
   status: 409
 }
 
@@ -3849,13 +5431,18 @@ export type updateChecklistItemInternalResponse401 = {
 }
 
 export type updateChecklistItemInternalResponse403 = {
-  data: InternalAccessRefusedResponse
+  data: WriteForbiddenResponse
   status: 403
 }
 
 export type updateChecklistItemInternalResponse404 = {
   data: ChecklistItemNotFoundResponse
   status: 404
+}
+
+export type updateChecklistItemInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
 }
 
 export type updateChecklistItemInternalResponse412 = {
@@ -3866,7 +5453,7 @@ export type updateChecklistItemInternalResponse412 = {
 export type updateChecklistItemInternalResponseSuccess = (updateChecklistItemInternalResponse200) & {
   headers: Headers;
 };
-export type updateChecklistItemInternalResponseError = (updateChecklistItemInternalResponse400 | updateChecklistItemInternalResponse401 | updateChecklistItemInternalResponse403 | updateChecklistItemInternalResponse404 | updateChecklistItemInternalResponse412) & {
+export type updateChecklistItemInternalResponseError = (updateChecklistItemInternalResponse400 | updateChecklistItemInternalResponse401 | updateChecklistItemInternalResponse403 | updateChecklistItemInternalResponse404 | updateChecklistItemInternalResponse409 | updateChecklistItemInternalResponse412) & {
   headers: Headers;
 };
 
@@ -4011,3 +5598,898 @@ export type getHomeInternalResponseError = (getHomeInternalResponse400 | getHome
 };
 
 export type getHomeInternalResponse = (getHomeInternalResponseSuccess | getHomeInternalResponseError)
+
+
+export type listSpaceGrantsInternalResponse200 = {
+  data: GrantPage
+  status: 200
+}
+
+export type listSpaceGrantsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listSpaceGrantsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listSpaceGrantsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listSpaceGrantsInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type listSpaceGrantsInternalResponseSuccess = (listSpaceGrantsInternalResponse200) & {
+  headers: Headers;
+};
+export type listSpaceGrantsInternalResponseError = (listSpaceGrantsInternalResponse400 | listSpaceGrantsInternalResponse401 | listSpaceGrantsInternalResponse403 | listSpaceGrantsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listSpaceGrantsInternalResponse = (listSpaceGrantsInternalResponseSuccess | listSpaceGrantsInternalResponseError)
+
+
+export type setSpaceGrantInternalResponse200 = {
+  data: Grant
+  status: 200
+}
+
+export type setSpaceGrantInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type setSpaceGrantInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type setSpaceGrantInternalResponse403 = {
+  data: ManageForbiddenResponse
+  status: 403
+}
+
+export type setSpaceGrantInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type setSpaceGrantInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type setSpaceGrantInternalResponse422 = {
+  data: GrantRefusedResponse
+  status: 422
+}
+
+export type setSpaceGrantInternalResponseSuccess = (setSpaceGrantInternalResponse200) & {
+  headers: Headers;
+};
+export type setSpaceGrantInternalResponseError = (setSpaceGrantInternalResponse400 | setSpaceGrantInternalResponse401 | setSpaceGrantInternalResponse403 | setSpaceGrantInternalResponse404 | setSpaceGrantInternalResponse412 | setSpaceGrantInternalResponse422) & {
+  headers: Headers;
+};
+
+export type setSpaceGrantInternalResponse = (setSpaceGrantInternalResponseSuccess | setSpaceGrantInternalResponseError)
+
+
+export type removeSpaceGrantInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeSpaceGrantInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type removeSpaceGrantInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type removeSpaceGrantInternalResponse403 = {
+  data: ManageForbiddenResponse
+  status: 403
+}
+
+export type removeSpaceGrantInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type removeSpaceGrantInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type removeSpaceGrantInternalResponse422 = {
+  data: OwnerUnchangeableResponse
+  status: 422
+}
+
+export type removeSpaceGrantInternalResponseSuccess = (removeSpaceGrantInternalResponse204) & {
+  headers: Headers;
+};
+export type removeSpaceGrantInternalResponseError = (removeSpaceGrantInternalResponse400 | removeSpaceGrantInternalResponse401 | removeSpaceGrantInternalResponse403 | removeSpaceGrantInternalResponse404 | removeSpaceGrantInternalResponse412 | removeSpaceGrantInternalResponse422) & {
+  headers: Headers;
+};
+
+export type removeSpaceGrantInternalResponse = (removeSpaceGrantInternalResponseSuccess | removeSpaceGrantInternalResponseError)
+
+
+export type listListGrantsInternalResponse200 = {
+  data: GrantPage
+  status: 200
+}
+
+export type listListGrantsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listListGrantsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listListGrantsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listListGrantsInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type listListGrantsInternalResponseSuccess = (listListGrantsInternalResponse200) & {
+  headers: Headers;
+};
+export type listListGrantsInternalResponseError = (listListGrantsInternalResponse400 | listListGrantsInternalResponse401 | listListGrantsInternalResponse403 | listListGrantsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listListGrantsInternalResponse = (listListGrantsInternalResponseSuccess | listListGrantsInternalResponseError)
+
+
+export type setListGrantInternalResponse200 = {
+  data: Grant
+  status: 200
+}
+
+export type setListGrantInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type setListGrantInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type setListGrantInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type setListGrantInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type setListGrantInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type setListGrantInternalResponse422 = {
+  data: GrantRefusedResponse
+  status: 422
+}
+
+export type setListGrantInternalResponseSuccess = (setListGrantInternalResponse200) & {
+  headers: Headers;
+};
+export type setListGrantInternalResponseError = (setListGrantInternalResponse400 | setListGrantInternalResponse401 | setListGrantInternalResponse403 | setListGrantInternalResponse404 | setListGrantInternalResponse412 | setListGrantInternalResponse422) & {
+  headers: Headers;
+};
+
+export type setListGrantInternalResponse = (setListGrantInternalResponseSuccess | setListGrantInternalResponseError)
+
+
+export type removeListGrantInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeListGrantInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type removeListGrantInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type removeListGrantInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type removeListGrantInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type removeListGrantInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type removeListGrantInternalResponse422 = {
+  data: OwnerUnchangeableResponse
+  status: 422
+}
+
+export type removeListGrantInternalResponseSuccess = (removeListGrantInternalResponse204) & {
+  headers: Headers;
+};
+export type removeListGrantInternalResponseError = (removeListGrantInternalResponse400 | removeListGrantInternalResponse401 | removeListGrantInternalResponse403 | removeListGrantInternalResponse404 | removeListGrantInternalResponse412 | removeListGrantInternalResponse422) & {
+  headers: Headers;
+};
+
+export type removeListGrantInternalResponse = (removeListGrantInternalResponseSuccess | removeListGrantInternalResponseError)
+
+
+export type createAccessRequestInternalResponse202 = {
+  data: void
+  status: 202
+}
+
+export type createAccessRequestInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createAccessRequestInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createAccessRequestInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type createAccessRequestInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type createAccessRequestInternalResponse429 = {
+  data: AccessRequestLimitReachedResponse
+  status: 429
+}
+
+export type createAccessRequestInternalResponseSuccess = (createAccessRequestInternalResponse202) & {
+  headers: Headers;
+};
+export type createAccessRequestInternalResponseError = (createAccessRequestInternalResponse400 | createAccessRequestInternalResponse401 | createAccessRequestInternalResponse403 | createAccessRequestInternalResponse404 | createAccessRequestInternalResponse429) & {
+  headers: Headers;
+};
+
+export type createAccessRequestInternalResponse = (createAccessRequestInternalResponseSuccess | createAccessRequestInternalResponseError)
+
+
+export type listAccessRequestsInternalResponse200 = {
+  data: AccessRequestPage
+  status: 200
+}
+
+export type listAccessRequestsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listAccessRequestsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listAccessRequestsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listAccessRequestsInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type listAccessRequestsInternalResponseSuccess = (listAccessRequestsInternalResponse200) & {
+  headers: Headers;
+};
+export type listAccessRequestsInternalResponseError = (listAccessRequestsInternalResponse400 | listAccessRequestsInternalResponse401 | listAccessRequestsInternalResponse403 | listAccessRequestsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listAccessRequestsInternalResponse = (listAccessRequestsInternalResponseSuccess | listAccessRequestsInternalResponseError)
+
+
+export type approveAccessRequestInternalResponse200 = {
+  data: AccessRequest
+  status: 200
+}
+
+export type approveAccessRequestInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type approveAccessRequestInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type approveAccessRequestInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type approveAccessRequestInternalResponse404 = {
+  data: AccessRequestNotFoundResponse
+  status: 404
+}
+
+export type approveAccessRequestInternalResponse409 = {
+  data: AccessRequestDecidedResponse
+  status: 409
+}
+
+export type approveAccessRequestInternalResponse422 = {
+  data: GrantRefusedResponse
+  status: 422
+}
+
+export type approveAccessRequestInternalResponseSuccess = (approveAccessRequestInternalResponse200) & {
+  headers: Headers;
+};
+export type approveAccessRequestInternalResponseError = (approveAccessRequestInternalResponse400 | approveAccessRequestInternalResponse401 | approveAccessRequestInternalResponse403 | approveAccessRequestInternalResponse404 | approveAccessRequestInternalResponse409 | approveAccessRequestInternalResponse422) & {
+  headers: Headers;
+};
+
+export type approveAccessRequestInternalResponse = (approveAccessRequestInternalResponseSuccess | approveAccessRequestInternalResponseError)
+
+
+export type refuseAccessRequestInternalResponse200 = {
+  data: AccessRequest
+  status: 200
+}
+
+export type refuseAccessRequestInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type refuseAccessRequestInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type refuseAccessRequestInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type refuseAccessRequestInternalResponse404 = {
+  data: AccessRequestNotFoundResponse
+  status: 404
+}
+
+export type refuseAccessRequestInternalResponse409 = {
+  data: AccessRequestDecidedResponse
+  status: 409
+}
+
+export type refuseAccessRequestInternalResponseSuccess = (refuseAccessRequestInternalResponse200) & {
+  headers: Headers;
+};
+export type refuseAccessRequestInternalResponseError = (refuseAccessRequestInternalResponse400 | refuseAccessRequestInternalResponse401 | refuseAccessRequestInternalResponse403 | refuseAccessRequestInternalResponse404 | refuseAccessRequestInternalResponse409) & {
+  headers: Headers;
+};
+
+export type refuseAccessRequestInternalResponse = (refuseAccessRequestInternalResponseSuccess | refuseAccessRequestInternalResponseError)
+
+
+export type archiveListInternalResponse200 = {
+  data: TaskList
+  status: 200
+}
+
+export type archiveListInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type archiveListInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type archiveListInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type archiveListInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type archiveListInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type archiveListInternalResponseSuccess = (archiveListInternalResponse200) & {
+  headers: Headers;
+};
+export type archiveListInternalResponseError = (archiveListInternalResponse400 | archiveListInternalResponse401 | archiveListInternalResponse403 | archiveListInternalResponse404 | archiveListInternalResponse412) & {
+  headers: Headers;
+};
+
+export type archiveListInternalResponse = (archiveListInternalResponseSuccess | archiveListInternalResponseError)
+
+
+export type unarchiveListInternalResponse200 = {
+  data: TaskList
+  status: 200
+}
+
+export type unarchiveListInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type unarchiveListInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type unarchiveListInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type unarchiveListInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type unarchiveListInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type unarchiveListInternalResponseSuccess = (unarchiveListInternalResponse200) & {
+  headers: Headers;
+};
+export type unarchiveListInternalResponseError = (unarchiveListInternalResponse400 | unarchiveListInternalResponse401 | unarchiveListInternalResponse403 | unarchiveListInternalResponse404 | unarchiveListInternalResponse412) & {
+  headers: Headers;
+};
+
+export type unarchiveListInternalResponse = (unarchiveListInternalResponseSuccess | unarchiveListInternalResponseError)
+
+
+export type archiveTaskInternalResponse200 = {
+  data: Task
+  status: 200
+}
+
+export type archiveTaskInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type archiveTaskInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type archiveTaskInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type archiveTaskInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type archiveTaskInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type archiveTaskInternalResponseSuccess = (archiveTaskInternalResponse200) & {
+  headers: Headers;
+};
+export type archiveTaskInternalResponseError = (archiveTaskInternalResponse400 | archiveTaskInternalResponse401 | archiveTaskInternalResponse403 | archiveTaskInternalResponse404 | archiveTaskInternalResponse412) & {
+  headers: Headers;
+};
+
+export type archiveTaskInternalResponse = (archiveTaskInternalResponseSuccess | archiveTaskInternalResponseError)
+
+
+export type unarchiveTaskInternalResponse200 = {
+  data: Task
+  status: 200
+}
+
+export type unarchiveTaskInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type unarchiveTaskInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type unarchiveTaskInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type unarchiveTaskInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type unarchiveTaskInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type unarchiveTaskInternalResponseSuccess = (unarchiveTaskInternalResponse200) & {
+  headers: Headers;
+};
+export type unarchiveTaskInternalResponseError = (unarchiveTaskInternalResponse400 | unarchiveTaskInternalResponse401 | unarchiveTaskInternalResponse403 | unarchiveTaskInternalResponse404 | unarchiveTaskInternalResponse412) & {
+  headers: Headers;
+};
+
+export type unarchiveTaskInternalResponse = (unarchiveTaskInternalResponseSuccess | unarchiveTaskInternalResponseError)
+
+
+export type listArchivedListsInternalResponse200 = {
+  data: ArchivedListPage
+  status: 200
+}
+
+export type listArchivedListsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listArchivedListsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listArchivedListsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listArchivedListsInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type listArchivedListsInternalResponseSuccess = (listArchivedListsInternalResponse200) & {
+  headers: Headers;
+};
+export type listArchivedListsInternalResponseError = (listArchivedListsInternalResponse400 | listArchivedListsInternalResponse401 | listArchivedListsInternalResponse403 | listArchivedListsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listArchivedListsInternalResponse = (listArchivedListsInternalResponseSuccess | listArchivedListsInternalResponseError)
+
+
+export type listArchivedTasksInternalResponse200 = {
+  data: ArchivedTaskPage
+  status: 200
+}
+
+export type listArchivedTasksInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listArchivedTasksInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listArchivedTasksInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listArchivedTasksInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type listArchivedTasksInternalResponseSuccess = (listArchivedTasksInternalResponse200) & {
+  headers: Headers;
+};
+export type listArchivedTasksInternalResponseError = (listArchivedTasksInternalResponse400 | listArchivedTasksInternalResponse401 | listArchivedTasksInternalResponse403 | listArchivedTasksInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listArchivedTasksInternalResponse = (listArchivedTasksInternalResponseSuccess | listArchivedTasksInternalResponseError)
+
+
+export type trashTaskInternalResponse200 = {
+  data: TrashEntry
+  status: 200
+}
+
+export type trashTaskInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type trashTaskInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type trashTaskInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type trashTaskInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type trashTaskInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type trashTaskInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type trashTaskInternalResponseSuccess = (trashTaskInternalResponse200) & {
+  headers: Headers;
+};
+export type trashTaskInternalResponseError = (trashTaskInternalResponse400 | trashTaskInternalResponse401 | trashTaskInternalResponse403 | trashTaskInternalResponse404 | trashTaskInternalResponse409 | trashTaskInternalResponse412) & {
+  headers: Headers;
+};
+
+export type trashTaskInternalResponse = (trashTaskInternalResponseSuccess | trashTaskInternalResponseError)
+
+
+export type listTrashInternalResponse200 = {
+  data: TrashEntryPage
+  status: 200
+}
+
+export type listTrashInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTrashInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTrashInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTrashInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type listTrashInternalResponseSuccess = (listTrashInternalResponse200) & {
+  headers: Headers;
+};
+export type listTrashInternalResponseError = (listTrashInternalResponse400 | listTrashInternalResponse401 | listTrashInternalResponse403 | listTrashInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTrashInternalResponse = (listTrashInternalResponseSuccess | listTrashInternalResponseError)
+
+
+export type purgeTrashEntryInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type purgeTrashEntryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type purgeTrashEntryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type purgeTrashEntryInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type purgeTrashEntryInternalResponse404 = {
+  data: TrashEntryNotFoundResponse
+  status: 404
+}
+
+export type purgeTrashEntryInternalResponseSuccess = (purgeTrashEntryInternalResponse204) & {
+  headers: Headers;
+};
+export type purgeTrashEntryInternalResponseError = (purgeTrashEntryInternalResponse400 | purgeTrashEntryInternalResponse401 | purgeTrashEntryInternalResponse403 | purgeTrashEntryInternalResponse404) & {
+  headers: Headers;
+};
+
+export type purgeTrashEntryInternalResponse = (purgeTrashEntryInternalResponseSuccess | purgeTrashEntryInternalResponseError)
+
+
+export type restoreTrashEntryInternalResponse200 = {
+  data: TrashRestored
+  status: 200
+}
+
+export type restoreTrashEntryInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type restoreTrashEntryInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type restoreTrashEntryInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type restoreTrashEntryInternalResponse404 = {
+  data: TrashEntryNotFoundResponse
+  status: 404
+}
+
+export type restoreTrashEntryInternalResponseSuccess = (restoreTrashEntryInternalResponse200) & {
+  headers: Headers;
+};
+export type restoreTrashEntryInternalResponseError = (restoreTrashEntryInternalResponse400 | restoreTrashEntryInternalResponse401 | restoreTrashEntryInternalResponse403 | restoreTrashEntryInternalResponse404) & {
+  headers: Headers;
+};
+
+export type restoreTrashEntryInternalResponse = (restoreTrashEntryInternalResponseSuccess | restoreTrashEntryInternalResponseError)
+
+
+export type emptyTrashInternalResponse202 = {
+  data: TrashEmptied
+  status: 202
+}
+
+export type emptyTrashInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type emptyTrashInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type emptyTrashInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type emptyTrashInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type emptyTrashInternalResponseSuccess = (emptyTrashInternalResponse202) & {
+  headers: Headers;
+};
+export type emptyTrashInternalResponseError = (emptyTrashInternalResponse400 | emptyTrashInternalResponse401 | emptyTrashInternalResponse403 | emptyTrashInternalResponse404) & {
+  headers: Headers;
+};
+
+export type emptyTrashInternalResponse = (emptyTrashInternalResponseSuccess | emptyTrashInternalResponseError)
+
+
+export type checkListAccessInternalResponse200 = {
+  data: AccessCheck
+  status: 200
+}
+
+export type checkListAccessInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type checkListAccessInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type checkListAccessInternalResponse403 = {
+  data: AccessCheckRefusedResponse
+  status: 403
+}
+
+export type checkListAccessInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type checkListAccessInternalResponseSuccess = (checkListAccessInternalResponse200) & {
+  headers: Headers;
+};
+export type checkListAccessInternalResponseError = (checkListAccessInternalResponse400 | checkListAccessInternalResponse401 | checkListAccessInternalResponse403 | checkListAccessInternalResponse404) & {
+  headers: Headers;
+};
+
+export type checkListAccessInternalResponse = (checkListAccessInternalResponseSuccess | checkListAccessInternalResponseError)
+
+
+export type checkTaskAccessInternalResponse200 = {
+  data: AccessCheck
+  status: 200
+}
+
+export type checkTaskAccessInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type checkTaskAccessInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type checkTaskAccessInternalResponse403 = {
+  data: AccessCheckRefusedResponse
+  status: 403
+}
+
+export type checkTaskAccessInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type checkTaskAccessInternalResponseSuccess = (checkTaskAccessInternalResponse200) & {
+  headers: Headers;
+};
+export type checkTaskAccessInternalResponseError = (checkTaskAccessInternalResponse400 | checkTaskAccessInternalResponse401 | checkTaskAccessInternalResponse403 | checkTaskAccessInternalResponse404) & {
+  headers: Headers;
+};
+
+export type checkTaskAccessInternalResponse = (checkTaskAccessInternalResponseSuccess | checkTaskAccessInternalResponseError)

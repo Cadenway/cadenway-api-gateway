@@ -10,7 +10,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Inject,
   Param,
@@ -24,6 +23,7 @@ import {
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
+import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
@@ -282,7 +282,7 @@ export class MembersController {
   public async changeMemberRole(
     @Param(new ZodValidationPipe(GetMemberParams)) params: z.output<typeof GetMemberParams>,
     @Body(new ZodValidationPipe(ChangeMemberRoleBody)) body: z.output<typeof ChangeMemberRoleBody>,
-    @Headers('if-match') ifMatch: string | undefined,
+    @IfMatchHeader() ifMatch: string | undefined,
   ): Promise<Member> {
     return toMember(
       await this.relay(CHANGE_PROBLEMS, MEMBER_ALIASES, () =>
