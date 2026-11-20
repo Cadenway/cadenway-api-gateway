@@ -149,7 +149,13 @@ export async function createGatewayApplication(
   });
   // Nest route middleware is skipped when the shared parser reports a malformed body.
   app.use(
-    '/v1/intake-forms',
+    [
+      '/v1/intake-forms',
+      '/v1/inbox',
+      '/v1/reminders',
+      '/v1/tasks/:taskKey/reminder',
+      '/v1/me/notification-preferences',
+    ],
     (error: unknown, request: Request, response: Response, next: NextFunction): void => {
       noStore(request, response, () => {
         next(error);

@@ -192,6 +192,66 @@ it('reads a signed CSV projection under socket backpressure beyond the header de
   }
 });
 
+describe('Task notification visibility', () => {
+  let signer: InternalTokenSigner;
+
+  beforeAll(async () => {
+    const keys = generateSigningKeys();
+    signer = await InternalTokenSigner.create({
+      issuer: GATEWAY_ISSUER,
+      privateJwk: JSON.parse(keys.privateJwk) as Ed25519PrivateJwk,
+    });
+  });
+
+  it('rejects missing display, mismatched task and missing no-store', async () => {
+    let result: unknown = { results: [{ visible: true }] };
+    let cache = 'no-store';
+    let upstreamSignal: AbortSignal | null | undefined;
+    const cancellation = new AbortController();
+    const client = new TaskServiceClient(
+      new InternalHttpClient({
+        service: TASK_SERVICE,
+        baseUrl: 'http://task-service.test',
+        signer,
+        fetch: (_input, init) => {
+          upstreamSignal = init?.signal;
+          return Promise.resolve(Response.json(result, { headers: { 'Cache-Control': cache } }));
+        },
+      }),
+    );
+    const request = {
+      subjects: [{ subject: { kind: 'task-key' as const, taskKey: 'CAD-482' }, display: {} }],
+    };
+    const call = () =>
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+        client.resolveNotificationSubjects(request, cancellation.signal),
+      );
+
+    await expect(call()).rejects.toMatchObject({ problem: { code: 'upstream.failed' } });
+    result = {
+      results: [
+        {
+          visible: true,
+          display: {
+            taskId: '019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23',
+            taskKey: 'CAD-1',
+            taskName: 'Wrong task',
+          },
+        },
+      ],
+    };
+    await expect(call()).rejects.toMatchObject({ problem: { code: 'upstream.failed' } });
+    result = { results: [{ visible: false }] };
+    cache = 'public';
+    await expect(call()).rejects.toMatchObject({ problem: { code: 'upstream.failed' } });
+    cache = 'no-store';
+    await expect(call()).resolves.toEqual(result);
+    expect(upstreamSignal?.aborted).toBe(false);
+    cancellation.abort();
+    expect(upstreamSignal?.aborted).toBe(true);
+  });
+});
+
 /**
  * A call task-service received.
  */

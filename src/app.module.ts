@@ -14,10 +14,13 @@ import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
 import { ArchivesModule } from './modules/archives/archives.module.js';
 import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
+import { InboxModule } from './modules/inbox/inbox.module.js';
 import { ListsModule } from './modules/lists/lists.module.js';
 import { MembersModule } from './modules/members/members.module.js';
 import { MeRoutesModule } from './modules/me/me.module.js';
+import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { RemindersModule } from './modules/reminders/reminders.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
@@ -37,6 +40,9 @@ import { TwoStepVerificationModule } from './modules/two-step-verification/two-s
 export const ROUTE_MODULES: readonly Type[] = [
   AuthRoutesModule,
   MeRoutesModule,
+  NotificationPreferencesModule,
+  InboxModule,
+  RemindersModule,
   SessionsModule,
   TwoStepVerificationModule,
   OrganizationsModule,

@@ -204,6 +204,13 @@ export function createFakeTask(): FakeTask {
     return () => Promise.resolve(answer as never);
   };
   return {
+    resolveNotificationSubjects: vi.fn(
+      (
+        input: Parameters<TaskServiceClient['resolveNotificationSubjects']>[0] = {
+          subjects: [{ subject: { kind: 'task-key', taskKey: 'CAD-482' } }],
+        },
+      ) => Promise.resolve({ results: input.subjects.map(() => ({ visible: false as const })) }),
+    ),
     listSpaceCustomFields: vi.fn(
       task(ListSpaceCustomFieldsInternalResponse, 'get', '/v1/spaces/{spaceId}/custom-fields'),
     ),

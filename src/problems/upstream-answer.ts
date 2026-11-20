@@ -151,14 +151,15 @@ export function conformBody<TSchema extends z.ZodType>(
  * Awaits a generated call. The generated code parses a success body with `JSON.parse`, whose
  * `SyntaxError` quotes part of the body, which may hold a token: a body that is not JSON becomes
  * `503 upstream.failed` without that message, so it reaches neither the browser nor the log line
- * of the request. Every other error, the problems of the internal HTTP client included, is thrown
- * unchanged.
+ * of the request. A body that times out after headers uses the transport deadline problem.
+ * Problems already classified by the internal HTTP client pass through unchanged.
  *
  * @param {string} service - Name of the called service.
  * @param {string} operation - `operationId` of the call.
  * @param {Promise<TResponse>} call - The generated call.
  * @returns {Promise<TResponse>} What the call resolved with.
- * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON.
+ * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON, or
+ * `upstream.timeout` for a deadline during body consumption.
  */
 export async function answered<TResponse>(
   service: string,
@@ -170,6 +171,14 @@ export async function answered<TResponse>(
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw outsideContract(service, operation, 'a body that is not JSON');
+    }
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new ProblemException({
+        status: 503,
+        code: 'upstream.timeout',
+        detail: 'A service this request depends on is not available.',
+        details: { service },
+      });
     }
     throw error;
   }
