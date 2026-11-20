@@ -2801,6 +2801,11 @@ export interface AccessCheck {
   listId: string;
   /** The task checked; `null` for a list. */
   taskKey: TaskKey | null;
+  /**
+     * Stable UUID of the checked task, present on task access checks once the producer
+     * supports realtime room joins. Omitted on list access checks.
+     */
+  taskId?: string;
 }
 
 export interface NotificationTaskIdSubjectRef {
@@ -8749,6 +8754,10 @@ const getCheckTaskAccessInternalUrl = (taskKey: string,) => {
  * task they do not see, a task in the trash included, answers `404 task.not-found`, never
  * `task.trashed`; an archived task they see answers its role. One indexed read, as for a
  * list; nothing is written and nothing is emitted.
+ *
+ * The response supplies the stable `taskId` for the room `task:<id>`. The realtime gateway
+ * uses this verified UUID to join the room. If an older task-service omits it, the gateway
+ * refuses the join rather than using an unverified identifier.
  *
  * Internal token: issuer `realtime-gateway` only (`403 auth.issuer-not-allowed` for any
  * other), actor `user`, organization required.

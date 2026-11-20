@@ -8,9 +8,11 @@ import {
   type InternalPrincipal,
   type OrganizationContext,
 } from '@cadenway/nest-common';
+import { once } from 'node:events';
+import { createServer } from 'node:http';
 import { beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
-import { CAMILLE, CAMILLE_SESSION } from '../../tests/support/fake-identity.js';
+import { ATELIER_NORD_ID, CAMILLE, CAMILLE_SESSION } from '../../tests/support/fake-identity.js';
 import {
   GATEWAY_ISSUER,
   generateSigningKeys,
@@ -263,6 +265,96 @@ describe('IdentityServiceClient', () => {
       await expect(client.introspect('cookie-token')).rejects.toMatchObject({
         problem: { status: 503, code: 'upstream.unauthorized' },
       });
+    });
+  });
+
+  describe('issueRealtimeTicket', () => {
+    const owner: OrganizationContext = {
+      organizationId: ATELIER_NORD_ID,
+      actor: { type: 'user', id: CAMILLE.id },
+      role: 'owner',
+      scopes: [],
+    };
+
+    it.each([
+      ['times out', 'upstream.timeout'],
+      ['loses the connection', 'upstream.unreachable'],
+      ['is interrupted by a socket reset', 'upstream.unreachable'],
+    ])('does not replay when the response body %s after HTTP 200', async (failure, code) => {
+      const requests: { method: string | undefined; path: string | undefined }[] = [];
+      let answerStatus: number | undefined;
+      let interruptBody: (() => void) | undefined;
+      const producer = createServer((request, response) => {
+        requests.push({ method: request.method, path: request.url });
+        request.resume();
+        interruptBody = () => {
+          if (failure === 'is interrupted by a socket reset') {
+            response.socket?.resetAndDestroy();
+          } else {
+            response.destroy();
+          }
+        };
+        response.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        });
+        response.write('{"token":"partial-ticket');
+      });
+      producer.listen(0, '127.0.0.1');
+      await once(producer, 'listening');
+
+      try {
+        const address = producer.address();
+        if (address === null || typeof address === 'string') {
+          throw new Error('The loopback server did not obtain a TCP port.');
+        }
+        const ticketClient = new IdentityServiceClient(
+          new InternalHttpClient({
+            service: IDENTITY_SERVICE,
+            baseUrl: `http://127.0.0.1:${String(address.port)}`,
+            signer,
+            callTimeoutMs: 1500,
+            fetch: async (input, init) => {
+              const response = await fetch(input, init);
+              answerStatus = response.status;
+              if (failure !== 'times out') interruptBody?.();
+              return response;
+            },
+          }),
+        );
+
+        await expect(
+          runWithOrganizationContext(owner, () =>
+            ticketClient.issueRealtimeTicket(CAMILLE_SESSION.sessionId),
+          ),
+        ).rejects.toMatchObject({
+          problem: { status: 503, code, details: { service: IDENTITY_SERVICE } },
+        });
+        expect(answerStatus).toBe(200);
+        expect(requests).toEqual([{ method: 'POST', path: '/internal/v1/realtime/tickets' }]);
+      } finally {
+        const closed = once(producer, 'close');
+        producer.close();
+        producer.closeAllConnections();
+        await closed;
+      }
+    });
+
+    it('preserves an unexpected programming error while reading a body', async () => {
+      const error = new TypeError('Unexpected body reader state');
+      const body = new ReadableStream({
+        start(controller) {
+          controller.error(error);
+        },
+      });
+      answer.mockReturnValue(new Response(body, { status: 200 }));
+
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.issueRealtimeTicket(CAMILLE_SESSION.sessionId),
+        ),
+      ).rejects.toBe(error);
+      expect(calls).toHaveLength(1);
     });
   });
 

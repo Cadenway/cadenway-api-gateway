@@ -20,6 +20,7 @@ import { MembersModule } from './modules/members/members.module.js';
 import { MeRoutesModule } from './modules/me/me.module.js';
 import { NotificationPreferencesModule } from './modules/notification-preferences/notification-preferences.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { RealtimeTicketsModule } from './modules/realtime-tickets/realtime-tickets.module.js';
 import { RemindersModule } from './modules/reminders/reminders.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
@@ -43,6 +44,7 @@ export const ROUTE_MODULES: readonly Type[] = [
   NotificationPreferencesModule,
   InboxModule,
   RemindersModule,
+  RealtimeTicketsModule,
   SessionsModule,
   TwoStepVerificationModule,
   OrganizationsModule,

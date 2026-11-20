@@ -155,6 +155,7 @@ export async function createGatewayApplication(
       '/v1/reminders',
       '/v1/tasks/:taskKey/reminder',
       '/v1/me/notification-preferences',
+      '/v1/realtime/tickets',
     ],
     (error: unknown, request: Request, response: Response, next: NextFunction): void => {
       noStore(request, response, () => {

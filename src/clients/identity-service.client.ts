@@ -33,6 +33,7 @@ import type {
   ProfilePatch,
   ReauthenticationRequest,
   RecentAuthentication,
+  RealtimeTicket,
   RevokedSessions,
   SecurityKey,
   SecurityKeyAddition,
@@ -70,6 +71,7 @@ import {
   InspectSignInChallengeInternalResponse,
   IntrospectApiTokenResponse,
   IntrospectTokenResponse,
+  IssueRealtimeTicketInternalResponse,
   ListApiTokensInternalResponse,
   ListUserSessionsInternalResponse,
   ReauthenticateInternalResponse,
@@ -103,6 +105,7 @@ import {
   answered as answeredBy,
   expectBody as expectBodyOf,
   expectStatus as expectStatusOf,
+  outsideContract,
   type GeneratedResponse,
 } from '../problems/upstream-answer.js';
 import { getIdentityServiceInternalRoutes } from './generated/identity-service.js';
@@ -391,6 +394,19 @@ export class IdentityServiceClient {
   // #endregion
 
   // #region Methods
+  /** Issues a single-use credential for the current signed session without retrying. */
+  public async issueRealtimeTicket(sessionId: string): Promise<RealtimeTicket> {
+    const operation = 'issueRealtimeTicketInternal';
+    const response = await answered(
+      operation,
+      this.routes.issueRealtimeTicketInternal({ sessionId }, NOT_RETRIED),
+    );
+    if (response.headers.get('Cache-Control')?.toLowerCase() !== 'no-store') {
+      throw outsideContract(IDENTITY_SERVICE, operation, 'missing no-store');
+    }
+    return expectBody(operation, response, 200, IssueRealtimeTicketInternalResponse);
+  }
+
   /**
    * Method introspect
    *
