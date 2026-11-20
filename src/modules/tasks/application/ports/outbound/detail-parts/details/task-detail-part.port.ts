@@ -5,9 +5,8 @@ import type { TaskServiceDocument } from '../../../../models/task-service/task-s
  *
  * @description
  * Outgoing port of one secondary part of the task detail, read from the service that owns it
- * (attachments, development links, comments in later versions; none in this one). Its failure, or
- * no answer within the part deadline of `GetTaskDetail`, leaves the part out and names it in
- * `partial`, never fails the detail.
+ * (currently comments). A failure or timeout normally leaves the part out and names it in
+ * `partial`; a visibility denial can instead fail the detail.
  */
 export interface TaskDetailPart {
   // #region Properties
@@ -35,5 +34,8 @@ export interface TaskDetailPart {
    * @returns {Promise<TaskServiceDocument>} The part, as its service answered it.
    */
   read(taskKey: string): Promise<TaskServiceDocument>;
+
+  /** Whether a failed read must fail the entire detail. */
+  failsDetail?(error: unknown): boolean;
   // #endregion
 }

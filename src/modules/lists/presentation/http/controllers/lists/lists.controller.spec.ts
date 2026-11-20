@@ -140,7 +140,7 @@ const ROUTES: readonly TaskRoute[] = [
       LIST_ID,
       { kind: ['status', 'assign'], actorId: ['019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b30'], limit: 25 },
     ],
-    invalid: { url: `/v1/lists/${LIST_ID}/activity?kind=comment` },
+    invalid: { url: `/v1/lists/${LIST_ID}/activity?kind=unknown` },
   },
 ];
 

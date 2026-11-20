@@ -16,14 +16,14 @@ else; the connection belongs to the technical `RedisModule`.
 
 ## Public entry points
 
-| Entry point                              | Consumers                                                                                                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| rate-limit.module                        | auth, auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash |
-| public/requests/rate-limit-guard         | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash       |
-| public/requests/count-request            | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash       |
-| public/addresses/count-anonymous-request | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash       |
-| public/addresses/check-bearer-failures   | auth                                                                                                                                                   |
-| public/addresses/count-bearer-failure    | auth                                                                                                                                                   |
+| Entry point                              | Consumers                                                                                                                                                                                                                        |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| rate-limit.module                        | auth, auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| public/requests/rate-limit-guard         | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites       |
+| public/requests/count-request            | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites       |
+| public/addresses/count-anonymous-request | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites       |
+| public/addresses/check-bearer-failures   | auth                                                                                                                                                                                                                             |
+| public/addresses/count-bearer-failure    | auth                                                                                                                                                                                                                             |
 
 `RateLimitGuard` runs after the credential guard of `auth`, which attaches the verified
 credential; `CountRequest` and `CountAnonymousRequest` are exported because a module that applies

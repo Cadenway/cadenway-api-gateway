@@ -76,13 +76,13 @@ const ROUTES: readonly TaskRoute[] = [
   {
     method: 'post',
     path: '/v1/trash/entries/{entryId}/restore',
-    url: `/v1/trash/entries/${ENTRY_ID}/restore`,
+    url: `/v1/trash/entries/${ENTRY_ID}/restore?reportNotReady=true`,
     call: 'restoreTrashEntry',
     notRelayed: ['access.role-insufficient'],
     scope: 'tasks:write',
     status: 200,
     body: {},
-    calledWith: [ENTRY_ID, {}],
+    calledWith: [ENTRY_ID, {}, { reportNotReady: true }],
     invalid: { body: { reason: 'x' } },
     check: (response) => {
       expect(response.headers.etag).toBeUndefined();
@@ -175,6 +175,22 @@ describe('routes of /v1/tasks/{taskKey}/trash and /v1/trash', () => {
       expect(application.task.restoreTrashEntry).not.toHaveBeenCalled();
     },
   );
+
+  it('forwards the declared default when reportNotReady is absent', async () => {
+    await runRouteCase(application, identity, {
+      name: 'restore default reportNotReady',
+      method: 'post',
+      path: '/v1/trash/entries/{entryId}/restore',
+      url: `/v1/trash/entries/${ENTRY_ID}/restore`,
+      body: {},
+      status: 200,
+    });
+    expect(application.task.restoreTrashEntry).toHaveBeenCalledWith(
+      ENTRY_ID,
+      {},
+      { reportNotReady: false },
+    );
+  });
 
   it('answers the trash entry of a deleted task with its trash members', async () => {
     const response = await runRouteCase(application, identity, {

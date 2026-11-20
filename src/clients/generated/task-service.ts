@@ -3,11 +3,60 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
- * Prefix of the keys of a space ("Préfixe", "De 2 à 5 lettres, sans accent."): 2 to 5
- * uppercase letters A to Z.
- * @pattern ^[A-Z]{2,5}$
+ * Current visible target name and public resource path; listId is present for a saved view.
  */
-export type SpacePrefix = string;
+export type FavoriteTarget = {
+  name: string;
+  href: string;
+  listId?: string;
+};
+
+/**
+ * A private favorite of the current user and organization.
+ */
+export interface Favorite {
+  id: string;
+  /** Target kind; unknown future kinds may be ignored by a client. */
+  kind: string;
+  targetId: string;
+  /** Current visible target name and public resource path; listId is present for a saved view. */
+  target: FavoriteTarget;
+  createdAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * Kind of active target to favorite.
+ */
+export type FavoriteKindInput = typeof FavoriteKindInput[keyof typeof FavoriteKindInput];
+
+
+export const FavoriteKindInput = {
+  space: 'space',
+  list: 'list',
+  'saved-view': 'saved-view',
+} as const;
+
+export interface FavoriteCreation {
+  kind: FavoriteKindInput;
+  /** UUID of the target resource. */
+  targetId: string;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+/**
+ * The caller's currently accessible active targets in insertion order by creation time and ID.
+ */
+export interface FavoritePage {
+  items: Favorite[];
+  nextCursor: NextCursor | null;
+}
 
 /**
  * An icon of `LookIcon`, as a resource carries it; `null` for none: the initial of its name
@@ -19,17 +68,710 @@ export type SpacePrefix = string;
 export type LookIconValue = string | null;
 
 /**
+ * Layout key; clients may ignore unknown future layouts.
+ */
+export type SavedViewLayoutValue = string;
+
+/**
+ * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+ * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+ * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+ * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+ * status, it never adds or removes a key.
+ */
+export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
+
+
+export const StatusKey = {
+  triage: 'triage',
+  backlog: 'backlog',
+  todo: 'todo',
+  progress: 'progress',
+  review: 'review',
+  testing: 'testing',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @minItems 1
+ * @maxItems 10
+ */
+export type Schema = StatusKey[];
+
+/**
+ * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
+ * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
+ * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
+ */
+export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
+
+
+export const PriorityKey = {
+  urgente: 'urgente',
+  haute: 'haute',
+  moyenne: 'moyenne',
+  basse: 'basse',
+} as const;
+
+/**
+ * @minItems 1
+ * @maxItems 4
+ */
+export type Schema2 = PriorityKey[];
+
+/**
+ * @minItems 1
+ * @maxItems 20
+ * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+ */
+export type Schema3 = string[];
+
+/**
+ * @minItems 1
+ * @maxItems 20
+ * @items.minLength 1
+ * @items.maxLength 32
+ */
+export type Schema4 = string[];
+
+/**
+ * Existing task-query filters. `me` is resolved for the person applying the view, not its
+ * creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
+ */
+export interface SavedViewFilters {
+  status?: Schema;
+  priority?: Schema2;
+  assignee?: Schema3;
+  label?: Schema4;
+}
+
+/**
+ * Signed server task sort; clients may ignore future values.
+ */
+export type SavedViewSortValue = string;
+
+/**
+ * Grouping key, or null for ungrouped; clients may ignore future values.
+ * @nullable
+ */
+export type SavedViewGroupByValue = string | null;
+
+/**
+ * Feuille column key; clients may ignore unknown future columns.
+ */
+export type SavedViewSheetColumnValue = string;
+
+/**
+ * Feuille-only sort applied to the fully loaded result by the client.
+ */
+export type SavedViewPresentationValueSheetSort = {
+  column: SavedViewSheetColumnValue;
+  direction: string;
+};
+
+/**
+ * Client presentation settings; sheet sort never changes the server query sort.
+ */
+export interface SavedViewPresentationValue {
+  hiddenBoardStatusKeys?: StatusKey[];
+  hiddenSheetColumns?: SavedViewSheetColumnValue[];
+  /** Feuille-only sort applied to the fully loaded result by the client. */
+  sheetSort?: SavedViewPresentationValueSheetSort;
+}
+
+/**
+ * Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+ * the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+ */
+export interface SavedViewConfiguration {
+  layout: SavedViewLayoutValue;
+  filters: SavedViewFilters;
+  sort: SavedViewSortValue;
+  groupBy: SavedViewGroupByValue | null;
+  presentation?: SavedViewPresentationValue;
+}
+
+/**
+ * A view shared with readers of a list.
+ */
+export interface SavedView {
+  id: string;
+  listId: string;
+  name: string;
+  icon: LookIconValue | null;
+  configuration: SavedViewConfiguration;
+  createdAt: string;
+  updatedAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * A nonblank saved view or template name, at most 80 characters.
+ * @minLength 1
+ * @maxLength 80
+ * @pattern \S
+ */
+export type SavedItemName = string;
+
+/**
+ * Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`
+ * ("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`
+ * ("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`
+ * ("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),
+ * `globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for
+ * none ("Initiale" for a space, "Par défaut" for a list).
+ * @nullable
+ */
+export type LookIcon = typeof LookIcon[keyof typeof LookIcon] | null;
+
+
+export const LookIcon = {
+  rocket: 'rocket',
+  paint: 'paint',
+  megaphone: 'megaphone',
+  gear: 'gear',
+  code: 'code',
+  bug: 'bug',
+  lightning: 'lightning',
+  target: 'target',
+  flag: 'flag',
+  briefcase: 'briefcase',
+  chart: 'chart',
+  users: 'users',
+  book: 'book',
+  cube: 'cube',
+  headset: 'headset',
+  globe: 'globe',
+  star: 'star',
+} as const;
+
+/**
+ * Layout key from the task views in the mockup.
+ */
+export type SavedViewLayout = typeof SavedViewLayout[keyof typeof SavedViewLayout];
+
+
+export const SavedViewLayout = {
+  list: 'list',
+  board: 'board',
+  calendar: 'calendar',
+  gantt: 'gantt',
+  workload: 'workload',
+  table: 'table',
+  form: 'form',
+  activity: 'activity',
+  timesheet: 'timesheet',
+} as const;
+
+/**
+ * The signed sort vocabulary of the list tasks query, without a patch-time default.
+ */
+export type SavedViewSort = typeof SavedViewSort[keyof typeof SavedViewSort];
+
+
+export const SavedViewSort = {
+  manual: 'manual',
+  '-manual': '-manual',
+  dueDate: 'dueDate',
+  '-dueDate': '-dueDate',
+  priority: 'priority',
+  '-priority': '-priority',
+  name: 'name',
+  '-name': '-name',
+  createdAt: 'createdAt',
+  '-createdAt': '-createdAt',
+} as const;
+
+export type Schema5 = typeof Schema5[keyof typeof Schema5];
+
+
+export const Schema5 = {
+  status: 'status',
+  priority: 'priority',
+  assignee: 'assignee',
+} as const;
+
+/**
+ * Feuille column key from the mockup.
+ */
+export type SavedViewSheetColumn = typeof SavedViewSheetColumn[keyof typeof SavedViewSheetColumn];
+
+
+export const SavedViewSheetColumn = {
+  name: 'name',
+  status: 'status',
+  priority: 'priority',
+  people: 'people',
+  due: 'due',
+  estimate: 'estimate',
+  spent: 'spent',
+  labels: 'labels',
+  list: 'list',
+  points: 'points',
+  client: 'client',
+} as const;
+
+export type SavedViewPresentationSheetSortDirection = typeof SavedViewPresentationSheetSortDirection[keyof typeof SavedViewPresentationSheetSortDirection];
+
+
+export const SavedViewPresentationSheetSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+/**
+ * Feuille-only sort applied to the fully loaded result by the client.
+ */
+export type SavedViewPresentationSheetSort = {
+  column: SavedViewSheetColumn;
+  direction: SavedViewPresentationSheetSortDirection;
+};
+
+/**
+ * Client presentation settings; sheet sort never changes the server query sort.
+ */
+export interface SavedViewPresentation {
+  hiddenBoardStatusKeys?: StatusKey[];
+  hiddenSheetColumns?: SavedViewSheetColumn[];
+  /** Feuille-only sort applied to the fully loaded result by the client. */
+  sheetSort?: SavedViewPresentationSheetSort;
+}
+
+/**
+ * Shared explicit query and presentation settings. `groupBy: null` is ungrouped and skips
+ * the task-groups call. Signed `sort` values use the existing list-tasks vocabulary.
+ */
+export interface SavedViewConfigurationInput {
+  layout: SavedViewLayout;
+  filters: SavedViewFilters;
+  sort: SavedViewSort;
+  groupBy: Schema5 | null;
+  presentation?: SavedViewPresentation;
+}
+
+export interface SavedViewCreation {
+  name: SavedItemName;
+  icon?: LookIcon | null;
+  configuration: SavedViewConfigurationInput;
+}
+
+/**
+ * Empty object for duplicating a saved view.
+ */
+export interface SavedViewDuplicate { [key: string]: never }
+
+/**
+ * Views in creation order, with a duplicate inserted after its source.
+ */
+export interface SavedViewPage {
+  items: SavedView[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * A nested merge patch; null removes the named filter.
+ */
+export interface SavedViewFiltersPatch {
+  status?: Schema | null;
+  priority?: Schema2 | null;
+  assignee?: Schema3 | null;
+  label?: Schema4 | null;
+}
+
+export type SavedViewPresentationPatchSheetSortDirection = typeof SavedViewPresentationPatchSheetSortDirection[keyof typeof SavedViewPresentationPatchSheetSortDirection];
+
+
+export const SavedViewPresentationPatchSheetSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export type SavedViewPresentationPatchSheetSort = {
+  column?: SavedViewSheetColumn;
+  direction?: SavedViewPresentationPatchSheetSortDirection;
+} | null;
+
+/**
+ * A nested merge patch; null removes the corresponding presentation setting.
+ */
+export interface SavedViewPresentationPatch {
+  hiddenBoardStatusKeys?: StatusKey[] | null;
+  hiddenSheetColumns?: SavedViewSheetColumn[] | null;
+  sheetSort?: SavedViewPresentationPatchSheetSort;
+}
+
+/**
+ * Nested JSON Merge Patch. Null groupBy clears grouping and is returned as null; null
+ * presentation removes presentation settings. Omitted members keep their current values.
+ * The merged result must satisfy SavedViewConfiguration or the request is invalid.
+ */
+export interface SavedViewConfigurationPatch {
+  layout?: SavedViewLayout;
+  filters?: SavedViewFiltersPatch;
+  sort?: SavedViewSort;
+  groupBy?: Schema5 | null;
+  presentation?: SavedViewPresentationPatch | null;
+}
+
+/**
+ * JSON Merge Patch; nested settings are merged and undeclared members are ignored. A null icon clears it.
+ */
+export interface SavedViewPatch {
+  name?: SavedItemName;
+  icon?: LookIcon | null;
+  configuration?: SavedViewConfigurationPatch;
+}
+
+/**
+ * A space-shared snapshot of task ingredients. Checklist texts and direct live child names
+ * retain their order; dates, assignees, mentions, recurrence, milestones and watchers are not
+ * copied. A client uses these ingredients to prefill a normal TaskCreation.
+ */
+export interface TaskTemplate {
+  id: string;
+  spaceId: string;
+  /** Library name, at most 80 characters. */
+  name: string;
+  /** Source task title for a new task, at most 300 characters. */
+  title: string;
+  /**
+     * Markdown source at most 50000 characters or null.
+     * @nullable
+     */
+  description: string | null;
+  priority: PriorityKey;
+  labels: string[];
+  /** Up to 100 checklist texts, each subject to ChecklistItemCreation rules when submitted. */
+  checklist: string[];
+  /** Up to 25 direct child names, each subject to SubtaskName rules when submitted. */
+  subtasks: string[];
+  createdAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+export interface TaskTemplateCreation {
+  sourceTaskKey: TaskKey;
+  /** Optional library name; when omitted it defaults to the source task name. */
+  name?: SavedItemName;
+}
+
+/**
+ * Space templates ordered by creation time and ID.
+ */
+export interface TaskTemplatePage {
+  items: TaskTemplate[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * Empty object for duplicating a list.
+ */
+export interface ListDuplicate { [key: string]: never }
+
+/**
  * A color of `LookColor`, as a resource carries it. Later versions add colors
  * (`x-extensible-enum`): a client shows an unknown one as `gris`.
  */
 export type LookColorValue = string;
 
 /**
- * `organization` ("Tout Atelier Nord") or `private` ("Privé", the lock "Espace privé"), as a
- * space carries it. Later versions may add values (`x-extensible-enum`): a client treats an
- * unknown one as `private`.
+ * What makes a list a sprint ("Une période datée, avec un objectif et un suivi
+ * d’avancement."). Its state follows from its dates: there is no start or completion.
  */
-export type VisibilityValue = string;
+export interface Sprint {
+  /** "Début", the first day of the sprint. */
+  startDate: string;
+  /** "Fin", the last day of the sprint, on or after `startDate`. */
+  endDate: string;
+  /**
+     * "Objectif du sprint", 300 characters at most; `null` when there is none.
+     * @nullable
+     */
+  goal: string | null;
+}
+
+/**
+ * Who made a change: a person (`user`, `id` is the account), an automation rule
+ * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
+ * example `task-service` when a removed member leaves the assignees). Later versions add
+ * actor types (the public intake form of the mockup, "Formulaire public") and members (the
+ * Git provider): a client shows an unknown type as is.
+ */
+export interface Actor {
+  type: string;
+  /** @minLength 1 */
+  id: string;
+}
+
+/**
+ * A role of `AccessRole`, as a resource carries it. Later versions may add roles
+ * (`x-extensible-enum`): a client treats an unknown one as `view`.
+ */
+export type AccessRoleValue = string;
+
+/**
+ * A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of
+ * their creation.
+ */
+export interface TaskList {
+  id: string;
+  spaceId: string;
+  /** "Nom", 80 characters at most. */
+  name: string;
+  icon: LookIconValue | null;
+  color: LookColorValue;
+  /** The dates and the goal of a sprint; `null` for a list that is not a sprint. */
+  sprint: Sprint | null;
+  createdAt: string;
+  /**
+     * Version of the list, also sent as `ETag`; a change of its grants, an archive and a
+     * restoration add one too.
+     * @minimum 1
+     */
+  version: number;
+  /**
+     * The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir
+     * cette liste"), on by default. In a space of the whole organization, on, every owner,
+     * admin and member of the organization has `edit` on the list; off, only the owner of
+     * the space and the people the space or the list is shared with see it. In a private
+     * space it changes nothing. Absent, it reads as `true`.
+     */
+  organizationAccess?: boolean;
+  /**
+     * When the list was archived ("archivée le 3 nov."); `null` for a list that is not.
+     * An archived list is left out of the lists of its space, of the overview and of
+     * "Accueil", and reads by its id. Absent, it reads as `null`.
+     * @nullable
+     */
+  archivedAt?: string | null;
+  /** Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`. */
+  archivedBy?: Actor | null;
+  /**
+     * The role of the caller on the list (see "Access" in `openapi/public/spaces.yaml`):
+     * reads need any role, changes to the list and its tasks need `edit`. Absent, it reads
+     * as `edit`, the rule before grants existed.
+     */
+  callerRole?: AccessRoleValue;
+}
+
+/**
+ * The newly created list and number of copied tasks.
+ */
+export interface ListDuplication {
+  list: TaskList;
+  /** @minimum 0 */
+  taskCount: number;
+}
+
+/**
+ * Empty object for duplicating a task.
+ */
+export interface TaskDuplicate { [key: string]: never }
+
+/**
+ * One explicitly selected task and its optional expected version.
+ */
+export interface BulkTaskSelection {
+  taskKey: TaskKey;
+  /**
+     * Expected current task version, checked before any changes.
+     * @minimum 1
+     */
+  version?: number;
+}
+
+export type BulkTaskStatusActionType = typeof BulkTaskStatusActionType[keyof typeof BulkTaskStatusActionType];
+
+
+export const BulkTaskStatusActionType = {
+  status: 'status',
+} as const;
+
+/**
+ * Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera
+ * pas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of
+ * `@cadenway/contracts`. A closed set: another reason would be a breaking change.
+ */
+export type CancelReason = typeof CancelReason[keyof typeof CancelReason];
+
+
+export const CancelReason = {
+  duplicate: 'duplicate',
+  wontdo: 'wontdo',
+  scope: 'scope',
+  obsolete: 'obsolete',
+} as const;
+
+/**
+ * Required with the status `cancelled`, refused with any other; `null` for none.
+ */
+export type CancelReasonInput = CancelReason | null;
+
+export interface BulkTaskStatusAction {
+  type: BulkTaskStatusActionType;
+  status: StatusKey;
+  cancelReason?: CancelReasonInput;
+  /**
+     * Cancellation note, allowed only when the final status is cancelled.
+     * @maxLength 500
+     * @nullable
+     */
+  cancelNote?: string | null;
+}
+
+export type BulkTaskPriorityActionType = typeof BulkTaskPriorityActionType[keyof typeof BulkTaskPriorityActionType];
+
+
+export const BulkTaskPriorityActionType = {
+  priority: 'priority',
+} as const;
+
+export interface BulkTaskPriorityAction {
+  type: BulkTaskPriorityActionType;
+  priority: PriorityKey;
+}
+
+export type BulkTaskAssignActionType = typeof BulkTaskAssignActionType[keyof typeof BulkTaskAssignActionType];
+
+
+export const BulkTaskAssignActionType = {
+  assign: 'assign',
+} as const;
+
+export interface BulkTaskAssignAction {
+  type: BulkTaskAssignActionType;
+  userId: string;
+}
+
+export type BulkTaskUnassignActionType = typeof BulkTaskUnassignActionType[keyof typeof BulkTaskUnassignActionType];
+
+
+export const BulkTaskUnassignActionType = {
+  unassign: 'unassign',
+} as const;
+
+export interface BulkTaskUnassignAction {
+  type: BulkTaskUnassignActionType;
+  userId: string;
+}
+
+export type BulkTaskMoveActionType = typeof BulkTaskMoveActionType[keyof typeof BulkTaskMoveActionType];
+
+
+export const BulkTaskMoveActionType = {
+  move: 'move',
+} as const;
+
+export interface BulkTaskMoveAction {
+  type: BulkTaskMoveActionType;
+  listId: string;
+}
+
+export type BulkTaskTrashActionType = typeof BulkTaskTrashActionType[keyof typeof BulkTaskTrashActionType];
+
+
+export const BulkTaskTrashActionType = {
+  trash: 'trash',
+} as const;
+
+export interface BulkTaskTrashAction {
+  type: BulkTaskTrashActionType;
+}
+
+export type BulkTaskDuplicateActionType = typeof BulkTaskDuplicateActionType[keyof typeof BulkTaskDuplicateActionType];
+
+
+export const BulkTaskDuplicateActionType = {
+  duplicate: 'duplicate',
+} as const;
+
+export interface BulkTaskDuplicateAction {
+  type: BulkTaskDuplicateActionType;
+}
+
+/**
+ * The requested action; its `type` selects the permitted members.
+ */
+export type BulkTaskActionValue = BulkTaskStatusAction | BulkTaskPriorityAction | BulkTaskAssignAction | BulkTaskUnassignAction | BulkTaskMoveAction | BulkTaskTrashAction | BulkTaskDuplicateAction;
+
+/**
+ * One atomic action over 1 to 50 distinct task keys. Duplicate keys are invalid even if
+ * their versions differ. The client sends its visible-row selection explicitly. The action
+ * and each selection entry must contain only the declared members for their kind.
+ */
+export interface BulkTaskAction {
+  /**
+     * Distinct explicit task keys; duplicate keys answer `400 request.invalid`.
+     * @minItems 1
+     * @maxItems 50
+     */
+  selection: BulkTaskSelection[];
+  action: BulkTaskActionValue;
+}
+
+/**
+ * The selected task and, where applicable, the resulting versions or created IDs.
+ */
+export interface BulkTaskResultEntry {
+  taskKey: TaskKey;
+  /**
+     * Resulting version of the selected task when applicable.
+     * @minimum 1
+     */
+  version?: number;
+  /** Key of the copy created for this selection. */
+  newTaskKey?: TaskKey;
+  /** @minimum 1 */
+  newTaskVersion?: number;
+  /** Key of the recurrence successor when one was created. */
+  successorKey?: TaskKey;
+  /** @minimum 1 */
+  successorVersion?: number;
+  /** Trash entry containing this selected task, including a covered descendant. */
+  trashEntryId?: string;
+}
+
+/**
+ * Results for selected keys after one committed transaction; there is no partial success.
+ */
+export interface BulkTaskResult {
+  /** One result per selected key, including selections covered by an ancestor. */
+  results: BulkTaskResultEntry[];
+  /**
+     * Distinct task rows affected, including subtrees, successors and copies.
+     * @minimum 0
+     */
+  affectedCount: number;
+}
+
+/**
+ * `RECURRENCES` of @cadenway/contracts. Only entering `done` with a due date creates a
+ * successor. Daily advances to the next weekday, weekly and biweekly by 7 or 14 days;
+ * monthly clamps to the last day while retaining the chain's original day.
+ */
+export type Recurrence = typeof Recurrence[keyof typeof Recurrence];
+
+
+export const Recurrence = {
+  none: 'none',
+  daily: 'daily',
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+  monthly: 'monthly',
+} as const;
 
 /**
  * A person, by account. Only the account id in this version: the web application takes the
@@ -39,6 +781,263 @@ export type VisibilityValue = string;
 export interface UserRef {
   userId: string;
 }
+
+/**
+ * Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.
+ */
+export interface SubtaskCounts {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  closed: number;
+}
+
+/**
+ * Items of the checklist of a task, and those ticked ("3 / 3").
+ */
+export interface ChecklistCounts {
+  /** @minimum 0 */
+  total: number;
+  /** @minimum 0 */
+  done: number;
+}
+
+/**
+ * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
+ * description, the note of the cancellation and the items of the checklist.
+ */
+export interface TaskSummary {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  key: TaskKey;
+  /** "Nom de la tâche", 300 characters at most. */
+  name: string;
+  status: StatusKey;
+  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
+  cancelReason: CancelReason | null;
+  priority: PriorityKey;
+  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
+  assignees: UserRef[];
+  /**
+     * "Échéance", a calendar date; `null` when there is none.
+     * @nullable
+     */
+  dueDate: string | null;
+  /**
+     * First day of the work, for the Gantt view; `null` when there is none, always `null`
+     * without a due date, and never after the due date.
+     * @nullable
+     */
+  startDate: string | null;
+  /**
+     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
+     * @minimum 1
+     * @nullable
+     */
+  estimateMinutes: number | null;
+  /** "Étiquettes", 20 at most, in the order they were added. */
+  labels: string[];
+  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
+  parentKey: TaskKey | null;
+  /** The list of the task; a subtask is always in the list of its parent. */
+  listId: string;
+  /** The space of that list, which may not be the space of the prefix of the key. */
+  spaceId: string;
+  subtaskCounts: SubtaskCounts;
+  checklistCounts: ChecklistCounts;
+  /**
+     * When the task last entered `done`; `null` while its status is not `done`.
+     * @nullable
+     */
+  completedAt: string | null;
+  createdAt: string;
+  /**
+     * Version of the task, also sent as `ETag` by the routes of one task.
+     * @minimum 1
+     */
+  version: number;
+}
+
+export type MilestonePageItemsItem = TaskSummary & {
+  milestone: true;
+};
+
+/**
+ * Visible milestones in the space, ordered by due date ascending with undated last.
+ */
+export interface MilestonePage {
+  /** Task summaries whose milestone flag is true. */
+  items: MilestonePageItemsItem[];
+  nextCursor: NextCursor | null;
+  /**
+     * Matching visible milestones on every page.
+     * @minimum 0
+     */
+  total: number;
+}
+
+/**
+ * Whether the anchor task blocks the other task or is blocked by it.
+ */
+export type DependencyDirection = typeof DependencyDirection[keyof typeof DependencyDirection];
+
+
+export const DependencyDirection = {
+  blocks: 'blocks',
+  'blocked-by': 'blocked-by',
+} as const;
+
+export interface DependencyCreation {
+  otherTaskKey: TaskKey;
+  direction: DependencyDirection;
+}
+
+/**
+ * A directed edge between visible tasks in the current organization.
+ */
+export interface Dependency {
+  id: string;
+  blocker: TaskSummary;
+  blocked: TaskSummary;
+}
+
+/**
+ * Visible edges ordered by creation time and ID.
+ */
+export interface DependencyPage {
+  items: Dependency[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * A recipient identified by account, not spelling. Offsets count Unicode code points in
+ * the unchanged Markdown, zero-based, start inclusive and end exclusive. Spans must be
+ * non-overlapping, in range, and cover a nonempty displayed token beginning with `@`.
+ * Raw text without a span never identifies a recipient. The recipient must be a current
+ * member, including a guest, with read access to the task's list after the write.
+ */
+export interface Mention {
+  userId: string;
+  /** @minimum 0 */
+  start: number;
+  /** @minimum 1 */
+  end: number;
+}
+
+/**
+ * A live comment in the flat task timeline; deleted comments are omitted.
+ */
+export interface Comment {
+  id: string;
+  taskKey: TaskKey;
+  actor: Actor;
+  /** The submitted Markdown source, unchanged. */
+  body: string;
+  createdAt: string;
+  /** @nullable */
+  editedAt: string | null;
+  /** @minimum 1 */
+  version: number;
+  mentions: Mention[];
+  /**
+     * Immutable reply target, retained even when that comment is deleted.
+     * @nullable
+     */
+  replyToCommentId: string | null;
+}
+
+/**
+ * Live comments ordered by creation time and ID, oldest first; total excludes tombstones.
+ */
+export interface CommentPage {
+  items: Comment[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+}
+
+/**
+ * A comment and optional structured mentions and reply target.
+ */
+export interface CommentCreation {
+  /**
+     * Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  body: string;
+  /** @maxItems 20 */
+  mentions?: Mention[];
+  /** A live comment on this same task. */
+  replyToCommentId?: string;
+}
+
+/**
+ * JSON Merge Patch. Replacing the body clears existing mention spans unless a replacement
+ * array is supplied. A spans-only change still requires the comment's If-Match. Undeclared
+ * members are ignored.
+ */
+export interface CommentPatch {
+  /**
+     * Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+     * @minLength 1
+     * @maxLength 5000
+     * @pattern \S
+     */
+  body?: string;
+  /** @maxItems 20 */
+  mentions?: Mention[];
+}
+
+/**
+ * A current member eligible for a mention on this task, including guests.
+ */
+export interface TaskParticipant {
+  userId: string;
+  memberId: string;
+}
+
+/**
+ * Eligible accounts ordered by user ID.
+ */
+export interface TaskParticipantPage {
+  items: TaskParticipant[];
+  nextCursor: NextCursor | null;
+}
+
+/**
+ * An effective watcher who currently has task access.
+ */
+export interface Watcher {
+  userId: string;
+}
+
+/**
+ * Effective watchers ordered by user ID, with the same total and caller state on every page.
+ */
+export interface WatcherPage {
+  items: Watcher[];
+  nextCursor: NextCursor | null;
+  /** @minimum 0 */
+  total: number;
+  callerFollows: boolean;
+}
+
+/**
+ * Prefix of the keys of a space ("Préfixe", "De 2 à 5 lettres, sans accent."): 2 to 5
+ * uppercase letters A to Z.
+ * @pattern ^[A-Z]{2,5}$
+ */
+export type SpacePrefix = string;
+
+/**
+ * `organization` ("Tout Atelier Nord") or `private` ("Privé", the lock "Espace privé"), as a
+ * space carries it. Later versions may add values (`x-extensible-enum`): a client treats an
+ * unknown one as `private`.
+ */
+export type VisibilityValue = string;
 
 /**
  * Category of a status: `open` ("Non commencé": `triage`, `backlog`, `todo`), `active`
@@ -89,20 +1088,6 @@ export interface SpaceStatuses {
   done: SpaceStatus;
   cancelled: SpaceStatus;
 }
-
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
-
-/**
- * A role of `AccessRole`, as a resource carries it. Later versions may add roles
- * (`x-extensible-enum`): a client treats an unknown one as `view`.
- */
-export type AccessRoleValue = string;
 
 /**
  * A space ("Espace"): the lists and sprints of a team or a domain, the prefix of their task
@@ -245,38 +1230,6 @@ export interface SpaceCreation {
 }
 
 /**
- * Icon of a space or a list ("Icône"): `rocket` ("Fusée"), `paint` ("Pinceau"), `megaphone`
- * ("Mégaphone"), `gear` ("Engrenage"), `code` ("Code"), `bug` ("Bogue"), `lightning`
- * ("Éclair"), `target` ("Cible"), `flag` ("Drapeau"), `briefcase` ("Mallette"), `chart`
- * ("Courbe"), `users` ("Équipe"), `book` ("Livre"), `cube` ("Cube"), `headset` ("Casque"),
- * `globe` ("Globe") or `star` ("Étoile"), the keys of `LOOK_ICONS` of the mockup; `null` for
- * none ("Initiale" for a space, "Par défaut" for a list).
- * @nullable
- */
-export type LookIcon = typeof LookIcon[keyof typeof LookIcon] | null;
-
-
-export const LookIcon = {
-  rocket: 'rocket',
-  paint: 'paint',
-  megaphone: 'megaphone',
-  gear: 'gear',
-  code: 'code',
-  bug: 'bug',
-  lightning: 'lightning',
-  target: 'target',
-  flag: 'flag',
-  briefcase: 'briefcase',
-  chart: 'chart',
-  users: 'users',
-  book: 'book',
-  cube: 'cube',
-  headset: 'headset',
-  globe: 'globe',
-  star: 'star',
-} as const;
-
-/**
  * Color of a space or a list ("Couleur"): `gris` ("Gris", the default), `violet` ("Améthyste"),
  * `indigo` ("Indigo"), `azur` ("Azur"), `lagon` ("Lagon"), `vert` ("Jade"), `olive` ("Olive"),
  * `jaune` ("Balise"), `orange` ("Cornaline"), `rouge` ("Grenat"), `rose` ("Rose"), `fuchsia`
@@ -361,80 +1314,6 @@ export interface SpacePatch {
   color?: LookColor;
   visibility?: Visibility;
   statuses?: SpaceStatusesPatch | null;
-}
-
-/**
- * What makes a list a sprint ("Une période datée, avec un objectif et un suivi
- * d’avancement."). Its state follows from its dates: there is no start or completion.
- */
-export interface Sprint {
-  /** "Début", the first day of the sprint. */
-  startDate: string;
-  /** "Fin", the last day of the sprint, on or after `startDate`. */
-  endDate: string;
-  /**
-     * "Objectif du sprint", 300 characters at most; `null` when there is none.
-     * @nullable
-     */
-  goal: string | null;
-}
-
-/**
- * Who made a change: a person (`user`, `id` is the account), an automation rule
- * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
- */
-export interface Actor {
-  type: string;
-  /** @minLength 1 */
-  id: string;
-}
-
-/**
- * A list of tasks of a space; with `sprint`, a sprint ("Sprint 14"). Lists keep the order of
- * their creation.
- */
-export interface TaskList {
-  id: string;
-  spaceId: string;
-  /** "Nom", 80 characters at most. */
-  name: string;
-  icon: LookIconValue | null;
-  color: LookColorValue;
-  /** The dates and the goal of a sprint; `null` for a list that is not a sprint. */
-  sprint: Sprint | null;
-  createdAt: string;
-  /**
-     * Version of the list, also sent as `ETag`; a change of its grants, an archive and a
-     * restoration add one too.
-     * @minimum 1
-     */
-  version: number;
-  /**
-     * The switch "Accès de l’organisation" ("Tous les membres de Atelier Nord peuvent voir
-     * cette liste"), on by default. In a space of the whole organization, on, every owner,
-     * admin and member of the organization has `edit` on the list; off, only the owner of
-     * the space and the people the space or the list is shared with see it. In a private
-     * space it changes nothing. Absent, it reads as `true`.
-     */
-  organizationAccess?: boolean;
-  /**
-     * When the list was archived ("archivée le 3 nov."); `null` for a list that is not.
-     * An archived list is left out of the lists of its space, of the overview and of
-     * "Accueil", and reads by its id. Absent, it reads as `null`.
-     * @nullable
-     */
-  archivedAt?: string | null;
-  /** Who archived the list; `null` for a list that is not archived. Absent, it reads as `null`. */
-  archivedBy?: Actor | null;
-  /**
-     * The role of the caller on the list (see "Access" in `openapi/public/spaces.yaml`):
-     * reads need any role, changes to the list and its tasks need `edit`. Absent, it reads
-     * as `edit`, the rule before grants existed.
-     */
-  callerRole?: AccessRoleValue;
 }
 
 /**
@@ -595,69 +1474,6 @@ export interface ListSummary {
 }
 
 /**
- * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
- * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
- * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
- * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
- * status, it never adds or removes a key.
- */
-export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
-
-
-export const StatusKey = {
-  triage: 'triage',
-  backlog: 'backlog',
-  todo: 'todo',
-  progress: 'progress',
-  review: 'review',
-  testing: 'testing',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  cancelled: 'cancelled',
-} as const;
-
-/**
- * Why a task was cancelled ("Motif d’annulation"): `duplicate` ("Doublon"), `wontdo` ("Ne sera
- * pas fait"), `scope` ("Hors périmètre") or `obsolete` ("Obsolète"). `CANCEL_REASONS` of
- * `@cadenway/contracts`. A closed set: another reason would be a breaking change.
- */
-export type CancelReason = typeof CancelReason[keyof typeof CancelReason];
-
-
-export const CancelReason = {
-  duplicate: 'duplicate',
-  wontdo: 'wontdo',
-  scope: 'scope',
-  obsolete: 'obsolete',
-} as const;
-
-/**
- * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
- * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
- * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
- */
-export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
-
-
-export const PriorityKey = {
-  urgente: 'urgente',
-  haute: 'haute',
-  moyenne: 'moyenne',
-  basse: 'basse',
-} as const;
-
-/**
- * Direct subtasks of a task ("2 / 3 terminées"); `done` and `cancelled` count as closed.
- */
-export interface SubtaskCounts {
-  /** @minimum 0 */
-  total: number;
-  /** @minimum 0 */
-  closed: number;
-}
-
-/**
  * One item of a checklist ("Une checklist sert aux petites étapes sans statut ni assigné.").
  */
 export interface ChecklistItem {
@@ -669,19 +1485,16 @@ export interface ChecklistItem {
 }
 
 /**
- * Items of the checklist of a task, and those ticked ("3 / 3").
- */
-export interface ChecklistCounts {
-  /** @minimum 0 */
-  total: number;
-  /** @minimum 0 */
-  done: number;
-}
-
-/**
  * A task, with its description and its checklist.
  */
 export interface Task {
+  /** Whether this task is a milestone; absence means the producer did not report it. */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /** Structured spans in the current Markdown description. */
+  descriptionMentions?: Mention[];
+  /** Successor key only when the successor is live and readable by the caller. */
+  nextOccurrenceKey?: TaskKey;
   key: TaskKey;
   /** "Nom de la tâche", 300 characters at most. */
   name: string;
@@ -756,60 +1569,6 @@ export interface Task {
 }
 
 /**
- * A task as a row of a list, of "Mes tâches" or of "Accueil" shows it: everything but the
- * description, the note of the cancellation and the items of the checklist.
- */
-export interface TaskSummary {
-  key: TaskKey;
-  /** "Nom de la tâche", 300 characters at most. */
-  name: string;
-  status: StatusKey;
-  /** Why the task was cancelled ("Annulée : Doublon"); `null` unless its status is `cancelled`. */
-  cancelReason: CancelReason | null;
-  priority: PriorityKey;
-  /** "Assignés", 20 at most, in the order they were assigned; empty for "Non assignée". */
-  assignees: UserRef[];
-  /**
-     * "Échéance", a calendar date; `null` when there is none.
-     * @nullable
-     */
-  dueDate: string | null;
-  /**
-     * First day of the work, for the Gantt view; `null` when there is none, always `null`
-     * without a due date, and never after the due date.
-     * @nullable
-     */
-  startDate: string | null;
-  /**
-     * "Estimation", in whole minutes, 60,000 at most; `null` when there is none.
-     * @minimum 1
-     * @nullable
-     */
-  estimateMinutes: number | null;
-  /** "Étiquettes", 20 at most, in the order they were added. */
-  labels: string[];
-  /** The parent of a subtask ("Sous-tâche de CAD-482"); `null` for a top-level task. */
-  parentKey: TaskKey | null;
-  /** The list of the task; a subtask is always in the list of its parent. */
-  listId: string;
-  /** The space of that list, which may not be the space of the prefix of the key. */
-  spaceId: string;
-  subtaskCounts: SubtaskCounts;
-  checklistCounts: ChecklistCounts;
-  /**
-     * When the task last entered `done`; `null` while its status is not `done`.
-     * @nullable
-     */
-  completedAt: string | null;
-  createdAt: string;
-  /**
-     * Version of the task, also sent as `ETag` by the routes of one task.
-     * @minimum 1
-     */
-  version: number;
-}
-
-/**
  * A task named by another resource, with its name and status as they are now.
  */
 export interface TaskRef {
@@ -850,6 +1609,16 @@ export const TaskCreationPriority = {
   basse: 'basse',
 } as const;
 
+export interface ChecklistItemCreation {
+  /**
+     * "Élément de checklist", trimmed; a text made only of spaces is refused with
+     * `400 request.invalid`.
+     * @minLength 1
+     * @maxLength 300
+     */
+  text: string;
+}
+
 /**
  * "Nom de la tâche", as typed; surrounding spaces are removed, and a name made only of spaces
  * is refused with `400 request.invalid`.
@@ -864,11 +1633,6 @@ export type TaskName = string;
  * @nullable
  */
 export type TaskDescription = string | null;
-
-/**
- * Required with the status `cancelled`, refused with any other; `null` for none.
- */
-export type CancelReasonInput = CancelReason | null;
 
 /**
  * "Estimation", in whole minutes ("8 h" is `480`); `null` for none.
@@ -897,6 +1661,27 @@ export interface SubtaskName {
  * and `PriorityKey`, with their default.
  */
 export interface TaskCreation {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
+  /**
+     * Checklist text in order; fresh IDs and unchecked items are created atomically.
+     * @maxItems 100
+     */
+  checklist?: ChecklistItemCreation[];
   name: TaskName;
   description?: TaskDescription | null;
   /** "Statut", one of `StatusKey`; `todo` ("À faire") by default. */
@@ -1014,6 +1799,22 @@ export interface SubtaskCreation {
  * the members it does not declare, `assigneeIds` and `labels` included.
  */
 export interface TaskPatch {
+  /**
+     * Structured spans in the description; replacing text clears prior spans unless a
+     * replacement array is supplied. A spans-only patch also requires If-Match. Invalid
+     * spans answer `400 request.invalid`, ineligible recipients `422 mention.recipient-invalid`.
+     * @maxItems 20
+     */
+  descriptionMentions?: Mention[];
+  /**
+     * A milestone permits only todo, blocked, done and cancelled. Dated milestones have
+     * equal start and due dates, undated milestones have both null; estimate is null.
+     * Conversion normalizes inherited fields and maps an inherited disallowed status to todo.
+     * Conflicting explicit dates or status answer `422 milestone.dates-invalid` or
+     * `422 milestone.status-invalid`. Removing the flag keeps normalized fields.
+     */
+  milestone?: boolean;
+  recurrence?: Recurrence;
   name?: TaskName;
   description?: TaskDescription | null;
   status?: StatusKey;
@@ -1065,16 +1866,6 @@ export interface LabelChange {
  */
 export interface EmptyRequest { [key: string]: never }
 
-export interface ChecklistItemCreation {
-  /**
-     * "Élément de checklist", trimmed; a text made only of spaces is refused with
-     * `400 request.invalid`.
-     * @minLength 1
-     * @maxLength 300
-     */
-  text: string;
-}
-
 /**
  * JSON Merge Patch of a checklist item; ticking or unticking it is the one change of this version.
  */
@@ -1121,20 +1912,23 @@ export type ActivityEntryAssignee = {
 /**
  * One entry of the activity log of a task ("Activité"); every entry names a task, and an entry
  * about a list or a space would come on a route of its own. The member that names the change
- * is the one of its `kind`: `status`, `priority`, `dueDate` or `assignee`; a creation has
- * none. Later versions add kinds and their members (comments): a client shows an unknown kind
+ * is the one of its `kind`: `status`, `priority`, `dueDate`, `assignee` or `commentId`; a creation has
+ * none. Comment creation records its ID and an excerpt of the current body; deleting the comment
+ * removes the entry. Edits and deletions do not create separate entries. Later versions add kinds: a client shows an unknown kind
  * as "a modifié la tâche".
  */
 export interface ActivityEntry {
+  /** Comment associated with a comment activity entry. */
+  commentId?: string;
+  /** Up to 240 Unicode code points of the current comment body. */
+  commentExcerpt?: string;
   id: string;
   /** When the change was made; for merged changes, the last of them. */
   occurredAt: string;
   /**
-     * `create` ("a créé la tâche"), `status` ("a changé le statut"), `priority` ("a passé la
-     * priorité à"), `due` ("a fixé l’échéance", "a déplacé l’échéance", "a retiré
-     * l’échéance") or `assign` ("s’est assigné la tâche", "a assigné Inès Robert", "s’est
-     * retiré de la tâche", "a retiré Inès Robert"). Later versions add kinds
-     * (`x-extensible-enum`).
+     * `create` records creation, `status` a status change, `priority` a priority change,
+     * `due` a due-date change, `assign` an assignment change, and `comment` a new comment.
+     * Future kinds may be added; render unknown kinds as a generic task change.
      */
   kind: string;
   actor: Actor;
@@ -1398,12 +2192,6 @@ export interface AccessCheck {
   taskKey: TaskKey | null;
 }
 
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
-
 export interface GrantPage {
   items: Grant[];
   nextCursor: NextCursor | null;
@@ -1570,6 +2358,161 @@ export interface Problem {
 }
 
 /**
+ * `template.not-found`, `space.not-found`, `organization.not-found`.
+ */
+export type TemplateNotFoundResponse = Problem;
+
+/**
+ * `space.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.
+ */
+export type TemplateSourceNotFoundResponse = Problem;
+
+/**
+ * `task.archived`, `idempotency.request-in-progress`.
+ */
+export type TemplateCreateConflictResponse = Problem;
+
+/**
+ * `template.source-restricted`, `template.limit-reached`, `idempotency.key-reused`.
+ */
+export type TemplateCreateRefusedResponse = Problem;
+
+/**
+ * `saved-view.not-found`, `list.not-found`, `organization.not-found`.
+ */
+export type SavedViewNotFoundResponse = Problem;
+
+/**
+ * `saved-view.list-archived`, `idempotency.request-in-progress`.
+ */
+export type SavedViewCreateConflictResponse = Problem;
+
+/**
+ * `saved-view.list-archived`.
+ */
+export type SavedViewWriteConflictResponse = Problem;
+
+/**
+ * `saved-view.limit-reached`, `idempotency.key-reused`.
+ */
+export type SavedViewCreateRefusedResponse = Problem;
+
+/**
+ * `favorite.target-not-found`, `organization.not-found`.
+ */
+export type FavoriteTargetNotFoundResponse = Problem;
+
+/**
+ * `favorite.not-found`, `organization.not-found`.
+ */
+export type FavoriteNotFoundResponse = Problem;
+
+/**
+ * `favorite.already-exists`, `idempotency.request-in-progress`.
+ */
+export type FavoriteCreateConflictResponse = Problem;
+
+/**
+ * `favorite.limit-reached`, `idempotency.key-reused`.
+ */
+export type FavoriteCreateRefusedResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with this key is still running.
+ */
+export type ListDuplicateConflictResponse = Problem;
+
+/**
+ * `task.archived` or `idempotency.request-in-progress`.
+ */
+export type TaskDuplicateConflictResponse = Problem;
+
+/**
+ * `task.archived`, `recurrence.already-spawned`, `idempotency.request-in-progress`.
+ */
+export type BulkConflictResponse = Problem;
+
+/**
+ * `task.not-found`, `task.trashed`, `list.not-found`, `organization.not-found`.
+ */
+export type BulkTargetNotFoundResponse = Problem;
+
+/**
+ * `bulk.expansion-limit-reached`, `idempotency.key-reused`, `task.status-hidden`, `task.cancel-reason-required`, `task.cancel-reason-unexpected`, `task.assignee-invalid`, `task.assignee-limit-reached`, `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.start-date-invalid`, `milestone.status-invalid`, `milestone.dates-invalid`, `recurrence.date-out-of-range`.
+ */
+export type BulkRefusedResponse = Problem;
+
+/**
+ * `task.subtask-limit-reached`, `task.subtask-depth-exceeded`, `task.status-hidden`, `task.cancel-reason-required`, `idempotency.key-reused`.
+ */
+export type TaskDuplicateRefusedResponse = Problem;
+
+/**
+ * `list.duplicate-limit-reached`, `idempotency.key-reused`.
+ */
+export type ListDuplicateRefusedResponse = Problem;
+
+/**
+ * `dependency.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.
+ */
+export type DependencyNotFoundResponse = Problem;
+
+/**
+ * `dependency.already-exists`, `task.archived`, `idempotency.request-in-progress`.
+ */
+export type DependencyConflictResponse = Problem;
+
+/**
+ * `dependency.cycle`, `dependency.limit-reached`, `idempotency.key-reused`.
+ */
+export type DependencyRefusedResponse = Problem;
+
+/**
+ * `task.archived`: a task is archived; `recurrence.already-spawned`: the source already has a successor.
+ */
+export type TaskRecurrenceConflictResponse = Problem;
+
+/**
+ * `request.version-mismatch`: If-Match is not the current comment version; `details.version` is.
+ */
+export type CommentVersionMismatchResponse = Problem;
+
+/**
+ * `access.role-insufficient`, `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.
+ */
+export type CollabRoleResponse = Problem;
+
+/**
+ * `access.role-insufficient`, `comment.author-required`, `auth.issuer-not-allowed`, `auth.actor-not-allowed`, `auth.organization-required`.
+ */
+export type CollabAuthorResponse = Problem;
+
+/**
+ * `comment.not-found`, `task.not-found`, `task.trashed`, `organization.not-found`.
+ */
+export type CollabCommentNotFoundResponse = Problem;
+
+/**
+ * `task.archived`, `idempotency.request-in-progress`.
+ */
+export type CollabCreateConflictResponse = Problem;
+
+/**
+ * `mention.recipient-invalid`.
+ */
+export type CollabMentionResponse = Problem;
+
+/**
+ * `mention.recipient-invalid`, `idempotency.key-reused`.
+ */
+export type CollabCreateRefusedResponse = Problem;
+
+/**
+ * `watcher.recipient-invalid`, `watcher.limit-reached`.
+ */
+export type CollabWatcherRefusedResponse = Problem;
+
+/**
  * `request.invalid`: the request does not match the schema; one `details.issues` entry per issue.
  */
 export type BadRequestResponse = Problem;
@@ -1663,6 +2606,11 @@ export type ListNotFoundResponse = Problem;
  * - `organization.not-found`: see `OrganizationNotFound`.
  */
 export type TaskNotFoundResponse = Problem;
+
+/**
+ * `trash-entry.not-restorable-yet`: list deletion is still batching.
+ */
+export type TrashEntryNotRestorableYetResponse = Problem;
 
 /**
  * - `trash-entry.not-found`: no entry with this id that the actor may restore;
@@ -1759,6 +2707,9 @@ export type SprintDatesInvalidResponse = Problem;
  * `task.list-invalid`, `task.parent-invalid` (`details.parentKey`),
  * `task.subtask-depth-exceeded`, `task.subtask-limit-reached`, or, on a creation,
  * `idempotency.key-reused`.
+ * - `mention.recipient-invalid`: a description mention recipient is ineligible;
+ * - `milestone.status-invalid` or `milestone.dates-invalid`: the final milestone is invalid;
+ * - `recurrence.date-out-of-range`: the successor date cannot be represented.
  */
 export type TaskRefusedResponse = Problem;
 
@@ -1781,6 +2732,8 @@ export type ChecklistItemRefusedResponse = Problem;
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
  */
 export type VersionMismatchResponse = Problem;
+
+export type DependencyDirectionParameter = DependencyDirection;
 
 /**
  * Keep the requests of this space, its lists and their tasks.
@@ -1894,6 +2847,7 @@ export const ActivityKindParameterItem = {
   priority: 'priority',
   due: 'due',
   assign: 'assign',
+  comment: 'comment',
 } as const;
 
 /**
@@ -1917,7 +2871,23 @@ export type CursorParameter = string;
  */
 export type LimitParameter = number;
 
+/**
+ * Keep only milestones when true, or only ordinary tasks when false; absent leaves both.
+ */
+export type MilestoneFilterParameter = boolean;
+
 export type ListSpacesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListSpaceMilestonesInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -1967,7 +2937,7 @@ export type ListListActivityInternalParams = {
   /**
    * Kinds of entries to keep, separated by commas; every kind when absent.
    * @minItems 1
-   * @maxItems 5
+   * @maxItems 6
    */
   kind?: ActivityKindParameter;
   /**
@@ -1990,6 +2960,8 @@ export type ListListActivityInternalParams = {
 };
 
 export type ListTasksInternalParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: MilestoneFilterParameter;
   /**
    * Statuses to keep, separated by commas.
    * @minItems 1
@@ -2043,6 +3015,8 @@ export type ListTasksInternalParams = {
 };
 
 export type CountTaskGroupsInternalParams = {
+  /** Keep only milestones when true, or only ordinary tasks when false; absent leaves both. */
+  milestone?: MilestoneFilterParameter;
   /** What to group by ("Statut", "Priorité", "Assigné"). */
   groupBy: GroupByParameter;
   /**
@@ -2095,6 +3069,69 @@ export type CountTaskGroupsInternalParams = {
   limit?: LimitParameter;
 };
 
+export type ListTaskCommentsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListTaskParticipantsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListTaskWatchersInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListTaskDependenciesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListDependencyCandidatesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+  /** Whether the anchor task blocks the other task or is blocked by it. */
+  direction: DependencyDirectionParameter;
+  /**
+   * Text to find, without regard to case or accents.
+   * @minLength 1
+   * @maxLength 100
+   */
+  search?: SearchParameter;
+};
+
 export type ListSubtasksInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
@@ -2110,7 +3147,7 @@ export type ListTaskActivityInternalParams = {
   /**
    * Kinds of entries to keep, separated by commas; every kind when absent.
    * @minItems 1
-   * @maxItems 5
+   * @maxItems 6
    */
   kind?: ActivityKindParameter;
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -2221,6 +3258,44 @@ export type ListArchivedTasksInternalParams = {
 };
 
 export type ListTrashInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type RestoreTrashEntryInternalParams = {
+  /** Report an otherwise restorable entry whose list deletion is still batching. */
+  reportNotReady?: boolean;
+};
+
+export type ListTaskTemplatesInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListSavedViewsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListFavoritesInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -2439,6 +3514,51 @@ const deleteSpaceInternal = async (spaceId: string, options?: RequestInit): Prom
 
   const data: deleteSpaceInternalResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deleteSpaceInternalResponse
+}
+
+
+
+const getListSpaceMilestonesInternalUrl = (spaceId: string,
+    params?: ListSpaceMilestonesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/spaces/${spaceId}/milestones?${stringifiedParams}` : `/internal/v1/spaces/${spaceId}/milestones`
+}
+
+/**
+ * Returns visible live milestones in visible lists of the space, excluding archived lists.
+ * A caller with only list grants sees only their qualifying lists. Sort by due date ascending,
+ * undated last; the opaque cursor is bound to the space and ordering. Total counts matching
+ * visible milestones and does not change existing space, list or sprint counts.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List milestones of a space
+ */
+const listSpaceMilestonesInternal = async (spaceId: string,
+    params?: ListSpaceMilestonesInternalParams, options?: RequestInit): Promise<listSpaceMilestonesInternalResponse> => {
+
+  const res = await fetchFn(getListSpaceMilestonesInternalUrl(spaceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSpaceMilestonesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSpaceMilestonesInternalResponse
 }
 
 
@@ -2672,6 +3792,51 @@ const deleteListInternal = async (listId: string, options?: RequestInit): Promis
 
 
 
+const getDuplicateListInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/duplicate`
+}
+
+/**
+ * Creates an ordinary live list in the same space, with ` (copie)` appended to the name
+ * after truncating the source portion to fit the name limit. Requires edit on both the source
+ * list and destination space; an archived source list is allowed. It copies the complete live
+ * task forest, regardless of filters, remapping parents and allocating fresh keys using the
+ * current destination prefix; a live task whose parent is outside the forest becomes a root.
+ * Independently archived and trashed tasks are skipped. Task fields follow the single-task
+ * copy rule, but task names are retained. More than 500 live tasks answers
+ * `422 list.duplicate-limit-reached` and creates nothing. The list retains the source look and
+ * organization-access switch, but copies no direct grants, sprint, views or favorites; the
+ * resulting access cannot broaden the source. If-Match checks the source list version. The
+ * optional Idempotency-Key replays the original 201 and Location for 24 hours. The list and
+ * task creation facts commit with the entire copy.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a list
+ */
+const duplicateListInternal = async (listId: string,
+    listDuplicate: ListDuplicate, options?: RequestInit): Promise<duplicateListInternalResponse> => {
+
+  const res = await fetchFn(getDuplicateListInternalUrl(listId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listDuplicate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: duplicateListInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as duplicateListInternalResponse
+}
+
+
+
 const getGetListCountsInternalUrl = (listId: string,
     params: GetListCountsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -2774,6 +3939,10 @@ const getCreateTaskInternalUrl = (listId: string,) => {
  * `422 task.start-date-invalid`. Records a creation per task. Emits `task.created.v1` per task
  * and `task.assigned.v1` per assignee of each. Internal token: actor `user`, organization
  * required.
+ * Optional checklist entries are created unchecked in order with fresh IDs. Structured
+ * description mentions, milestone constraints and recurrence follow TaskCreation; ineligible
+ * mentions return `422 mention.recipient-invalid`, invalid milestones return
+ * `422 milestone.status-invalid` or `422 milestone.dates-invalid`.
  * @summary Create a task
  */
 const createTaskInternal = async (listId: string,
@@ -2817,6 +3986,8 @@ const getListTasksInternalUrl = (listId: string,
  * Lists the tasks of a list the actor sees, filtered and sorted, as
  * `GET /v1/lists/{listId}/tasks` says; `assignee=me` is the actor. Internal token: actor
  * `user`, organization required.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary List the tasks of a list
  */
 const listTasksInternal = async (listId: string,
@@ -2860,6 +4031,8 @@ const getCountTaskGroupsInternalUrl = (listId: string,
  * Counts the tasks of a list the actor sees by status, priority or assignee, with the filters
  * of `GET /internal/v1/lists/{listId}/tasks`, as `GET /v1/lists/{listId}/task-groups` says.
  * Internal token: actor `user`, organization required.
+ * The optional milestone filter is part of the cursor fingerprint and grouped counts;
+ * omitting it preserves the existing filter. It does not change unfiltered totals.
  * @summary Count the tasks of a list by group
  */
 const countTaskGroupsInternal = async (listId: string,
@@ -2879,6 +4052,55 @@ const countTaskGroupsInternal = async (listId: string,
 
   const data: countTaskGroupsInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as countTaskGroupsInternalResponse
+}
+
+
+
+const getExecuteBulkTaskActionInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/tasks/bulk-actions`
+}
+
+/**
+ * Applies one explicit action to 1–50 distinct selected keys in a single tenant transaction.
+ * Resolve and authorize all keys and optional per-key expected versions, lock and recheck in
+ * stable order, then apply the action and write activity and outbox. A stale selected version
+ * answers `412 request.version-mismatch`; duplicate or ambiguous selections and more than 50
+ * keys answer `400 request.invalid`. The expansion limit is 1,000 affected task rows including
+ * subtrees, successors and copies (`422 bulk.expansion-limit-reached`). On any deterministic
+ * error nothing changes or emits; `details.key` identifies only an authorized visible task.
+ * Status, priority and explicit assign or unassign affect selected tasks, even selected
+ * descendants. Move and trash collapse selections already covered by selected ancestors;
+ * move carries the live subtree with immutable keys, detaching a moved subtask from its old
+ * parent and retaining statuses. Duplicate applies the single-task copy rule per selection.
+ * Existing task status, cancellation, milestone, recurrence, archive, tree and role rules
+ * apply. A destination that is invisible answers `404 list.not-found`, a visible but
+ * uneditable destination `403 access.role-insufficient`. The optional Idempotency-Key replays
+ * the recorded response for 24 hours, and conflicting or concurrent reuse has the standard
+ * `422 idempotency.key-reused` or `409 idempotency.request-in-progress` problem. Normal task
+ * creation, change and lifecycle facts are emitted, never partial facts.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Apply an atomic bulk task action
+ */
+const executeBulkTaskActionInternal = async (bulkTaskAction: BulkTaskAction, options?: RequestInit): Promise<executeBulkTaskActionInternalResponse> => {
+
+  const res = await fetchFn(getExecuteBulkTaskActionInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(bulkTaskAction)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: executeBulkTaskActionInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as executeBulkTaskActionInternalResponse
 }
 
 
@@ -2938,6 +4160,21 @@ const getUpdateTaskInternalUrl = (taskKey: string,) => {
  * entry. Emits `task.updated.v1` and `task.status-changed.v1` as the public route says. The
  * assignee, label, subtask and checklist routes below refuse an archived task the same way.
  * Internal token: actor `user`, organization required.
+ * Description mentions require If-Match, including spans-only changes. Replacing text clears
+ * old spans unless replacements are supplied. Milestone conversion and recurrence follow
+ * the shared TaskPatch rules. Entering done with a due date creates at most one root successor
+ * in the same list, atomically with resetting recurrence to none, the link and the outbox.
+ * Cancellation, an undated completion, a repeated done, creation in done and restore create
+ * none. A source that has already spawned cannot be rearmed (`409 recurrence.already-spawned`).
+ * Unrepresentable dates answer `422 recurrence.date-out-of-range`. A successor copies the
+ * title, Markdown, priority, labels, eligible assignees, ordinary estimate, milestone and
+ * unchecked checklist, with a fresh key and todo status. It excludes children, parent,
+ * mentions, comments, watcher overrides, dependencies and completion metadata. Start dates
+ * move by the due-date delta and milestones retain date alignment. Monthly cadence retains
+ * the original day across short months. Fresh watcher defaults apply. A live existing task
+ * entering done as a milestone emits milestone.reached.v1, including when the same patch
+ * adds the flag. Creation in done, restore, cancellation, repeated done and adding the flag
+ * to an already-done task do not; a later genuine transition into done can emit it again.
  * @summary Change a task
  */
 const updateTaskInternal = async (taskKey: string,
@@ -3109,6 +4346,50 @@ const removeTaskLabelInternal = async (taskKey: string,
 
 
 
+const getDuplicateTaskInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/duplicate`
+}
+
+/**
+ * Duplicates one live task in its own list with ` (copie)` appended, truncating the source
+ * portion to fit the existing name limit. It allocates a fresh task key and timestamps and
+ * fresh checklist IDs, preserving checklist ticks, milestone, supported status and valid
+ * cancellation reason and note. It keeps a live parent when tree depth and capacity permit;
+ * a full parent answers `422 task.subtask-limit-reached`. It copies currently assignable
+ * users and Markdown as text, without mention spans, children, comments, watcher overrides,
+ * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
+ * Requires edit on the list; an archived task refuses changes. If-Match checks the source
+ * task version. An optional Idempotency-Key replays the original 201 and Location for 24
+ * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
+ * the ordinary task creation and assignment facts in the creation transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a task
+ */
+const duplicateTaskInternal = async (taskKey: string,
+    taskDuplicate: TaskDuplicate, options?: RequestInit): Promise<duplicateTaskInternalResponse> => {
+
+  const res = await fetchFn(getDuplicateTaskInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskDuplicate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: duplicateTaskInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as duplicateTaskInternalResponse
+}
+
+
+
 const getGetTaskDetailInternalUrl = (taskKey: string,) => {
 
 
@@ -3142,6 +4423,596 @@ const getTaskDetailInternal = async (taskKey: string, options?: RequestInit): Pr
 
   const data: getTaskDetailInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTaskDetailInternalResponse
+}
+
+
+
+const getListTaskCommentsInternalUrl = (taskKey: string,
+    params?: ListTaskCommentsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/comments?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/comments`
+}
+
+/**
+ * Lists live comments oldest first by `(createdAt,id)`, with a total excluding deleted comments.
+ * The cursor is opaque and bound to the task and ordering. Anyone who sees the task may read.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task comments
+ */
+const listTaskCommentsInternal = async (taskKey: string,
+    params?: ListTaskCommentsInternalParams, options?: RequestInit): Promise<listTaskCommentsInternalResponse> => {
+
+  const res = await fetchFn(getListTaskCommentsInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskCommentsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskCommentsInternalResponse
+}
+
+
+
+const getCreateTaskCommentInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/comments`
+}
+
+/**
+ * Check the caller's comment or edit role before validating recipients; a caller below the
+ * required role receives `403 access.role-insufficient` before `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * A `comment` or `edit` role may post. A reply must name a live comment on the same task;
+ * otherwise `404 comment.not-found`. Replies are flat. The optional Idempotency-Key records
+ * the response and Location for 24 hours; replay has no second effect. The comment and task
+ * version, activity and outbox change in the same transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a task comment
+ */
+const createTaskCommentInternal = async (taskKey: string,
+    commentCreation: CommentCreation, options?: RequestInit): Promise<createTaskCommentInternalResponse> => {
+
+  const res = await fetchFn(getCreateTaskCommentInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(commentCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTaskCommentInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTaskCommentInternalResponse
+}
+
+
+
+const getGetTaskCommentInternalUrl = (taskKey: string,
+    commentId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/comments/${commentId}`
+}
+
+/**
+ * Reads a live comment on a visible task. A deleted, missing or unrelated comment answers
+ * `404 comment.not-found`; a deleted reply target leaves only its ID, never quoted content.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task comment
+ */
+const getTaskCommentInternal = async (taskKey: string,
+    commentId: string, options?: RequestInit): Promise<getTaskCommentInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskCommentInternalUrl(taskKey,commentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskCommentInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskCommentInternalResponse
+}
+
+
+
+const getUpdateTaskCommentInternalUrl = (taskKey: string,
+    commentId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/comments/${commentId}`
+}
+
+/**
+ * Check the caller's comment or edit role and comment authorship before validating recipients;
+ * a caller below the required role receives `403 access.role-insufficient` before
+ * `422 mention.recipient-invalid`.
+ * A current member, including a guest, with read access to the list is eligible. Mention spans
+ * are Unicode code-point offsets into unchanged Markdown and are validated for range,
+ * overlap and a displayed token beginning with `@`; invalid spans answer `400 request.invalid`.
+ * Unmarked text is not a mention.
+ * Ineligible recipients answer `422 mention.recipient-invalid` without identifying them.
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is required even for spans alone and uses the
+ * comment version. Replacing text clears spans unless replacements are supplied. The task
+ * version, activity and outbox change once in the same transaction.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Edit a task comment
+ */
+const updateTaskCommentInternal = async (taskKey: string,
+    commentId: string,
+    commentPatch: CommentPatch, options?: RequestInit): Promise<updateTaskCommentInternalResponse> => {
+
+  const res = await fetchFn(getUpdateTaskCommentInternalUrl(taskKey,commentId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(commentPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateTaskCommentInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateTaskCommentInternalResponse
+}
+
+
+
+const getDeleteTaskCommentInternalUrl = (taskKey: string,
+    commentId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/comments/${commentId}`
+}
+
+/**
+ * Requires `comment` or `edit` and the human author; another editor gets
+ * `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
+ * text and spans, leaves a content-free tombstone for replies until task purge, and excludes
+ * it from pages and counts. The task version, activity and outbox change atomically.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a task comment
+ */
+const deleteTaskCommentInternal = async (taskKey: string,
+    commentId: string, options?: RequestInit): Promise<deleteTaskCommentInternalResponse> => {
+
+  const res = await fetchFn(getDeleteTaskCommentInternalUrl(taskKey,commentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteTaskCommentInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteTaskCommentInternalResponse
+}
+
+
+
+const getListTaskParticipantsInternalUrl = (taskKey: string,
+    params?: ListTaskParticipantsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/participants?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/participants`
+}
+
+/**
+ * Lists current members, including guests, with read access to this task, ordered by user ID.
+ * Only `userId` and `memberId` are returned. Requires `comment` or `edit`; a viewer receives
+ * `403 access.role-insufficient`. The opaque cursor is bound to the task and ordering.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List eligible task participants
+ */
+const listTaskParticipantsInternal = async (taskKey: string,
+    params?: ListTaskParticipantsInternalParams, options?: RequestInit): Promise<listTaskParticipantsInternalResponse> => {
+
+  const res = await fetchFn(getListTaskParticipantsInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskParticipantsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskParticipantsInternalResponse
+}
+
+
+
+const getListTaskWatchersInternalUrl = (taskKey: string,
+    params?: ListTaskWatchersInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/watchers?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/watchers`
+}
+
+/**
+ * Lists effective eligible watchers by user ID. The human creator and current eligible
+ * assignees are defaults, deduplicated; system and automation creators add no account.
+ * Per-user follow and unfollow overrides preserve opt-outs across reassignment. Membership
+ * and list visibility are checked on each read and event audience snapshot. A cursor is bound
+ * to the task and ordering; total and callerFollows are present on every page.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task watchers
+ */
+const listTaskWatchersInternal = async (taskKey: string,
+    params?: ListTaskWatchersInternalParams, options?: RequestInit): Promise<listTaskWatchersInternalResponse> => {
+
+  const res = await fetchFn(getListTaskWatchersInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskWatchersInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskWatchersInternalResponse
+}
+
+
+
+const getFollowTaskWatcherInternalUrl = (taskKey: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/watchers/${userId}`
+}
+
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit follow override for this account. `comment` or `edit` may change their own
+ * override; only `edit` may change another account. The target must be a current member with
+ * task read access; ineligible targets return `422 watcher.recipient-invalid` without details.
+ * At most 100 explicit overrides are stored per task, plus defaults; a new override beyond
+ * that bound returns `422 watcher.limit-reached`. Repeating the override is a no-op. If-Match
+ * and the returned ETag use the task version; a committed change bumps it once.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Follow a task
+ */
+const followTaskWatcherInternal = async (taskKey: string,
+    userId: string,
+    emptyRequest: EmptyRequest, options?: RequestInit): Promise<followTaskWatcherInternalResponse> => {
+
+  const res = await fetchFn(getFollowTaskWatcherInternalUrl(taskKey,userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(emptyRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: followTaskWatcherInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as followTaskWatcherInternalResponse
+}
+
+
+
+const getUnfollowTaskWatcherInternalUrl = (taskKey: string,
+    userId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/watchers/${userId}`
+}
+
+/**
+ * Check the caller's role and whether the subject is the caller before recipient validation;
+ * a caller without the required role receives `403 access.role-insufficient` before
+ * `422 watcher.recipient-invalid`.
+ * Sets an explicit unfollow override, including for an account without a default subscription.
+ * `comment` or `edit` may change their own override; only `edit` may change another account.
+ * The target must be eligible, otherwise `422 watcher.recipient-invalid`. A new override over
+ * 100 returns `422 watcher.limit-reached`; repeating one is a no-op. If-Match and the returned
+ * ETag use the task version; a committed change bumps it once.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Unfollow a task
+ */
+const unfollowTaskWatcherInternal = async (taskKey: string,
+    userId: string, options?: RequestInit): Promise<unfollowTaskWatcherInternalResponse> => {
+
+  const res = await fetchFn(getUnfollowTaskWatcherInternalUrl(taskKey,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unfollowTaskWatcherInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as unfollowTaskWatcherInternalResponse
+}
+
+
+
+const getListTaskDependenciesInternalUrl = (taskKey: string,
+    params?: ListTaskDependenciesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/dependencies?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/dependencies`
+}
+
+/**
+ * Lists edges by creation time and ID. Both endpoints must be readable; edges to an invisible,
+ * trashed or archived counterpart and their counts and warnings are hidden. Edges are retained
+ * through archive and trash, can reappear on restoration, and are erased on endpoint purge.
+ * An archived anchor remains readable and may show visible live counterparts. Dates are
+ * advisory: comparing an open blocker's due date with the blocked task's dates never changes
+ * either status. The opaque cursor is task-bound.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task dependencies
+ */
+const listTaskDependenciesInternal = async (taskKey: string,
+    params?: ListTaskDependenciesInternalParams, options?: RequestInit): Promise<listTaskDependenciesInternalResponse> => {
+
+  const res = await fetchFn(getListTaskDependenciesInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskDependenciesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskDependenciesInternalResponse
+}
+
+
+
+const getCreateTaskDependencyInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/dependencies`
+}
+
+/**
+ * Creates a directed blocker-to-blocked edge between tasks in the same organization, including
+ * across lists and spaces. Requires edit on both live tasks; an invisible other task answers
+ * `404 task.not-found`. Duplicate edges answer `409 dependency.already-exists`; self, direct
+ * and transitive cycles answer `422 dependency.cycle`, without disclosing a path. Graph writes
+ * are serialized and rechecked under locks, including retained edges; 100 incident edges per
+ * task including retained edges are allowed (`422 dependency.limit-reached`). If-Match is the
+ * anchor task version. The optional Idempotency-Key replays the creation and Location for 24
+ * hours. Each changed task version and its outbox facts commit with the edge.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a task dependency
+ */
+const createTaskDependencyInternal = async (taskKey: string,
+    dependencyCreation: DependencyCreation, options?: RequestInit): Promise<createTaskDependencyInternalResponse> => {
+
+  const res = await fetchFn(getCreateTaskDependencyInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(dependencyCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTaskDependencyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTaskDependencyInternalResponse
+}
+
+
+
+const getGetTaskDependencyInternalUrl = (taskKey: string,
+    dependencyId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/dependencies/${dependencyId}`
+}
+
+/**
+ * Reads an edge only when both endpoints are visible and the counterpart is live; otherwise
+ * `404 dependency.not-found`. Dates are advisory and never change task status.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task dependency
+ */
+const getTaskDependencyInternal = async (taskKey: string,
+    dependencyId: string, options?: RequestInit): Promise<getTaskDependencyInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskDependencyInternalUrl(taskKey,dependencyId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskDependencyInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskDependencyInternalResponse
+}
+
+
+
+const getDeleteTaskDependencyInternalUrl = (taskKey: string,
+    dependencyId: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/dependencies/${dependencyId}`
+}
+
+/**
+ * Removes an edge from either anchor. Requires edit on both live endpoints. Invisible or
+ * absent edges answer `404 dependency.not-found`. If-Match and the returned ETag refer to the
+ * anchor task; each changed task version and its outbox facts commit with the removal.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Remove a task dependency
+ */
+const deleteTaskDependencyInternal = async (taskKey: string,
+    dependencyId: string, options?: RequestInit): Promise<deleteTaskDependencyInternalResponse> => {
+
+  const res = await fetchFn(getDeleteTaskDependencyInternalUrl(taskKey,dependencyId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteTaskDependencyInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteTaskDependencyInternalResponse
+}
+
+
+
+const getListDependencyCandidatesInternalUrl = (taskKey: string,
+    params: ListDependencyCandidatesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/dependency-candidates?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/dependency-candidates`
+}
+
+/**
+ * Lists editable candidates for the requested direction, same list first, then name and key.
+ * Requires edit on the anchor and candidates. Search uses the existing task search; unsuitable
+ * known endpoints are excluded. The write remains authoritative under concurrency. The opaque
+ * cursor is bound to the task, direction, search and order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List dependency candidates
+ */
+const listDependencyCandidatesInternal = async (taskKey: string,
+    params: ListDependencyCandidatesInternalParams, options?: RequestInit): Promise<listDependencyCandidatesInternalResponse> => {
+
+  const res = await fetchFn(getListDependencyCandidatesInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listDependencyCandidatesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listDependencyCandidatesInternalResponse
 }
 
 
@@ -4201,27 +6072,40 @@ const purgeTrashEntryInternal = async (entryId: string, options?: RequestInit): 
 
 
 
-const getRestoreTrashEntryInternalUrl = (entryId: string,) => {
+const getRestoreTrashEntryInternalUrl = (entryId: string,
+    params?: RestoreTrashEntryInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/internal/v1/trash/entries/${entryId}/restore`
+  return stringifiedParams.length > 0 ? `/internal/v1/trash/entries/${entryId}/restore?${stringifiedParams}` : `/internal/v1/trash/entries/${entryId}/restore`
 }
 
 /**
  * Brings an entry the actor may restore back to its list, as
  * `POST /v1/trash/entries/{entryId}/restore` says: the root detached from a parent that is no
  * longer live or can no longer take it, a deleted list and space brought back with it; any
- * other entry answers `404 trash-entry.not-found`. Emits `space.restored.v1` and
- * `list.restored.v1` for what came back with it, then `task.restored.v1` for each task, the
- * root first. Internal token: actor `user`, organization required.
+ * other entry answers `404 trash-entry.not-found`. When a space or list returns it emits
+ * `space.restored.v1` and `space.access-republished.v1`, or `list.restored.v1` and
+ * `list.access-changed.v1`, respectively; then `task.restored.v1` for each task, the
+ * root first. While list deletion is still batching, `reportNotReady=true` returns
+ * `409 trash-entry.not-restorable-yet` only for an entry the actor could restore afterwards;
+ * otherwise the temporary condition remains `404 trash-entry.not-found`. No write occurs.
+ * Internal token: actor `user`, organization required.
  * @summary Restore a trash entry
  */
 const restoreTrashEntryInternal = async (entryId: string,
-    emptyRequest: EmptyRequest, options?: RequestInit): Promise<restoreTrashEntryInternalResponse> => {
+    emptyRequest: EmptyRequest,
+    params?: RestoreTrashEntryInternalParams, options?: RequestInit): Promise<restoreTrashEntryInternalResponse> => {
 
-  const res = await fetchFn(getRestoreTrashEntryInternalUrl(entryId),
+  const res = await fetchFn(getRestoreTrashEntryInternalUrl(entryId,params),
   {
     ...options,
     method: 'POST',
@@ -4352,7 +6236,609 @@ const checkTaskAccessInternal = async (taskKey: string, options?: RequestInit): 
 
 
 
-return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl };
+const getListTaskTemplatesInternalUrl = (spaceId: string,
+    params?: ListTaskTemplatesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/spaces/${spaceId}/task-templates?${stringifiedParams}` : `/internal/v1/spaces/${spaceId}/task-templates`
+}
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Ordered by creation time and ID; the opaque cursor is bound to the space and order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List task templates
+ */
+const listTaskTemplatesInternal = async (spaceId: string,
+    params?: ListTaskTemplatesInternalParams, options?: RequestInit): Promise<listTaskTemplatesInternalResponse> => {
+
+  const res = await fetchFn(getListTaskTemplatesInternalUrl(spaceId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskTemplatesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskTemplatesInternalResponse
+}
+
+
+
+const getCreateTaskTemplateInternalUrl = (spaceId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/task-templates`
+}
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * The sourceTaskKey must name a live task in this space; a task in another space answers
+ * `404 task.not-found`, as does an invisible task. Requires edit on the space and source list. Captures title, description, priority,
+ * labels, checklist texts and direct live child names, without dates, assignees, mentions,
+ * recurrence, milestone or watchers. An archived source refuses writes. A restricted source
+ * list in an organization-visible space answers `422 template.source-restricted`, preventing
+ * the library from widening its audience. `422 template.limit-reached` means the library is
+ * full. Later source or template changes never alter previously created tasks. The client
+ * submits normal TaskCreation, including its checklist and name-only subtasks.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Save a task template
+ */
+const createTaskTemplateInternal = async (spaceId: string,
+    taskTemplateCreation: TaskTemplateCreation, options?: RequestInit): Promise<createTaskTemplateInternalResponse> => {
+
+  const res = await fetchFn(getCreateTaskTemplateInternalUrl(spaceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskTemplateCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createTaskTemplateInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createTaskTemplateInternalResponse
+}
+
+
+
+const getGetTaskTemplateInternalUrl = (spaceId: string,
+    templateId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/task-templates/${templateId}`
+}
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * An unknown or inaccessible scoped template answers `404 template.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a task template
+ */
+const getTaskTemplateInternal = async (spaceId: string,
+    templateId: string, options?: RequestInit): Promise<getTaskTemplateInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskTemplateInternalUrl(spaceId,templateId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskTemplateInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskTemplateInternalResponse
+}
+
+
+
+const getDeleteTaskTemplateInternalUrl = (spaceId: string,
+    templateId: string,) => {
+
+
+
+
+  return `/internal/v1/spaces/${spaceId}/task-templates/${templateId}`
+}
+
+/**
+ * The library is shared within the space and requires an actual space role; a grant only on
+ * a list does not grant access to the library (`404 space.not-found`). The 50-template bound
+ * is enforced in the owning transaction. Built-in presets are client-side.
+ * Requires edit on the space. Deletes the template to free library capacity; it never deletes
+ * tasks created from it. If-Match, when sent, checks the template version.
+ * The change and space.task-template-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a task template
+ */
+const deleteTaskTemplateInternal = async (spaceId: string,
+    templateId: string, options?: RequestInit): Promise<deleteTaskTemplateInternalResponse> => {
+
+  const res = await fetchFn(getDeleteTaskTemplateInternalUrl(spaceId,templateId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteTaskTemplateInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteTaskTemplateInternalResponse
+}
+
+
+
+const getListSavedViewsInternalUrl = (listId: string,
+    params?: ListSavedViewsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/lists/${listId}/saved-views?${stringifiedParams}` : `/internal/v1/lists/${listId}/saved-views`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * New views append in creation order; a duplicate is inserted after its source.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List saved views
+ */
+const listSavedViewsInternal = async (listId: string,
+    params?: ListSavedViewsInternalParams, options?: RequestInit): Promise<listSavedViewsInternalResponse> => {
+
+  const res = await fetchFn(getListSavedViewsInternalUrl(listId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSavedViewsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSavedViewsInternalResponse
+}
+
+
+
+const getCreateSavedViewInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/saved-views`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Stores the explicit configuration; `422 saved-view.limit-reached` means the list is full.
+ * Search, milestone, subtask display, collapsed groups, zoom and standard tabs stay local;
+ * Feuille-only sort is client presentation and is never sent as a server task sort.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a saved view
+ */
+const createSavedViewInternal = async (listId: string,
+    savedViewCreation: SavedViewCreation, options?: RequestInit): Promise<createSavedViewInternalResponse> => {
+
+  const res = await fetchFn(getCreateSavedViewInternalUrl(listId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(savedViewCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSavedViewInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSavedViewInternalResponse
+}
+
+
+
+const getGetSavedViewInternalUrl = (listId: string,
+    viewId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/saved-views/${viewId}`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * A missing, deleted or inaccessible view answers `404 saved-view.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a saved view
+ */
+const getSavedViewInternal = async (listId: string,
+    viewId: string, options?: RequestInit): Promise<getSavedViewInternalResponse> => {
+
+  const res = await fetchFn(getGetSavedViewInternalUrl(listId,viewId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSavedViewInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSavedViewInternalResponse
+}
+
+
+
+const getUpdateSavedViewInternalUrl = (listId: string,
+    viewId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/saved-views/${viewId}`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Rename and edit use JSON Merge Patch, including nested settings; undeclared members are
+ * ignored. Null groupBy clears grouping and is returned as null; null icon clears the icon.
+ * If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Update a saved view
+ */
+const updateSavedViewInternal = async (listId: string,
+    viewId: string,
+    savedViewPatch: SavedViewPatch, options?: RequestInit): Promise<updateSavedViewInternalResponse> => {
+
+  const res = await fetchFn(getUpdateSavedViewInternalUrl(listId,viewId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(savedViewPatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateSavedViewInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateSavedViewInternalResponse
+}
+
+
+
+const getDeleteSavedViewInternalUrl = (listId: string,
+    viewId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/saved-views/${viewId}`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * The deletion completes immediately. A client may create a new view from its snapshot for
+ * undo. If-Match is optional and checks the view version.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a saved view
+ */
+const deleteSavedViewInternal = async (listId: string,
+    viewId: string, options?: RequestInit): Promise<deleteSavedViewInternalResponse> => {
+
+  const res = await fetchFn(getDeleteSavedViewInternalUrl(listId,viewId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteSavedViewInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteSavedViewInternalResponse
+}
+
+
+
+const getDuplicateSavedViewInternalUrl = (listId: string,
+    viewId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/saved-views/${viewId}/duplicate`
+}
+
+/**
+ * Views are shared within a list: every effective list role may read; edit is required for
+ * writes. Archive retains settings and permits reads but blocks writes with
+ * `409 saved-view.list-archived` and hides views from active navigation. List or space deletion
+ * permanently removes its views; restoring a list does not recreate them. Up to 50 views
+ * belong to a list. Applying `me` uses the current reader, and null groupBy skips task-groups.
+ * Creates a new view with a fresh ID and version immediately after the source, appending
+ * ` (copie)` to its name after truncating the source portion to the 80-character ceiling.
+ * If-Match is optional and checks the source view version. `422 saved-view.limit-reached` means the list
+ * is full. The duplicate emits the same creation fact as an ordinary new view.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * The change and list.saved-view-changed.v1 outbox fact commit together.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Duplicate a saved view
+ */
+const duplicateSavedViewInternal = async (listId: string,
+    viewId: string,
+    savedViewDuplicate: SavedViewDuplicate, options?: RequestInit): Promise<duplicateSavedViewInternalResponse> => {
+
+  const res = await fetchFn(getDuplicateSavedViewInternalUrl(listId,viewId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(savedViewDuplicate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: duplicateSavedViewInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as duplicateSavedViewInternalResponse
+}
+
+
+
+const getListFavoritesInternalUrl = (params?: ListFavoritesInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/me/favorites?${stringifiedParams}` : `/internal/v1/me/favorites`
+}
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * The opaque cursor is bound to the caller, organization and insertion order.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary List favorites
+ */
+const listFavoritesInternal = async (params?: ListFavoritesInternalParams, options?: RequestInit): Promise<listFavoritesInternalResponse> => {
+
+  const res = await fetchFn(getListFavoritesInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listFavoritesInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listFavoritesInternalResponse
+}
+
+
+
+const getCreateFavoriteInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/me/favorites`
+}
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A target must be active and visible or the response is `404 favorite.target-not-found`.
+ * A duplicate target answers `409 favorite.already-exists`; capacity answers
+ * `422 favorite.limit-reached`. No downstream event is emitted for this personal preference.
+ * An optional Idempotency-Key replays the original response and Location for 24 hours;
+ * a changed request answers `422 idempotency.key-reused` and an in-flight replay answers
+ * `409 idempotency.request-in-progress`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Create a favorite
+ */
+const createFavoriteInternal = async (favoriteCreation: FavoriteCreation, options?: RequestInit): Promise<createFavoriteInternalResponse> => {
+
+  const res = await fetchFn(getCreateFavoriteInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(favoriteCreation)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createFavoriteInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createFavoriteInternalResponse
+}
+
+
+
+const getGetFavoriteInternalUrl = (favoriteId: string,) => {
+
+
+
+
+  return `/internal/v1/me/favorites/${favoriteId}`
+}
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * A missing, hidden or another user’s favorite answers `404 favorite.not-found`.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Get a favorite
+ */
+const getFavoriteInternal = async (favoriteId: string, options?: RequestInit): Promise<getFavoriteInternalResponse> => {
+
+  const res = await fetchFn(getGetFavoriteInternalUrl(favoriteId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getFavoriteInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getFavoriteInternalResponse
+}
+
+
+
+const getDeleteFavoriteInternalUrl = (favoriteId: string,) => {
+
+
+
+
+  return `/internal/v1/me/favorites/${favoriteId}`
+}
+
+/**
+ * Favorites are private to the current user and organization. Any role that can read an active
+ * target may favorite it. Only currently readable active targets are returned, in insertion
+ * order. Archive or temporary access loss hides a retained favorite; an accessible restored
+ * space or list may reappear. Deleted views never return; purge removes dangling favorites.
+ * Up to 200 favorites per user and organization are stored.
+ * Deletes the caller's favorite only; a missing, hidden or another user's favorite answers
+ * `404 favorite.not-found`. If-Match is optional and checks the favorite version.
+ * Internal token: issuer api-gateway, actor user and organization required.
+ * @summary Delete a favorite
+ */
+const deleteFavoriteInternal = async (favoriteId: string, options?: RequestInit): Promise<deleteFavoriteInternalResponse> => {
+
+  const res = await fetchFn(getDeleteFavoriteInternalUrl(favoriteId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteFavoriteInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteFavoriteInternalResponse
+}
+
+
+
+return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl };
 };
 
 export type createSpaceInternalResponse201 = {
@@ -4558,6 +7044,41 @@ export type deleteSpaceInternalResponseError = (deleteSpaceInternalResponse400 |
 };
 
 export type deleteSpaceInternalResponse = (deleteSpaceInternalResponseSuccess | deleteSpaceInternalResponseError)
+
+
+export type listSpaceMilestonesInternalResponse200 = {
+  data: MilestonePage
+  status: 200
+}
+
+export type listSpaceMilestonesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listSpaceMilestonesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listSpaceMilestonesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listSpaceMilestonesInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type listSpaceMilestonesInternalResponseSuccess = (listSpaceMilestonesInternalResponse200) & {
+  headers: Headers;
+};
+export type listSpaceMilestonesInternalResponseError = (listSpaceMilestonesInternalResponse400 | listSpaceMilestonesInternalResponse401 | listSpaceMilestonesInternalResponse403 | listSpaceMilestonesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listSpaceMilestonesInternalResponse = (listSpaceMilestonesInternalResponseSuccess | listSpaceMilestonesInternalResponseError)
 
 
 export type getSpaceOverviewInternalResponse200 = {
@@ -4795,6 +7316,56 @@ export type deleteListInternalResponseError = (deleteListInternalResponse400 | d
 export type deleteListInternalResponse = (deleteListInternalResponseSuccess | deleteListInternalResponseError)
 
 
+export type duplicateListInternalResponse201 = {
+  data: ListDuplication
+  status: 201
+}
+
+export type duplicateListInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type duplicateListInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type duplicateListInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type duplicateListInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type duplicateListInternalResponse409 = {
+  data: ListDuplicateConflictResponse
+  status: 409
+}
+
+export type duplicateListInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type duplicateListInternalResponse422 = {
+  data: ListDuplicateRefusedResponse
+  status: 422
+}
+
+export type duplicateListInternalResponseSuccess = (duplicateListInternalResponse201) & {
+  headers: Headers;
+};
+export type duplicateListInternalResponseError = (duplicateListInternalResponse400 | duplicateListInternalResponse401 | duplicateListInternalResponse403 | duplicateListInternalResponse404 | duplicateListInternalResponse409 | duplicateListInternalResponse412 | duplicateListInternalResponse422) & {
+  headers: Headers;
+};
+
+export type duplicateListInternalResponse = (duplicateListInternalResponseSuccess | duplicateListInternalResponseError)
+
+
 export type getListCountsInternalResponse200 = {
   data: ListSummary
   status: 200
@@ -4980,6 +7551,56 @@ export type countTaskGroupsInternalResponseError = (countTaskGroupsInternalRespo
 export type countTaskGroupsInternalResponse = (countTaskGroupsInternalResponseSuccess | countTaskGroupsInternalResponseError)
 
 
+export type executeBulkTaskActionInternalResponse200 = {
+  data: BulkTaskResult
+  status: 200
+}
+
+export type executeBulkTaskActionInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type executeBulkTaskActionInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type executeBulkTaskActionInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type executeBulkTaskActionInternalResponse404 = {
+  data: BulkTargetNotFoundResponse
+  status: 404
+}
+
+export type executeBulkTaskActionInternalResponse409 = {
+  data: BulkConflictResponse
+  status: 409
+}
+
+export type executeBulkTaskActionInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type executeBulkTaskActionInternalResponse422 = {
+  data: BulkRefusedResponse
+  status: 422
+}
+
+export type executeBulkTaskActionInternalResponseSuccess = (executeBulkTaskActionInternalResponse200) & {
+  headers: Headers;
+};
+export type executeBulkTaskActionInternalResponseError = (executeBulkTaskActionInternalResponse400 | executeBulkTaskActionInternalResponse401 | executeBulkTaskActionInternalResponse403 | executeBulkTaskActionInternalResponse404 | executeBulkTaskActionInternalResponse409 | executeBulkTaskActionInternalResponse412 | executeBulkTaskActionInternalResponse422) & {
+  headers: Headers;
+};
+
+export type executeBulkTaskActionInternalResponse = (executeBulkTaskActionInternalResponseSuccess | executeBulkTaskActionInternalResponseError)
+
+
 export type getTaskInternalResponse200 = {
   data: Task
   status: 200
@@ -5041,7 +7662,7 @@ export type updateTaskInternalResponse404 = {
 }
 
 export type updateTaskInternalResponse409 = {
-  data: TaskArchivedResponse
+  data: TaskRecurrenceConflictResponse
   status: 409
 }
 
@@ -5255,6 +7876,56 @@ export type removeTaskLabelInternalResponseError = (removeTaskLabelInternalRespo
 export type removeTaskLabelInternalResponse = (removeTaskLabelInternalResponseSuccess | removeTaskLabelInternalResponseError)
 
 
+export type duplicateTaskInternalResponse201 = {
+  data: Task
+  status: 201
+}
+
+export type duplicateTaskInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type duplicateTaskInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type duplicateTaskInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type duplicateTaskInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type duplicateTaskInternalResponse409 = {
+  data: TaskDuplicateConflictResponse
+  status: 409
+}
+
+export type duplicateTaskInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type duplicateTaskInternalResponse422 = {
+  data: TaskDuplicateRefusedResponse
+  status: 422
+}
+
+export type duplicateTaskInternalResponseSuccess = (duplicateTaskInternalResponse201) & {
+  headers: Headers;
+};
+export type duplicateTaskInternalResponseError = (duplicateTaskInternalResponse400 | duplicateTaskInternalResponse401 | duplicateTaskInternalResponse403 | duplicateTaskInternalResponse404 | duplicateTaskInternalResponse409 | duplicateTaskInternalResponse412 | duplicateTaskInternalResponse422) & {
+  headers: Headers;
+};
+
+export type duplicateTaskInternalResponse = (duplicateTaskInternalResponseSuccess | duplicateTaskInternalResponseError)
+
+
 export type getTaskDetailInternalResponse200 = {
   data: TaskDetailCore
   status: 200
@@ -5288,6 +7959,586 @@ export type getTaskDetailInternalResponseError = (getTaskDetailInternalResponse4
 };
 
 export type getTaskDetailInternalResponse = (getTaskDetailInternalResponseSuccess | getTaskDetailInternalResponseError)
+
+
+export type listTaskCommentsInternalResponse200 = {
+  data: CommentPage
+  status: 200
+}
+
+export type listTaskCommentsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskCommentsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskCommentsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskCommentsInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listTaskCommentsInternalResponseSuccess = (listTaskCommentsInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskCommentsInternalResponseError = (listTaskCommentsInternalResponse400 | listTaskCommentsInternalResponse401 | listTaskCommentsInternalResponse403 | listTaskCommentsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskCommentsInternalResponse = (listTaskCommentsInternalResponseSuccess | listTaskCommentsInternalResponseError)
+
+
+export type createTaskCommentInternalResponse201 = {
+  data: Comment
+  status: 201
+}
+
+export type createTaskCommentInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createTaskCommentInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createTaskCommentInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type createTaskCommentInternalResponse404 = {
+  data: CollabCommentNotFoundResponse
+  status: 404
+}
+
+export type createTaskCommentInternalResponse409 = {
+  data: CollabCreateConflictResponse
+  status: 409
+}
+
+export type createTaskCommentInternalResponse422 = {
+  data: CollabCreateRefusedResponse
+  status: 422
+}
+
+export type createTaskCommentInternalResponseSuccess = (createTaskCommentInternalResponse201) & {
+  headers: Headers;
+};
+export type createTaskCommentInternalResponseError = (createTaskCommentInternalResponse400 | createTaskCommentInternalResponse401 | createTaskCommentInternalResponse403 | createTaskCommentInternalResponse404 | createTaskCommentInternalResponse409 | createTaskCommentInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createTaskCommentInternalResponse = (createTaskCommentInternalResponseSuccess | createTaskCommentInternalResponseError)
+
+
+export type getTaskCommentInternalResponse200 = {
+  data: Comment
+  status: 200
+}
+
+export type getTaskCommentInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskCommentInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskCommentInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskCommentInternalResponse404 = {
+  data: CollabCommentNotFoundResponse
+  status: 404
+}
+
+export type getTaskCommentInternalResponseSuccess = (getTaskCommentInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskCommentInternalResponseError = (getTaskCommentInternalResponse400 | getTaskCommentInternalResponse401 | getTaskCommentInternalResponse403 | getTaskCommentInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskCommentInternalResponse = (getTaskCommentInternalResponseSuccess | getTaskCommentInternalResponseError)
+
+
+export type updateTaskCommentInternalResponse200 = {
+  data: Comment
+  status: 200
+}
+
+export type updateTaskCommentInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateTaskCommentInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateTaskCommentInternalResponse403 = {
+  data: CollabAuthorResponse
+  status: 403
+}
+
+export type updateTaskCommentInternalResponse404 = {
+  data: CollabCommentNotFoundResponse
+  status: 404
+}
+
+export type updateTaskCommentInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type updateTaskCommentInternalResponse412 = {
+  data: CommentVersionMismatchResponse
+  status: 412
+}
+
+export type updateTaskCommentInternalResponse422 = {
+  data: CollabMentionResponse
+  status: 422
+}
+
+export type updateTaskCommentInternalResponseSuccess = (updateTaskCommentInternalResponse200) & {
+  headers: Headers;
+};
+export type updateTaskCommentInternalResponseError = (updateTaskCommentInternalResponse400 | updateTaskCommentInternalResponse401 | updateTaskCommentInternalResponse403 | updateTaskCommentInternalResponse404 | updateTaskCommentInternalResponse409 | updateTaskCommentInternalResponse412 | updateTaskCommentInternalResponse422) & {
+  headers: Headers;
+};
+
+export type updateTaskCommentInternalResponse = (updateTaskCommentInternalResponseSuccess | updateTaskCommentInternalResponseError)
+
+
+export type deleteTaskCommentInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTaskCommentInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteTaskCommentInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteTaskCommentInternalResponse403 = {
+  data: CollabAuthorResponse
+  status: 403
+}
+
+export type deleteTaskCommentInternalResponse404 = {
+  data: CollabCommentNotFoundResponse
+  status: 404
+}
+
+export type deleteTaskCommentInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type deleteTaskCommentInternalResponse412 = {
+  data: CommentVersionMismatchResponse
+  status: 412
+}
+
+export type deleteTaskCommentInternalResponseSuccess = (deleteTaskCommentInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteTaskCommentInternalResponseError = (deleteTaskCommentInternalResponse400 | deleteTaskCommentInternalResponse401 | deleteTaskCommentInternalResponse403 | deleteTaskCommentInternalResponse404 | deleteTaskCommentInternalResponse409 | deleteTaskCommentInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteTaskCommentInternalResponse = (deleteTaskCommentInternalResponseSuccess | deleteTaskCommentInternalResponseError)
+
+
+export type listTaskParticipantsInternalResponse200 = {
+  data: TaskParticipantPage
+  status: 200
+}
+
+export type listTaskParticipantsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskParticipantsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskParticipantsInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type listTaskParticipantsInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listTaskParticipantsInternalResponseSuccess = (listTaskParticipantsInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskParticipantsInternalResponseError = (listTaskParticipantsInternalResponse400 | listTaskParticipantsInternalResponse401 | listTaskParticipantsInternalResponse403 | listTaskParticipantsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskParticipantsInternalResponse = (listTaskParticipantsInternalResponseSuccess | listTaskParticipantsInternalResponseError)
+
+
+export type listTaskWatchersInternalResponse200 = {
+  data: WatcherPage
+  status: 200
+}
+
+export type listTaskWatchersInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskWatchersInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskWatchersInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskWatchersInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listTaskWatchersInternalResponseSuccess = (listTaskWatchersInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskWatchersInternalResponseError = (listTaskWatchersInternalResponse400 | listTaskWatchersInternalResponse401 | listTaskWatchersInternalResponse403 | listTaskWatchersInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskWatchersInternalResponse = (listTaskWatchersInternalResponseSuccess | listTaskWatchersInternalResponseError)
+
+
+export type followTaskWatcherInternalResponse200 = {
+  data: Watcher
+  status: 200
+}
+
+export type followTaskWatcherInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type followTaskWatcherInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type followTaskWatcherInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type followTaskWatcherInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type followTaskWatcherInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type followTaskWatcherInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type followTaskWatcherInternalResponse422 = {
+  data: CollabWatcherRefusedResponse
+  status: 422
+}
+
+export type followTaskWatcherInternalResponseSuccess = (followTaskWatcherInternalResponse200) & {
+  headers: Headers;
+};
+export type followTaskWatcherInternalResponseError = (followTaskWatcherInternalResponse400 | followTaskWatcherInternalResponse401 | followTaskWatcherInternalResponse403 | followTaskWatcherInternalResponse404 | followTaskWatcherInternalResponse409 | followTaskWatcherInternalResponse412 | followTaskWatcherInternalResponse422) & {
+  headers: Headers;
+};
+
+export type followTaskWatcherInternalResponse = (followTaskWatcherInternalResponseSuccess | followTaskWatcherInternalResponseError)
+
+
+export type unfollowTaskWatcherInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type unfollowTaskWatcherInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type unfollowTaskWatcherInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type unfollowTaskWatcherInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type unfollowTaskWatcherInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type unfollowTaskWatcherInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type unfollowTaskWatcherInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type unfollowTaskWatcherInternalResponse422 = {
+  data: CollabWatcherRefusedResponse
+  status: 422
+}
+
+export type unfollowTaskWatcherInternalResponseSuccess = (unfollowTaskWatcherInternalResponse204) & {
+  headers: Headers;
+};
+export type unfollowTaskWatcherInternalResponseError = (unfollowTaskWatcherInternalResponse400 | unfollowTaskWatcherInternalResponse401 | unfollowTaskWatcherInternalResponse403 | unfollowTaskWatcherInternalResponse404 | unfollowTaskWatcherInternalResponse409 | unfollowTaskWatcherInternalResponse412 | unfollowTaskWatcherInternalResponse422) & {
+  headers: Headers;
+};
+
+export type unfollowTaskWatcherInternalResponse = (unfollowTaskWatcherInternalResponseSuccess | unfollowTaskWatcherInternalResponseError)
+
+
+export type listTaskDependenciesInternalResponse200 = {
+  data: DependencyPage
+  status: 200
+}
+
+export type listTaskDependenciesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskDependenciesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskDependenciesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskDependenciesInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listTaskDependenciesInternalResponseSuccess = (listTaskDependenciesInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskDependenciesInternalResponseError = (listTaskDependenciesInternalResponse400 | listTaskDependenciesInternalResponse401 | listTaskDependenciesInternalResponse403 | listTaskDependenciesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskDependenciesInternalResponse = (listTaskDependenciesInternalResponseSuccess | listTaskDependenciesInternalResponseError)
+
+
+export type createTaskDependencyInternalResponse201 = {
+  data: Dependency
+  status: 201
+}
+
+export type createTaskDependencyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createTaskDependencyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createTaskDependencyInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type createTaskDependencyInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type createTaskDependencyInternalResponse409 = {
+  data: DependencyConflictResponse
+  status: 409
+}
+
+export type createTaskDependencyInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type createTaskDependencyInternalResponse422 = {
+  data: DependencyRefusedResponse
+  status: 422
+}
+
+export type createTaskDependencyInternalResponseSuccess = (createTaskDependencyInternalResponse201) & {
+  headers: Headers;
+};
+export type createTaskDependencyInternalResponseError = (createTaskDependencyInternalResponse400 | createTaskDependencyInternalResponse401 | createTaskDependencyInternalResponse403 | createTaskDependencyInternalResponse404 | createTaskDependencyInternalResponse409 | createTaskDependencyInternalResponse412 | createTaskDependencyInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createTaskDependencyInternalResponse = (createTaskDependencyInternalResponseSuccess | createTaskDependencyInternalResponseError)
+
+
+export type getTaskDependencyInternalResponse200 = {
+  data: Dependency
+  status: 200
+}
+
+export type getTaskDependencyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskDependencyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskDependencyInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskDependencyInternalResponse404 = {
+  data: DependencyNotFoundResponse
+  status: 404
+}
+
+export type getTaskDependencyInternalResponseSuccess = (getTaskDependencyInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskDependencyInternalResponseError = (getTaskDependencyInternalResponse400 | getTaskDependencyInternalResponse401 | getTaskDependencyInternalResponse403 | getTaskDependencyInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskDependencyInternalResponse = (getTaskDependencyInternalResponseSuccess | getTaskDependencyInternalResponseError)
+
+
+export type deleteTaskDependencyInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTaskDependencyInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteTaskDependencyInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteTaskDependencyInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type deleteTaskDependencyInternalResponse404 = {
+  data: DependencyNotFoundResponse
+  status: 404
+}
+
+export type deleteTaskDependencyInternalResponse409 = {
+  data: TaskArchivedResponse
+  status: 409
+}
+
+export type deleteTaskDependencyInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteTaskDependencyInternalResponseSuccess = (deleteTaskDependencyInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteTaskDependencyInternalResponseError = (deleteTaskDependencyInternalResponse400 | deleteTaskDependencyInternalResponse401 | deleteTaskDependencyInternalResponse403 | deleteTaskDependencyInternalResponse404 | deleteTaskDependencyInternalResponse409 | deleteTaskDependencyInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteTaskDependencyInternalResponse = (deleteTaskDependencyInternalResponseSuccess | deleteTaskDependencyInternalResponseError)
+
+
+export type listDependencyCandidatesInternalResponse200 = {
+  data: TaskSummaryPage
+  status: 200
+}
+
+export type listDependencyCandidatesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listDependencyCandidatesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listDependencyCandidatesInternalResponse403 = {
+  data: CollabRoleResponse
+  status: 403
+}
+
+export type listDependencyCandidatesInternalResponse404 = {
+  data: TaskNotFoundResponse
+  status: 404
+}
+
+export type listDependencyCandidatesInternalResponseSuccess = (listDependencyCandidatesInternalResponse200) & {
+  headers: Headers;
+};
+export type listDependencyCandidatesInternalResponseError = (listDependencyCandidatesInternalResponse400 | listDependencyCandidatesInternalResponse401 | listDependencyCandidatesInternalResponse403 | listDependencyCandidatesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listDependencyCandidatesInternalResponse = (listDependencyCandidatesInternalResponseSuccess | listDependencyCandidatesInternalResponseError)
 
 
 export type listSubtasksInternalResponse200 = {
@@ -6380,10 +9631,15 @@ export type restoreTrashEntryInternalResponse404 = {
   status: 404
 }
 
+export type restoreTrashEntryInternalResponse409 = {
+  data: TrashEntryNotRestorableYetResponse
+  status: 409
+}
+
 export type restoreTrashEntryInternalResponseSuccess = (restoreTrashEntryInternalResponse200) & {
   headers: Headers;
 };
-export type restoreTrashEntryInternalResponseError = (restoreTrashEntryInternalResponse400 | restoreTrashEntryInternalResponse401 | restoreTrashEntryInternalResponse403 | restoreTrashEntryInternalResponse404) & {
+export type restoreTrashEntryInternalResponseError = (restoreTrashEntryInternalResponse400 | restoreTrashEntryInternalResponse401 | restoreTrashEntryInternalResponse403 | restoreTrashEntryInternalResponse404 | restoreTrashEntryInternalResponse409) & {
   headers: Headers;
 };
 
@@ -6493,3 +9749,568 @@ export type checkTaskAccessInternalResponseError = (checkTaskAccessInternalRespo
 };
 
 export type checkTaskAccessInternalResponse = (checkTaskAccessInternalResponseSuccess | checkTaskAccessInternalResponseError)
+
+
+export type listTaskTemplatesInternalResponse200 = {
+  data: TaskTemplatePage
+  status: 200
+}
+
+export type listTaskTemplatesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listTaskTemplatesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskTemplatesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskTemplatesInternalResponse404 = {
+  data: SpaceNotFoundResponse
+  status: 404
+}
+
+export type listTaskTemplatesInternalResponseSuccess = (listTaskTemplatesInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskTemplatesInternalResponseError = (listTaskTemplatesInternalResponse400 | listTaskTemplatesInternalResponse401 | listTaskTemplatesInternalResponse403 | listTaskTemplatesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listTaskTemplatesInternalResponse = (listTaskTemplatesInternalResponseSuccess | listTaskTemplatesInternalResponseError)
+
+
+export type createTaskTemplateInternalResponse201 = {
+  data: TaskTemplate
+  status: 201
+}
+
+export type createTaskTemplateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createTaskTemplateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createTaskTemplateInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type createTaskTemplateInternalResponse404 = {
+  data: TemplateSourceNotFoundResponse
+  status: 404
+}
+
+export type createTaskTemplateInternalResponse409 = {
+  data: TemplateCreateConflictResponse
+  status: 409
+}
+
+export type createTaskTemplateInternalResponse422 = {
+  data: TemplateCreateRefusedResponse
+  status: 422
+}
+
+export type createTaskTemplateInternalResponseSuccess = (createTaskTemplateInternalResponse201) & {
+  headers: Headers;
+};
+export type createTaskTemplateInternalResponseError = (createTaskTemplateInternalResponse400 | createTaskTemplateInternalResponse401 | createTaskTemplateInternalResponse403 | createTaskTemplateInternalResponse404 | createTaskTemplateInternalResponse409 | createTaskTemplateInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createTaskTemplateInternalResponse = (createTaskTemplateInternalResponseSuccess | createTaskTemplateInternalResponseError)
+
+
+export type getTaskTemplateInternalResponse200 = {
+  data: TaskTemplate
+  status: 200
+}
+
+export type getTaskTemplateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskTemplateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskTemplateInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskTemplateInternalResponse404 = {
+  data: TemplateNotFoundResponse
+  status: 404
+}
+
+export type getTaskTemplateInternalResponseSuccess = (getTaskTemplateInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskTemplateInternalResponseError = (getTaskTemplateInternalResponse400 | getTaskTemplateInternalResponse401 | getTaskTemplateInternalResponse403 | getTaskTemplateInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getTaskTemplateInternalResponse = (getTaskTemplateInternalResponseSuccess | getTaskTemplateInternalResponseError)
+
+
+export type deleteTaskTemplateInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTaskTemplateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteTaskTemplateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteTaskTemplateInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type deleteTaskTemplateInternalResponse404 = {
+  data: TemplateNotFoundResponse
+  status: 404
+}
+
+export type deleteTaskTemplateInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteTaskTemplateInternalResponseSuccess = (deleteTaskTemplateInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteTaskTemplateInternalResponseError = (deleteTaskTemplateInternalResponse400 | deleteTaskTemplateInternalResponse401 | deleteTaskTemplateInternalResponse403 | deleteTaskTemplateInternalResponse404 | deleteTaskTemplateInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteTaskTemplateInternalResponse = (deleteTaskTemplateInternalResponseSuccess | deleteTaskTemplateInternalResponseError)
+
+
+export type listSavedViewsInternalResponse200 = {
+  data: SavedViewPage
+  status: 200
+}
+
+export type listSavedViewsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listSavedViewsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listSavedViewsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listSavedViewsInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type listSavedViewsInternalResponseSuccess = (listSavedViewsInternalResponse200) & {
+  headers: Headers;
+};
+export type listSavedViewsInternalResponseError = (listSavedViewsInternalResponse400 | listSavedViewsInternalResponse401 | listSavedViewsInternalResponse403 | listSavedViewsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listSavedViewsInternalResponse = (listSavedViewsInternalResponseSuccess | listSavedViewsInternalResponseError)
+
+
+export type createSavedViewInternalResponse201 = {
+  data: SavedView
+  status: 201
+}
+
+export type createSavedViewInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createSavedViewInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createSavedViewInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type createSavedViewInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type createSavedViewInternalResponse409 = {
+  data: SavedViewCreateConflictResponse
+  status: 409
+}
+
+export type createSavedViewInternalResponse422 = {
+  data: SavedViewCreateRefusedResponse
+  status: 422
+}
+
+export type createSavedViewInternalResponseSuccess = (createSavedViewInternalResponse201) & {
+  headers: Headers;
+};
+export type createSavedViewInternalResponseError = (createSavedViewInternalResponse400 | createSavedViewInternalResponse401 | createSavedViewInternalResponse403 | createSavedViewInternalResponse404 | createSavedViewInternalResponse409 | createSavedViewInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createSavedViewInternalResponse = (createSavedViewInternalResponseSuccess | createSavedViewInternalResponseError)
+
+
+export type getSavedViewInternalResponse200 = {
+  data: SavedView
+  status: 200
+}
+
+export type getSavedViewInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getSavedViewInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getSavedViewInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getSavedViewInternalResponse404 = {
+  data: SavedViewNotFoundResponse
+  status: 404
+}
+
+export type getSavedViewInternalResponseSuccess = (getSavedViewInternalResponse200) & {
+  headers: Headers;
+};
+export type getSavedViewInternalResponseError = (getSavedViewInternalResponse400 | getSavedViewInternalResponse401 | getSavedViewInternalResponse403 | getSavedViewInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getSavedViewInternalResponse = (getSavedViewInternalResponseSuccess | getSavedViewInternalResponseError)
+
+
+export type updateSavedViewInternalResponse200 = {
+  data: SavedView
+  status: 200
+}
+
+export type updateSavedViewInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateSavedViewInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type updateSavedViewInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type updateSavedViewInternalResponse404 = {
+  data: SavedViewNotFoundResponse
+  status: 404
+}
+
+export type updateSavedViewInternalResponse409 = {
+  data: SavedViewWriteConflictResponse
+  status: 409
+}
+
+export type updateSavedViewInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type updateSavedViewInternalResponseSuccess = (updateSavedViewInternalResponse200) & {
+  headers: Headers;
+};
+export type updateSavedViewInternalResponseError = (updateSavedViewInternalResponse400 | updateSavedViewInternalResponse401 | updateSavedViewInternalResponse403 | updateSavedViewInternalResponse404 | updateSavedViewInternalResponse409 | updateSavedViewInternalResponse412) & {
+  headers: Headers;
+};
+
+export type updateSavedViewInternalResponse = (updateSavedViewInternalResponseSuccess | updateSavedViewInternalResponseError)
+
+
+export type deleteSavedViewInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteSavedViewInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteSavedViewInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteSavedViewInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type deleteSavedViewInternalResponse404 = {
+  data: SavedViewNotFoundResponse
+  status: 404
+}
+
+export type deleteSavedViewInternalResponse409 = {
+  data: SavedViewWriteConflictResponse
+  status: 409
+}
+
+export type deleteSavedViewInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteSavedViewInternalResponseSuccess = (deleteSavedViewInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteSavedViewInternalResponseError = (deleteSavedViewInternalResponse400 | deleteSavedViewInternalResponse401 | deleteSavedViewInternalResponse403 | deleteSavedViewInternalResponse404 | deleteSavedViewInternalResponse409 | deleteSavedViewInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteSavedViewInternalResponse = (deleteSavedViewInternalResponseSuccess | deleteSavedViewInternalResponseError)
+
+
+export type duplicateSavedViewInternalResponse201 = {
+  data: SavedView
+  status: 201
+}
+
+export type duplicateSavedViewInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type duplicateSavedViewInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type duplicateSavedViewInternalResponse403 = {
+  data: WriteForbiddenResponse
+  status: 403
+}
+
+export type duplicateSavedViewInternalResponse404 = {
+  data: SavedViewNotFoundResponse
+  status: 404
+}
+
+export type duplicateSavedViewInternalResponse409 = {
+  data: SavedViewCreateConflictResponse
+  status: 409
+}
+
+export type duplicateSavedViewInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type duplicateSavedViewInternalResponse422 = {
+  data: SavedViewCreateRefusedResponse
+  status: 422
+}
+
+export type duplicateSavedViewInternalResponseSuccess = (duplicateSavedViewInternalResponse201) & {
+  headers: Headers;
+};
+export type duplicateSavedViewInternalResponseError = (duplicateSavedViewInternalResponse400 | duplicateSavedViewInternalResponse401 | duplicateSavedViewInternalResponse403 | duplicateSavedViewInternalResponse404 | duplicateSavedViewInternalResponse409 | duplicateSavedViewInternalResponse412 | duplicateSavedViewInternalResponse422) & {
+  headers: Headers;
+};
+
+export type duplicateSavedViewInternalResponse = (duplicateSavedViewInternalResponseSuccess | duplicateSavedViewInternalResponseError)
+
+
+export type listFavoritesInternalResponse200 = {
+  data: FavoritePage
+  status: 200
+}
+
+export type listFavoritesInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type listFavoritesInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type listFavoritesInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type listFavoritesInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type listFavoritesInternalResponseSuccess = (listFavoritesInternalResponse200) & {
+  headers: Headers;
+};
+export type listFavoritesInternalResponseError = (listFavoritesInternalResponse400 | listFavoritesInternalResponse401 | listFavoritesInternalResponse403 | listFavoritesInternalResponse404) & {
+  headers: Headers;
+};
+
+export type listFavoritesInternalResponse = (listFavoritesInternalResponseSuccess | listFavoritesInternalResponseError)
+
+
+export type createFavoriteInternalResponse201 = {
+  data: Favorite
+  status: 201
+}
+
+export type createFavoriteInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createFavoriteInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type createFavoriteInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type createFavoriteInternalResponse404 = {
+  data: FavoriteTargetNotFoundResponse
+  status: 404
+}
+
+export type createFavoriteInternalResponse409 = {
+  data: FavoriteCreateConflictResponse
+  status: 409
+}
+
+export type createFavoriteInternalResponse422 = {
+  data: FavoriteCreateRefusedResponse
+  status: 422
+}
+
+export type createFavoriteInternalResponseSuccess = (createFavoriteInternalResponse201) & {
+  headers: Headers;
+};
+export type createFavoriteInternalResponseError = (createFavoriteInternalResponse400 | createFavoriteInternalResponse401 | createFavoriteInternalResponse403 | createFavoriteInternalResponse404 | createFavoriteInternalResponse409 | createFavoriteInternalResponse422) & {
+  headers: Headers;
+};
+
+export type createFavoriteInternalResponse = (createFavoriteInternalResponseSuccess | createFavoriteInternalResponseError)
+
+
+export type getFavoriteInternalResponse200 = {
+  data: Favorite
+  status: 200
+}
+
+export type getFavoriteInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getFavoriteInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getFavoriteInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getFavoriteInternalResponse404 = {
+  data: FavoriteNotFoundResponse
+  status: 404
+}
+
+export type getFavoriteInternalResponseSuccess = (getFavoriteInternalResponse200) & {
+  headers: Headers;
+};
+export type getFavoriteInternalResponseError = (getFavoriteInternalResponse400 | getFavoriteInternalResponse401 | getFavoriteInternalResponse403 | getFavoriteInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getFavoriteInternalResponse = (getFavoriteInternalResponseSuccess | getFavoriteInternalResponseError)
+
+
+export type deleteFavoriteInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteFavoriteInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteFavoriteInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteFavoriteInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type deleteFavoriteInternalResponse404 = {
+  data: FavoriteNotFoundResponse
+  status: 404
+}
+
+export type deleteFavoriteInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteFavoriteInternalResponseSuccess = (deleteFavoriteInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteFavoriteInternalResponseError = (deleteFavoriteInternalResponse400 | deleteFavoriteInternalResponse401 | deleteFavoriteInternalResponse403 | deleteFavoriteInternalResponse404 | deleteFavoriteInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteFavoriteInternalResponse = (deleteFavoriteInternalResponseSuccess | deleteFavoriteInternalResponseError)

@@ -14,6 +14,7 @@ import type { TaskServiceClient } from '../../../../../clients/task-service.clie
  */
 export function createSpaceRegistryAdapter(client: TaskServiceClient): SpaceRegistry {
   return {
+    listSpaceMilestones: (spaceId, query) => client.listSpaceMilestones(spaceId, query),
     listSpaces: (query) => client.listSpaces(query),
     createSpace: (creation, idempotencyKey) => client.createSpace(creation, idempotencyKey),
     getSpace: (spaceId) => client.getSpace(spaceId),

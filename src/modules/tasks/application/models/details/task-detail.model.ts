@@ -6,8 +6,7 @@ import type { TaskServiceDocument } from '../task-service/task-service-document.
  * @description
  * The detail of a task as the gateway composes it: the core task-service owns (the task, its
  * space, its list, its parent and its direct subtasks), the secondary parts that answered, by
- * name, and the names of those that did not. In this version task-service is the only source:
- * `parts` is empty and `partial` is `[]`.
+ * name, and the names of those that did not. The first comments page is a secondary part.
  */
 export interface TaskDetail {
   // #region Properties

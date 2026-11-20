@@ -51,3 +51,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   tasks here, only once its PR 3 (trash and deletion) is merged and deployed. Until then these
   routes answer `503 upstream.failed`: task-service answers its unknown route with a `404` whose
   code no public operation declares.
+
+The restoration forwards `reportNotReady` and relays `409 trash-entry.not-restorable-yet`.

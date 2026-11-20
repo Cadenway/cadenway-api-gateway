@@ -14,6 +14,7 @@ import type { TaskServiceClient } from '../../../../../clients/task-service.clie
  */
 export function createListRegistryAdapter(client: TaskServiceClient): ListRegistry {
   return {
+    duplicateList: (listId, body, ifMatch, key) => client.duplicateList(listId, body, ifMatch, key),
     createList: (spaceId, creation, idempotencyKey) =>
       client.createList(spaceId, creation, idempotencyKey),
     listLists: (spaceId, query) => client.listLists(spaceId, query),

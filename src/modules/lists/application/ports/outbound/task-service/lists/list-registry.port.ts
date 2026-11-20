@@ -14,6 +14,14 @@ import type { TaskServiceDocument } from '../../../../models/task-service/task-s
  */
 export interface ListRegistry {
   // #region Methods
+  /** Relays duplicateList to task-service. */
+  duplicateList(
+    listId: string,
+    body: TaskServiceDocument,
+    ifMatch: string | undefined,
+    key: string | undefined,
+  ): Promise<TaskServiceDocument>;
+
   /**
    * Method createList
    *

@@ -55,7 +55,11 @@ export interface TrashRegistry {
    * @param {TaskServiceDocument} body - The empty body the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The root of the entry and what came back with it.
    */
-  restoreTrashEntry(entryId: string, body: TaskServiceDocument): Promise<TaskServiceDocument>;
+  restoreTrashEntry(
+    entryId: string,
+    body: TaskServiceDocument,
+    query: TaskServiceDocument,
+  ): Promise<TaskServiceDocument>;
 
   /**
    * Method purgeTrashEntry

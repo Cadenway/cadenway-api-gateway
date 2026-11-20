@@ -119,6 +119,166 @@ interface ChangeCase extends Change {
  */
 const CHANGES: readonly Change[] = [
   {
+    name: 'createFavorite',
+    method: 'post',
+    path: '/internal/v1/me/favorites',
+    conditional: false,
+    send: (client) => client.createFavorite({ kind: 'list', targetId: LIST_ID }, 'favorite-key'),
+  },
+  {
+    name: 'deleteFavorite',
+    method: 'delete',
+    path: '/internal/v1/me/favorites/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02',
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.deleteFavorite('019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02', ifMatch),
+  },
+  {
+    name: 'createSavedView',
+    method: 'post',
+    path: `/internal/v1/lists/${LIST_ID}/saved-views`,
+    conditional: false,
+    send: (client) =>
+      client.createSavedView(
+        LIST_ID,
+        {
+          name: 'View',
+          configuration: { layout: 'list', filters: {}, sort: 'dueDate', groupBy: null },
+        },
+        'view-key',
+      ),
+  },
+  {
+    name: 'updateSavedView',
+    method: 'patch',
+    path: `/internal/v1/lists/${LIST_ID}/saved-views/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.updateSavedView(
+        LIST_ID,
+        '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+        { name: 'Changed' },
+        ifMatch,
+      ),
+  },
+  {
+    name: 'deleteSavedView',
+    method: 'delete',
+    path: `/internal/v1/lists/${LIST_ID}/saved-views/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.deleteSavedView(LIST_ID, '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01', ifMatch),
+  },
+  {
+    name: 'duplicateSavedView',
+    method: 'post',
+    path: `/internal/v1/lists/${LIST_ID}/saved-views/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01/duplicate`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.duplicateSavedView(
+        LIST_ID,
+        '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+        {},
+        ifMatch,
+        'copy-key',
+      ),
+  },
+  {
+    name: 'createTaskTemplate',
+    method: 'post',
+    path: `/internal/v1/spaces/${SPACE_ID}/task-templates`,
+    conditional: false,
+    send: (client) =>
+      client.createTaskTemplate(
+        SPACE_ID,
+        { sourceTaskKey: 'CAD-482', name: 'Template' },
+        'template-key',
+      ),
+  },
+  {
+    name: 'deleteTaskTemplate',
+    method: 'delete',
+    path: `/internal/v1/spaces/${SPACE_ID}/task-templates/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.deleteTaskTemplate(SPACE_ID, '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01', ifMatch),
+  },
+  {
+    name: 'createTaskDependency',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/dependencies',
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.createTaskDependency(
+        'CAD-482',
+        { otherTaskKey: 'CAD-483', direction: 'blocks' },
+        ifMatch,
+        'edge-key',
+      ),
+  },
+  {
+    name: 'deleteTaskDependency',
+    method: 'delete',
+    path: '/internal/v1/tasks/CAD-482/dependencies/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.deleteTaskDependency('CAD-482', '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01', ifMatch),
+  },
+  {
+    name: 'followTaskWatcher',
+    method: 'put',
+    path: `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.followTaskWatcher('CAD-482', CAMILLE.id, {}, ifMatch),
+  },
+  {
+    name: 'unfollowTaskWatcher',
+    method: 'delete',
+    path: `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+    conditional: true,
+    send: (client, ifMatch) => client.unfollowTaskWatcher('CAD-482', CAMILLE.id, ifMatch),
+  },
+  {
+    name: 'createTaskComment',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/comments',
+    conditional: false,
+    send: (client) => client.createTaskComment('CAD-482', { body: 'hello' }, 'key'),
+  },
+  {
+    name: 'deleteTaskComment',
+    method: 'delete',
+    path: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+    conditional: true,
+    send: (client, ifMatch) =>
+      client.deleteTaskComment('CAD-482', '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01', ifMatch),
+  },
+  {
+    name: 'duplicateList',
+    method: 'post',
+    path: `/internal/v1/lists/${LIST_ID}/duplicate`,
+    conditional: true,
+    send: (client, ifMatch) => client.duplicateList(LIST_ID, {}, ifMatch, 'copy-list'),
+  },
+  {
+    name: 'duplicateTask',
+    method: 'post',
+    path: '/internal/v1/tasks/CAD-482/duplicate',
+    conditional: true,
+    send: (client, ifMatch) => client.duplicateTask('CAD-482', {}, ifMatch, 'copy-task'),
+  },
+  {
+    name: 'executeBulkTaskAction',
+    method: 'post',
+    path: '/internal/v1/tasks/bulk-actions',
+    conditional: false,
+    send: (client) =>
+      client.executeBulkTaskAction(
+        { selection: [{ taskKey: 'CAD-482' }], action: { type: 'status', status: 'done' } },
+        'bulk',
+      ),
+  },
+  {
     name: 'updateSpace',
     method: 'patch',
     path: `/internal/v1/spaces/${SPACE_ID}`,
@@ -287,7 +447,7 @@ const CHANGES: readonly Change[] = [
     method: 'post',
     path: `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
     conditional: false,
-    send: (client) => client.restoreTrashEntry(ENTRY_ID, {}),
+    send: (client) => client.restoreTrashEntry(ENTRY_ID, {}, {}),
   },
   {
     name: 'emptyTrash',
@@ -469,7 +629,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     expect(calls[0]?.url).toBe(`/internal/v1/users/${CAMILLE.id}/home?today=2026-11-18`);
   });
 
-  it('relays Idempotency-Key on a creation and retries it once after a 503, as task-service replays it', async () => {
+  it('retries a task creation with Idempotency-Key after a 503', async () => {
     let attempts = 0;
     answer('post', '/internal/v1/lists/:listId/tasks', () => {
       attempts += 1;
@@ -477,24 +637,595 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         ? json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503)
         : json(responseExample('post', '/v1/lists/{listId}/tasks', 201), 201);
     });
-
-    await asCamille(() =>
-      client.createTask(
-        '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12',
-        { name: 'Ajouter la connexion par lien magique' },
-        'creation-1',
-      ),
-    );
-
+    await asCamille(() => client.createTask(LIST_ID, { name: 'Tester' }, 'creation-1'));
     expect(calls.map((call: ReceivedCall) => call.idempotencyKey)).toEqual([
       'creation-1',
       'creation-1',
     ]);
-    expect(calls[1]?.body).toMatchObject({
-      name: 'Ajouter la connexion par lien magique',
-      status: 'todo',
-      priority: 'moyenne',
+  });
+
+  it('forwards a bulk action and its idempotency key and validates the response', async () => {
+    const action = {
+      selection: [{ taskKey: 'CAD-482', version: 12 }],
+      action: { type: 'status', status: 'done' },
+    };
+    answer('post', '/internal/v1/tasks/bulk-actions', () =>
+      json({
+        results: [{ taskKey: 'CAD-482', version: 13, privateField: 'ignored' }],
+        affectedCount: 1,
+        extra: true,
+      }),
+    );
+    await expect(
+      asCamille(() => client.executeBulkTaskAction(action, 'bulk-key')),
+    ).resolves.toEqual({ results: [{ taskKey: 'CAD-482', version: 13 }], affectedCount: 1 });
+    expect(calls[0]?.idempotencyKey).toBe('bulk-key');
+    expect(calls[0]?.body).toEqual(action);
+  });
+
+  it('forwards favorite pagination and validates the page', async () => {
+    answer('get', '/internal/v1/me/favorites', () =>
+      json(responseExample('get', '/v1/me/favorites', 200)),
+    );
+    await asCamille(() => client.listFavorites({ cursor: 'page', limit: 12 }));
+    expect(calls[0]?.url).toBe('/internal/v1/me/favorites?cursor=page&limit=12');
+  });
+
+  it('checks favorite creation location and version and forwards the idempotency key', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02';
+    answer('post', '/internal/v1/me/favorites', () =>
+      json(responseExample('post', '/v1/me/favorites', 201), 201, {
+        ETag: '"1"',
+        Location: `/internal/v1/me/favorites/${id}`,
+      }),
+    );
+    await asCamille(() =>
+      client.createFavorite({ kind: 'list', targetId: LIST_ID }, 'favorite-key'),
+    );
+    expect(calls[0]?.idempotencyKey).toBe('favorite-key');
+  });
+
+  it('checks a favorite read against its identity and version', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02';
+    answer('get', `/internal/v1/me/favorites/${id}`, () =>
+      json(responseExample('post', '/v1/me/favorites', 201), 200, { ETag: '"1"' }),
+    );
+    await expect(asCamille(() => client.getFavorite(id))).resolves.toMatchObject({
+      id,
+      version: 1,
     });
+  });
+
+  it.each([
+    [
+      'missing ETag',
+      { Location: '/internal/v1/me/favorites/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02' },
+    ],
+    [
+      'wrong Location',
+      { ETag: '"1"', Location: '/internal/v1/me/favorites/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01' },
+    ],
+  ])('rejects favorite creation with %s', async (_reason, headers) => {
+    answer('post', '/internal/v1/me/favorites', () =>
+      json(responseExample('post', '/v1/me/favorites', 201), 201, headers),
+    );
+    await expect(
+      asCamille(() => client.createFavorite({ kind: 'list', targetId: LIST_ID }, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('rejects a favorite read whose identity differs from the request', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    answer('get', `/internal/v1/me/favorites/${id}`, () =>
+      json(responseExample('post', '/v1/me/favorites', 201), 200, { ETag: '"1"' }),
+    );
+    await expect(asCamille(() => client.getFavorite(id))).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('forwards saved view pagination and validates the page', async () => {
+    answer('get', `/internal/v1/lists/${LIST_ID}/saved-views`, () =>
+      json(responseExample('get', '/v1/lists/{listId}/saved-views', 200)),
+    );
+    await asCamille(() => client.listSavedViews(LIST_ID, { cursor: 'page', limit: 12 }));
+    expect(calls[0]?.url).toBe(`/internal/v1/lists/${LIST_ID}/saved-views?cursor=page&limit=12`);
+  });
+
+  it('creates and duplicates saved views with validated locations and request headers', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    const copy = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f03';
+    answer('post', `/internal/v1/lists/${LIST_ID}/saved-views`, () =>
+      json(responseExample('post', '/v1/lists/{listId}/saved-views', 201), 201, {
+        ETag: '"1"',
+        Location: `/internal/v1/lists/${LIST_ID}/saved-views/${id}`,
+      }),
+    );
+    answer('post', `/internal/v1/lists/${LIST_ID}/saved-views/${id}/duplicate`, () =>
+      json(responseExample('post', '/v1/lists/{listId}/saved-views/{viewId}/duplicate', 201), 201, {
+        ETag: '"1"',
+        Location: `/internal/v1/lists/${LIST_ID}/saved-views/${copy}`,
+      }),
+    );
+    await asCamille(() =>
+      client.createSavedView(
+        LIST_ID,
+        {
+          name: 'View',
+          configuration: { layout: 'list', filters: {}, sort: 'dueDate', groupBy: null },
+        },
+        'view-key',
+      ),
+    );
+    await asCamille(() => client.duplicateSavedView(LIST_ID, id, {}, '"1"', 'copy-key'));
+    expect(calls.map((item: ReceivedCall) => item.idempotencyKey)).toEqual([
+      'view-key',
+      'copy-key',
+    ]);
+    expect(calls[1]?.ifMatch).toBe('"1"');
+  });
+
+  it('validates view identity and ETag on reads and updates', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    const view = responseExample('get', '/v1/lists/{listId}/saved-views/{viewId}', 200);
+    answer('get', `/internal/v1/lists/${LIST_ID}/saved-views/${id}`, () =>
+      json(view, 200, { ETag: '"1"' }),
+    );
+    answer('patch', `/internal/v1/lists/${LIST_ID}/saved-views/${id}`, () =>
+      json(view, 200, { ETag: '"1"' }),
+    );
+    await expect(asCamille(() => client.getSavedView(LIST_ID, id))).resolves.toMatchObject({
+      id,
+      version: 1,
+    });
+    await expect(
+      asCamille(() => client.updateSavedView(LIST_ID, id, { name: 'Changed' }, '"1"')),
+    ).resolves.toMatchObject({ id, version: 1 });
+    expect(calls[1]?.ifMatch).toBe('"1"');
+  });
+
+  it('rejects a saved view returned for another list', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    const view = responseExample('get', '/v1/lists/{listId}/saved-views/{viewId}', 200);
+    answer('get', `/internal/v1/lists/${LIST_ID}/saved-views/${id}`, () =>
+      json(
+        { ...(view as Record<string, unknown>), listId: '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f99' },
+        200,
+        { ETag: '"1"' },
+      ),
+    );
+    await expect(asCamille(() => client.getSavedView(LIST_ID, id))).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('rejects a saved view creation with an invalid Location', async () => {
+    answer('post', `/internal/v1/lists/${LIST_ID}/saved-views`, () =>
+      json(responseExample('post', '/v1/lists/{listId}/saved-views', 201), 201, {
+        ETag: '"1"',
+        Location: '/internal/v1/lists/wrong',
+      }),
+    );
+    await expect(
+      asCamille(() =>
+        client.createSavedView(
+          LIST_ID,
+          {
+            name: 'View',
+            configuration: { layout: 'list', filters: {}, sort: 'dueDate', groupBy: null },
+          },
+          undefined,
+        ),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('forwards template pagination and validates the page', async () => {
+    answer('get', `/internal/v1/spaces/${SPACE_ID}/task-templates`, () =>
+      json(responseExample('get', '/v1/spaces/{spaceId}/task-templates', 200)),
+    );
+    await asCamille(() => client.listTaskTemplates(SPACE_ID, { cursor: 'page', limit: 12 }));
+    expect(calls[0]?.url).toBe(
+      `/internal/v1/spaces/${SPACE_ID}/task-templates?cursor=page&limit=12`,
+    );
+  });
+
+  it('checks template creation location and version while forwarding the idempotency key', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    answer('post', `/internal/v1/spaces/${SPACE_ID}/task-templates`, () =>
+      json(responseExample('post', '/v1/spaces/{spaceId}/task-templates', 201), 201, {
+        ETag: '"1"',
+        Location: `/internal/v1/spaces/${SPACE_ID}/task-templates/${id}`,
+      }),
+    );
+    await asCamille(() =>
+      client.createTaskTemplate(
+        SPACE_ID,
+        { sourceTaskKey: 'CAD-482', name: 'Template' },
+        'template-key',
+      ),
+    );
+    expect(calls[0]?.idempotencyKey).toBe('template-key');
+  });
+
+  it('checks a template read against its identity and version', async () => {
+    const id = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    answer('get', `/internal/v1/spaces/${SPACE_ID}/task-templates/${id}`, () =>
+      json(responseExample('get', '/v1/spaces/{spaceId}/task-templates/{templateId}', 200), 200, {
+        ETag: '"1"',
+      }),
+    );
+    await expect(asCamille(() => client.getTaskTemplate(SPACE_ID, id))).resolves.toMatchObject({
+      id,
+      version: 1,
+    });
+  });
+
+  it.each([
+    [
+      'missing ETag',
+      {
+        Location: `/internal/v1/spaces/${SPACE_ID}/task-templates/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+      },
+    ],
+    [
+      'wrong Location',
+      {
+        ETag: '"1"',
+        Location: `/internal/v1/spaces/${SPACE_ID}/task-templates/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02`,
+      },
+    ],
+  ])('rejects template creation with %s', async (_reason, headers) => {
+    answer('post', `/internal/v1/spaces/${SPACE_ID}/task-templates`, () =>
+      json(responseExample('post', '/v1/spaces/{spaceId}/task-templates', 201), 201, headers),
+    );
+    await expect(
+      asCamille(() =>
+        client.createTaskTemplate(
+          SPACE_ID,
+          { sourceTaskKey: 'CAD-482', name: 'Template' },
+          undefined,
+        ),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('forwards milestone pagination', async () => {
+    answer('get', `/internal/v1/spaces/${SPACE_ID}/milestones`, () =>
+      json({ items: [], nextCursor: null, total: 0 }),
+    );
+    await asCamille(() => client.listSpaceMilestones(SPACE_ID, { cursor: 'page', limit: 12 }));
+    expect(calls[0]?.url).toBe(`/internal/v1/spaces/${SPACE_ID}/milestones?cursor=page&limit=12`);
+  });
+
+  it('checks task duplication location and ETag and forwards both request headers', async () => {
+    const task = responseExample('get', '/v1/tasks/{taskKey}', 200) as {
+      key: string;
+      version: number;
+    };
+    answer('post', '/internal/v1/tasks/CAD-482/duplicate', () =>
+      json(task, 201, {
+        Location: `/internal/v1/tasks/${task.key}`,
+        ETag: `"${String(task.version)}"`,
+      }),
+    );
+    await asCamille(() => client.duplicateTask('CAD-482', {}, '"12"', 'copy-key'));
+    expect(calls[0]?.ifMatch).toBe('"12"');
+    expect(calls[0]?.idempotencyKey).toBe('copy-key');
+  });
+
+  it('checks list duplication location and ETag and forwards both request headers', async () => {
+    const list = responseExample('get', '/v1/lists/{listId}', 200) as {
+      id: string;
+      version: number;
+    };
+    answer('post', `/internal/v1/lists/${LIST_ID}/duplicate`, () =>
+      json({ list, taskCount: 0 }, 201, {
+        Location: `/internal/v1/lists/${list.id}`,
+        ETag: `"${String(list.version)}"`,
+      }),
+    );
+    await asCamille(() => client.duplicateList(LIST_ID, {}, '"12"', 'copy-key'));
+    expect(calls[0]?.ifMatch).toBe('"12"');
+    expect(calls[0]?.idempotencyKey).toBe('copy-key');
+  });
+
+  it('refuses task duplication when the upstream ETag disagrees with the body', async () => {
+    const task = responseExample('get', '/v1/tasks/{taskKey}', 200) as { key: string };
+    answer('post', '/internal/v1/tasks/CAD-482/duplicate', () =>
+      json(task, 201, { Location: `/internal/v1/tasks/${task.key}`, ETag: '"999"' }),
+    );
+    await expect(
+      asCamille(() => client.duplicateTask('CAD-482', {}, undefined, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('refuses list duplication with a mismatched upstream Location', async () => {
+    const list = responseExample('get', '/v1/lists/{listId}', 200) as { version: number };
+    answer('post', `/internal/v1/lists/${LIST_ID}/duplicate`, () =>
+      json({ list, taskCount: 0 }, 201, {
+        Location: '/internal/v1/lists/wrong',
+        ETag: `"${String(list.version)}"`,
+      }),
+    );
+    await expect(
+      asCamille(() => client.duplicateList(LIST_ID, {}, undefined, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('validates dependency creation headers and returns the anchor version', async () => {
+    const edgeId = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    answer('post', '/internal/v1/tasks/CAD-482/dependencies', () =>
+      json(responseExample('post', '/v1/tasks/{taskKey}/dependencies', 201), 201, {
+        ETag: '"13"',
+        Location: `/internal/v1/tasks/CAD-482/dependencies/${edgeId}`,
+      }),
+    );
+    const result = await asCamille(() =>
+      client.createTaskDependency(
+        'CAD-482',
+        { otherTaskKey: 'CAD-483', direction: 'blocks' },
+        '"12"',
+        'edge-key',
+      ),
+    );
+    expect(result.version).toBe(13);
+    expect(calls[0]?.ifMatch).toBe('"12"');
+    expect(calls[0]?.idempotencyKey).toBe('edge-key');
+  });
+
+  it.each([
+    [
+      'missing ETag',
+      { Location: '/internal/v1/tasks/CAD-482/dependencies/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01' },
+    ],
+    [
+      'wrong Location',
+      {
+        ETag: '"13"',
+        Location: '/internal/v1/tasks/CAD-483/dependencies/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+      },
+    ],
+  ])('rejects dependency creation with %s', async (_reason, headers) => {
+    answer('post', '/internal/v1/tasks/CAD-482/dependencies', () =>
+      json(responseExample('post', '/v1/tasks/{taskKey}/dependencies', 201), 201, headers),
+    );
+    await expect(
+      asCamille(() =>
+        client.createTaskDependency(
+          'CAD-482',
+          { otherTaskKey: 'CAD-483', direction: 'blocks' },
+          undefined,
+          undefined,
+        ),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('reads the anchor version from the deletion ETag', async () => {
+    const edgeId = '019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01';
+    answer(
+      'delete',
+      `/internal/v1/tasks/CAD-482/dependencies/${edgeId}`,
+      () => new Response(null, { status: 204, headers: { ETag: '"14"' } }),
+    );
+    await expect(
+      asCamille(() => client.deleteTaskDependency('CAD-482', edgeId, '"13"')),
+    ).resolves.toBe(14);
+    expect(calls[0]?.ifMatch).toBe('"13"');
+  });
+
+  it('forwards direction, search and pagination for dependency candidates', async () => {
+    answer('get', '/internal/v1/tasks/CAD-482/dependency-candidates', () =>
+      json({ items: [], nextCursor: null, total: 0 }),
+    );
+    await asCamille(() =>
+      client.listDependencyCandidates('CAD-482', {
+        direction: 'blocked-by',
+        search: 'login',
+        cursor: 'page',
+        limit: 12,
+      }),
+    );
+    expect(calls[0]?.url).toBe(
+      '/internal/v1/tasks/CAD-482/dependency-candidates?cursor=page&limit=12&direction=blocked-by&search=login',
+    );
+  });
+
+  it('relays watcher changes once and reads the task version from ETag', async () => {
+    answer('put', `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`, () =>
+      json({ userId: CAMILLE.id }, 200, { ETag: '"13"' }),
+    );
+    answer(
+      'delete',
+      `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+      () => new Response(null, { status: 204, headers: { ETag: '"14"' } }),
+    );
+    await expect(
+      asCamille(() => client.followTaskWatcher('CAD-482', CAMILLE.id, {}, '"12"')),
+    ).resolves.toEqual({ watcher: { userId: CAMILLE.id }, version: 13 });
+    await expect(
+      asCamille(() => client.unfollowTaskWatcher('CAD-482', CAMILLE.id, '"13"')),
+    ).resolves.toBe(14);
+    expect(calls.map((item: ReceivedCall) => item.ifMatch)).toEqual(['"12"', '"13"']);
+  });
+
+  it('rejects a watcher response with no strong task ETag', async () => {
+    answer('put', `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`, () =>
+      json({ userId: CAMILLE.id }, 200),
+    );
+    await expect(
+      asCamille(() => client.followTaskWatcher('CAD-482', CAMILLE.id, {}, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('validates and forwards watcher pagination', async () => {
+    answer('get', '/internal/v1/tasks/CAD-482/watchers', () =>
+      json(responseExample('get', '/v1/tasks/{taskKey}/watchers', 200)),
+    );
+    await asCamille(() => client.listTaskWatchers('CAD-482', { cursor: 'page', limit: 12 }));
+    expect(calls[0]?.url).toBe('/internal/v1/tasks/CAD-482/watchers?cursor=page&limit=12');
+  });
+
+  it('validates the comment creation response headers and task key', async () => {
+    const id = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
+    answer('post', '/internal/v1/tasks/CAD-482/comments', () =>
+      json(responseExample('post', '/v1/tasks/{taskKey}/comments', 201), 201, {
+        ETag: '"1"',
+        Location: `/internal/v1/tasks/CAD-482/comments/${id}`,
+      }),
+    );
+    await expect(
+      asCamille(() => client.createTaskComment('CAD-482', { body: 'hello' }, 'key')),
+    ).resolves.toMatchObject({ id, taskKey: 'CAD-482', version: 1 });
+  });
+
+  it.each([
+    [
+      'missing ETag',
+      { Location: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01' },
+      false,
+    ],
+    [
+      'wrong ETag',
+      {
+        ETag: '"2"',
+        Location: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+      },
+      false,
+    ],
+    ['missing Location', { ETag: '"1"' }, false],
+    [
+      'wrong Location',
+      {
+        ETag: '"1"',
+        Location: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02',
+      },
+      false,
+    ],
+    [
+      'wrong task',
+      {
+        ETag: '"1"',
+        Location: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+      },
+      true,
+    ],
+  ])('rejects a comment creation with %s', async (_case, headers, wrongTask) => {
+    const comment = responseExample('post', '/v1/tasks/{taskKey}/comments', 201) as Record<
+      string,
+      unknown
+    >;
+    answer('post', '/internal/v1/tasks/CAD-482/comments', () =>
+      json({ ...comment, ...(wrongTask ? { taskKey: 'CAD-483' } : {}) }, 201, headers),
+    );
+    await expect(
+      asCamille(() => client.createTaskComment('CAD-482', { body: 'hello' }, 'key')),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it.each([
+    ['get', 200, '"1"'],
+    ['patch', 200, '"2"'],
+  ] as const)('validates comment identity and ETag on %s', async (method, status, etag) => {
+    const id = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
+    const path = `/internal/v1/tasks/CAD-482/comments/${id}`;
+    const body = responseExample(method, '/v1/tasks/{taskKey}/comments/{commentId}', status);
+    answer(method, path, () => json(body, status, { ETag: etag }));
+    const call = () =>
+      method === 'get'
+        ? client.getTaskComment('CAD-482', id)
+        : client.updateTaskComment('CAD-482', id, { body: 'hello' }, '"1"');
+    await expect(asCamille(call)).resolves.toMatchObject({ id, taskKey: 'CAD-482' });
+  });
+
+  it.each([
+    ['get', 'wrong id'],
+    ['get', 'wrong task'],
+    ['get', 'missing ETag'],
+    ['get', 'wrong ETag'],
+    ['patch', 'wrong id'],
+    ['patch', 'wrong task'],
+    ['patch', 'missing ETag'],
+    ['patch', 'wrong ETag'],
+  ] as const)('rejects %s comment with %s', async (method, defect) => {
+    const id = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
+    const comment = responseExample(
+      method,
+      '/v1/tasks/{taskKey}/comments/{commentId}',
+      200,
+    ) as Record<string, unknown>;
+    const body = {
+      ...comment,
+      ...(defect === 'wrong id' ? { id: '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02' } : {}),
+      ...(defect === 'wrong task' ? { taskKey: 'CAD-483' } : {}),
+    };
+    const etag = defect === 'wrong ETag' ? '"999"' : method === 'get' ? '"1"' : '"2"';
+    answer(method, `/internal/v1/tasks/CAD-482/comments/${id}`, () =>
+      json(body, 200, defect === 'missing ETag' ? {} : { ETag: etag }),
+    );
+    const call = () =>
+      method === 'get'
+        ? client.getTaskComment('CAD-482', id)
+        : client.updateTaskComment('CAD-482', id, { body: 'hello' }, '"1"');
+    await expect(asCamille(call)).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('rejects a watcher response naming another user', async () => {
+    answer('put', `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`, () =>
+      json({ userId: '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31' }, 200, { ETag: '"13"' }),
+    );
+    await expect(
+      asCamille(() => client.followTaskWatcher('CAD-482', CAMILLE.id, {}, undefined)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('forwards comment and participant pagination and validates both pages', async () => {
+    answer('get', '/internal/v1/tasks/CAD-482/comments', () =>
+      json({ items: [], nextCursor: null, total: 0 }),
+    );
+    answer('get', '/internal/v1/tasks/CAD-482/participants', () =>
+      json(responseExample('get', '/v1/tasks/{taskKey}/participants', 200)),
+    );
+    await asCamille(() => client.listTaskComments('CAD-482', { cursor: 'page', limit: 12 }));
+    await asCamille(() => client.listTaskParticipants('CAD-482', { cursor: 'page', limit: 12 }));
+    expect(calls.map((call: ReceivedCall) => call.url)).toEqual([
+      '/internal/v1/tasks/CAD-482/comments?cursor=page&limit=12',
+      '/internal/v1/tasks/CAD-482/participants?cursor=page&limit=12',
+    ]);
+  });
+
+  it('forwards the comment creation idempotency key without retrying', async () => {
+    answer('post', '/internal/v1/tasks/CAD-482/comments', () =>
+      json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+    await expect(
+      asCamille(() => client.createTaskComment('CAD-482', { body: 'hello' }, 'comment-key')),
+    ).rejects.toMatchObject({ problem: { status: 503 } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.idempotencyKey).toBe('comment-key');
+  });
+
+  it('sends a comment edit once with its required If-Match', async () => {
+    answer(
+      'patch',
+      '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+      () => json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+    await expect(
+      asCamille(() =>
+        client.updateTaskComment(
+          'CAD-482',
+          '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+          { body: 'hello' },
+          '"1"',
+        ),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 503 } });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.ifMatch).toBe('"1"');
   });
 
   it('never retries a change carrying If-Match, whose repeat would answer 412', async () => {
@@ -946,7 +1677,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         'post',
         `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
         example('post', '/v1/trash/entries/{entryId}/restore'),
-        () => client.restoreTrashEntry(ENTRY_ID, {}),
+        () => client.restoreTrashEntry(ENTRY_ID, {}, {}),
       ],
       [
         'post',
@@ -1084,7 +1815,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         ).toEqual([
           {
             method: change.method.toUpperCase(),
-            url: change.path,
+            url: change.path + (change.name === 'restoreTrashEntry' ? '?reportNotReady=false' : ''),
             ifMatch: change.ifMatch ?? null,
           },
         ]);
@@ -1183,12 +1914,6 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         ],
         [
           'post',
-          `/internal/v1/lists/${LIST_ID}/tasks`,
-          example('post', '/v1/lists/{listId}/tasks', 201),
-          () => client.createTask(LIST_ID, { name: 'Tester' }, 'creation-3'),
-        ],
-        [
-          'post',
           '/internal/v1/tasks/CAD-482/subtasks',
           example('post', '/v1/tasks/{taskKey}/subtasks', 201),
           () => client.createSubtask('CAD-482', { name: 'Tester' }, 'creation-4'),
@@ -1223,8 +1948,6 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         'creation-1',
         'creation-2',
         'creation-2',
-        'creation-3',
-        'creation-3',
         'creation-4',
         'creation-4',
       ]);
@@ -1378,7 +2101,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
         'post',
         `/internal/v1/trash/entries/${ENTRY_ID}/restore`,
         '/v1/trash/entries/{entryId}/restore',
-        () => client.restoreTrashEntry(ENTRY_ID, {}),
+        () => client.restoreTrashEntry(ENTRY_ID, {}, {}),
         ['subtaskCount', 'detached', 'listRestored', 'spaceRestored'],
       ],
     ];

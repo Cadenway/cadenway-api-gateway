@@ -18,6 +18,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 
 | Public route                                                  | Internal call                                                          | Token scope   |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------- |
+| `POST /v1/tasks/bulk-actions`                                 | `POST /internal/v1/tasks/bulk-actions`                                 | `tasks:write` |
+| `POST /v1/tasks/{taskKey}/duplicate`                          | `POST /internal/v1/tasks/{taskKey}/duplicate`                          | `tasks:write` |
 | `GET /v1/lists/{listId}/tasks`                                | `GET /internal/v1/lists/{listId}/tasks`                                | `tasks:read`  |
 | `POST /v1/lists/{listId}/tasks`                               | `POST /internal/v1/lists/{listId}/tasks`                               | `tasks:write` |
 | `GET /v1/lists/{listId}/task-groups`                          | `GET /internal/v1/lists/{listId}/task-groups`                          | `tasks:read`  |
@@ -36,6 +38,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 | `GET /v1/labels`                                              | `GET /internal/v1/labels`                                              | `tasks:read`  |
 | `GET /v1/me/tasks`                                            | `GET /internal/v1/users/{userId}/tasks`                                | `tasks:read`  |
 | `GET /v1/me/home`                                             | `GET /internal/v1/users/{userId}/home`                                 | `tasks:read`  |
+
+`POST /v1/tasks/bulk-actions` relays an atomic action to `POST /internal/v1/tasks/bulk-actions` with `tasks:write` and an optional `Idempotency-Key`. The gateway validates and forwards the request once; task-service owns the action and its atomicity. Bulk `404` responses omit all upstream details to avoid disclosing hidden targets.
 
 ## Decisions
 
@@ -72,7 +76,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   in the trash fails the core with `404 task.trashed`: the detail answers that public problem with
   its `details` (`key`, `name`, `entryId`, `rootKey`, `trashedAt`, `trashedBy`, `purgeAt`, without
   `service`), never a `503` or a partial detail. `list.callerRole` of the core is relayed as
-  task-service answers it. In this
-  version no part is bound, so `partial` is `[]`; a later part (attachments, development links,
-  comments) is one more `TaskDetailPart` adapter and one more member of the public mapping. The
-  `ETag` of the detail is the version of the task.
+  task-service answers it. The first comments page is bound as a secondary part. A comments 404 for `task.not-found`, `task.trashed` or `organization.not-found` before the deadline fails the detail; other failures omit the page and name `comments` in `partial`. A timeout is partial because the core read was authorized at that moment. A core failure takes precedence over every comments outcome. The `ETag` of the detail is the version of the task.
+
+Comments and participants, watchers and dependencies are served by their respective capability modules.
+
+`POST /v1/tasks/{taskKey}/duplicate` relays a duplication once with `tasks:write`, source `If-Match` and `Idempotency-Key`; it returns the new task location and version.

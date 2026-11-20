@@ -15,15 +15,16 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 
 ## API
 
-| Public route                      | Internal call                              | Token scope   |
-| --------------------------------- | ------------------------------------------ | ------------- |
-| `POST /v1/spaces/{spaceId}/lists` | `POST /internal/v1/spaces/{spaceId}/lists` | `tasks:write` |
-| `GET /v1/spaces/{spaceId}/lists`  | `GET /internal/v1/spaces/{spaceId}/lists`  | `tasks:read`  |
-| `GET /v1/lists/{listId}`          | `GET /internal/v1/lists/{listId}`          | `tasks:read`  |
-| `PATCH /v1/lists/{listId}`        | `PATCH /internal/v1/lists/{listId}`        | `tasks:write` |
-| `DELETE /v1/lists/{listId}`       | `DELETE /internal/v1/lists/{listId}`       | `tasks:write` |
-| `GET /v1/lists/{listId}/counts`   | `GET /internal/v1/lists/{listId}/counts`   | `tasks:read`  |
-| `GET /v1/lists/{listId}/activity` | `GET /internal/v1/lists/{listId}/activity` | `tasks:read`  |
+| Public route                        | Internal call                                | Token scope   |
+| ----------------------------------- | -------------------------------------------- | ------------- |
+| `POST /v1/lists/{listId}/duplicate` | `POST /internal/v1/lists/{listId}/duplicate` | `tasks:write` |
+| `POST /v1/spaces/{spaceId}/lists`   | `POST /internal/v1/spaces/{spaceId}/lists`   | `tasks:write` |
+| `GET /v1/spaces/{spaceId}/lists`    | `GET /internal/v1/spaces/{spaceId}/lists`    | `tasks:read`  |
+| `GET /v1/lists/{listId}`            | `GET /internal/v1/lists/{listId}`            | `tasks:read`  |
+| `PATCH /v1/lists/{listId}`          | `PATCH /internal/v1/lists/{listId}`          | `tasks:write` |
+| `DELETE /v1/lists/{listId}`         | `DELETE /internal/v1/lists/{listId}`         | `tasks:write` |
+| `GET /v1/lists/{listId}/counts`     | `GET /internal/v1/lists/{listId}/counts`     | `tasks:read`  |
+| `GET /v1/lists/{listId}/activity`   | `GET /internal/v1/lists/{listId}/activity`   | `tasks:read`  |
 
 ## Decisions
 
@@ -44,3 +45,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   deletion) is merged and deployed; until then the route answers `503 upstream.failed`.
 - The counts relay the `today` of the caller; `kind` and `actorId` of the activity are
   comma-separated query parameters, split before the public validator checks them.
+
+`POST /v1/lists/{listId}/duplicate` relays a duplication once with `tasks:write`, source `If-Match` and `Idempotency-Key`; it returns the new list location and version.

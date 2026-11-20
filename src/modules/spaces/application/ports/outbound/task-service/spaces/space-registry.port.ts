@@ -14,6 +14,9 @@ import type { TaskServiceDocument } from '../../../../models/task-service/task-s
  */
 export interface SpaceRegistry {
   // #region Methods
+  /** Relays listSpaceMilestones to task-service. */
+  listSpaceMilestones(spaceId: string, query: TaskServiceDocument): Promise<TaskServiceDocument>;
+
   /**
    * Method listSpaces
    *

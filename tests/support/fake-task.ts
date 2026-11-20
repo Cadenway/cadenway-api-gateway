@@ -10,6 +10,13 @@ import {
   CreateSpaceInternalResponse,
   CreateSubtaskInternalResponse,
   CreateTaskInternalResponse,
+  CreateTaskCommentInternalResponse,
+  GetTaskCommentInternalResponse,
+  UpdateTaskCommentInternalResponse,
+  ListTaskParticipantsInternalResponse,
+  DuplicateListInternalResponse,
+  DuplicateTaskInternalResponse,
+  ExecuteBulkTaskActionInternalResponse,
   EmptyTrashInternalResponse,
   GetHomeInternalResponse,
   GetListCountsInternalResponse,
@@ -26,9 +33,27 @@ import {
   ListListGrantsInternalResponse,
   ListListsInternalResponse,
   ListMyTasksInternalResponse,
+  ListFavoritesInternalResponse,
+  CreateFavoriteInternalResponse,
+  GetFavoriteInternalResponse,
+  ListSavedViewsInternalResponse,
+  CreateSavedViewInternalResponse,
+  GetSavedViewInternalResponse,
+  UpdateSavedViewInternalResponse,
+  DuplicateSavedViewInternalResponse,
+  ListTaskTemplatesInternalResponse,
+  CreateTaskTemplateInternalResponse,
+  GetTaskTemplateInternalResponse,
+  ListSpaceMilestonesInternalResponse,
   ListSpaceGrantsInternalResponse,
   ListSpacesInternalResponse,
   ListSubtasksInternalResponse,
+  ListTaskDependenciesInternalResponse,
+  CreateTaskDependencyInternalResponse,
+  GetTaskDependencyInternalResponse,
+  ListDependencyCandidatesInternalResponse,
+  ListTaskWatchersInternalResponse,
+  FollowTaskWatcherInternalResponse,
   ListTaskActivityInternalResponse,
   ListTasksInternalResponse,
   ListTrashInternalResponse,
@@ -162,6 +187,70 @@ export function createFakeTask(): FakeTask {
     return () => Promise.resolve(answer as never);
   };
   return {
+    duplicateList: vi.fn(() =>
+      Promise.resolve(
+        DuplicateListInternalResponse.parse({
+          list: responseExample('get', '/v1/lists/{listId}', 200),
+          taskCount: 0,
+        }),
+      ),
+    ),
+    duplicateTask: vi.fn(() =>
+      Promise.resolve(
+        DuplicateTaskInternalResponse.parse(responseExample('get', '/v1/tasks/{taskKey}', 200)),
+      ),
+    ),
+    executeBulkTaskAction: vi.fn(() =>
+      Promise.resolve(
+        ExecuteBulkTaskActionInternalResponse.parse({ results: [], affectedCount: 0 }),
+      ),
+    ),
+    listFavorites: vi.fn(task(ListFavoritesInternalResponse, 'get', '/v1/me/favorites')),
+    createFavorite: vi.fn(task(CreateFavoriteInternalResponse, 'post', '/v1/me/favorites', 201)),
+    getFavorite: vi.fn(() =>
+      Promise.resolve(
+        GetFavoriteInternalResponse.parse(responseExample('post', '/v1/me/favorites', 201)),
+      ),
+    ),
+    deleteFavorite: vi.fn(() => Promise.resolve()),
+    listSavedViews: vi.fn(
+      task(ListSavedViewsInternalResponse, 'get', '/v1/lists/{listId}/saved-views'),
+    ),
+    createSavedView: vi.fn(
+      task(CreateSavedViewInternalResponse, 'post', '/v1/lists/{listId}/saved-views', 201),
+    ),
+    getSavedView: vi.fn(
+      task(GetSavedViewInternalResponse, 'get', '/v1/lists/{listId}/saved-views/{viewId}'),
+    ),
+    updateSavedView: vi.fn(
+      task(UpdateSavedViewInternalResponse, 'get', '/v1/lists/{listId}/saved-views/{viewId}'),
+    ),
+    deleteSavedView: vi.fn(() => Promise.resolve()),
+    duplicateSavedView: vi.fn(
+      task(
+        DuplicateSavedViewInternalResponse,
+        'post',
+        '/v1/lists/{listId}/saved-views/{viewId}/duplicate',
+        201,
+      ),
+    ),
+    listTaskTemplates: vi.fn(
+      task(ListTaskTemplatesInternalResponse, 'get', '/v1/spaces/{spaceId}/task-templates'),
+    ),
+    createTaskTemplate: vi.fn(
+      task(CreateTaskTemplateInternalResponse, 'post', '/v1/spaces/{spaceId}/task-templates', 201),
+    ),
+    getTaskTemplate: vi.fn(
+      task(
+        GetTaskTemplateInternalResponse,
+        'get',
+        '/v1/spaces/{spaceId}/task-templates/{templateId}',
+      ),
+    ),
+    deleteTaskTemplate: vi.fn(() => Promise.resolve()),
+    listSpaceMilestones: vi.fn(
+      task(ListSpaceMilestonesInternalResponse, 'get', '/v1/spaces/{spaceId}/milestones'),
+    ),
     listSpaces: vi.fn(task(ListSpacesInternalResponse, 'get', '/v1/spaces')),
     createSpace: vi.fn(task(CreateSpaceInternalResponse, 'post', '/v1/spaces', 201)),
     getSpace: vi.fn(task(GetSpaceInternalResponse, 'get', '/v1/spaces/{spaceId}')),
@@ -219,6 +308,86 @@ export function createFakeTask(): FakeTask {
     removeTaskLabel: vi.fn(
       task(RemoveTaskLabelInternalResponse, 'post', '/v1/tasks/{taskKey}/labels/remove'),
     ),
+    createTaskComment: vi.fn(() =>
+      Promise.resolve(
+        internalExample(
+          CreateTaskCommentInternalResponse,
+          'post',
+          '/v1/tasks/{taskKey}/comments',
+          201,
+        ),
+      ),
+    ),
+    getTaskComment: vi.fn(() =>
+      Promise.resolve(
+        internalExample(
+          GetTaskCommentInternalResponse,
+          'get',
+          '/v1/tasks/{taskKey}/comments/{commentId}',
+        ),
+      ),
+    ),
+    updateTaskComment: vi.fn(() =>
+      Promise.resolve(
+        internalExample(
+          UpdateTaskCommentInternalResponse,
+          'patch',
+          '/v1/tasks/{taskKey}/comments/{commentId}',
+        ),
+      ),
+    ),
+    deleteTaskComment: vi.fn(() => Promise.resolve()),
+    listTaskParticipants: vi.fn(() =>
+      Promise.resolve(
+        internalExample(
+          ListTaskParticipantsInternalResponse,
+          'get',
+          '/v1/tasks/{taskKey}/participants',
+        ),
+      ),
+    ),
+    listTaskDependencies: vi.fn(
+      task(ListTaskDependenciesInternalResponse, 'get', '/v1/tasks/{taskKey}/dependencies'),
+    ),
+    createTaskDependency: vi.fn(() =>
+      Promise.resolve({
+        dependency: internalExample(
+          CreateTaskDependencyInternalResponse,
+          'post',
+          '/v1/tasks/{taskKey}/dependencies',
+          201,
+        ),
+        version: 13,
+      }),
+    ),
+    getTaskDependency: vi.fn(
+      task(
+        GetTaskDependencyInternalResponse,
+        'get',
+        '/v1/tasks/{taskKey}/dependencies/{dependencyId}',
+      ),
+    ),
+    deleteTaskDependency: vi.fn(() => Promise.resolve(13)),
+    listDependencyCandidates: vi.fn(() =>
+      Promise.resolve(
+        ListDependencyCandidatesInternalResponse.parse({ items: [], nextCursor: null, total: 0 }),
+      ),
+    ),
+    listTaskWatchers: vi.fn(
+      task(ListTaskWatchersInternalResponse, 'get', '/v1/tasks/{taskKey}/watchers'),
+    ),
+    followTaskWatcher: vi.fn(() =>
+      Promise.resolve({
+        watcher: internalExample(
+          FollowTaskWatcherInternalResponse,
+          'put',
+          '/v1/tasks/{taskKey}/watchers/{userId}',
+        ),
+        version: 13,
+      }),
+    ),
+    unfollowTaskWatcher: vi.fn(() => Promise.resolve(13)),
+    listTaskComments: vi.fn(() => Promise.resolve({ items: [], nextCursor: null, total: 0 })),
     listTaskActivity: vi.fn(
       task(ListTaskActivityInternalResponse, 'get', '/v1/tasks/{taskKey}/activity'),
     ),

@@ -33,6 +33,13 @@ const INTERNAL_ACCESS_CODES: ReadonlySet<string> = new Set<string>([
   'auth.organization-required',
 ]);
 
+/** Public codes whose contract forbids revealing recipient or dependency details. */
+const NO_DETAILS_CODES: ReadonlySet<string> = new Set([
+  'dependency.cycle',
+  'mention.recipient-invalid',
+  'watcher.recipient-invalid',
+]);
+
 /**
  * Constant RETRY_AFTER_DETAILS
  *
@@ -111,7 +118,7 @@ export function isUpstreamProblem(error: unknown, status: ProblemStatus, code: s
  * | ----------------------------------------------- | ----------------------------------------- |
  * | `503 upstream.*` of the internal HTTP client    | The same problem                          |
  * | `403` refusing the issuer, actor or organization | `503 upstream.unauthorized`               |
- * | A status and code listed in `accepted`          | Same, `details` without `service`         |
+ * | A status and code listed in `accepted`          | Same, with permitted details              |
  * | Any other client error (internal `404` too)     | `503 upstream.failed`                     |
  * | Anything that is not a problem                  | Unchanged: the error filter answers `500` |
  *
@@ -121,17 +128,19 @@ export function isUpstreamProblem(error: unknown, status: ProblemStatus, code: s
  *
  * `aliases` renames an internal code the public operation does not declare to the code it
  * declares for the same status: an internal `404 organization.not-found` on a member route (the
- * caller left the organization) is the public `404 member.not-found` of that route.
+ * caller left the organization) is the public `404 member.not-found` of that route. The three sensitive recipient and cycle codes never expose details; `omitDetailsFor` suppresses all details for route-specific statuses.
  *
  * @param {unknown} error - What the internal client threw.
  * @param {AcceptedProblems} accepted - Client errors the public operation declares.
  * @param {Readonly<Record<string, string>>} aliases - Public code of an internal code, by code.
+ * @param {readonly ProblemStatus[]} omitDetailsFor - Statuses whose details the route must not disclose.
  * @returns {unknown} The error to throw.
  */
 export function toPublicProblem(
   error: unknown,
   accepted: AcceptedProblems,
   aliases: Readonly<Record<string, string>> = {},
+  omitDetailsFor: readonly ProblemStatus[] = [],
 ): unknown {
   if (!(error instanceof ProblemException)) {
     return error;
@@ -149,7 +158,11 @@ export function toPublicProblem(
     return publicProblem({
       status,
       code,
-      ...(Object.keys(members).length === 0 ? {} : { details: members }),
+      ...(Object.keys(members).length === 0 ||
+      NO_DETAILS_CODES.has(code) ||
+      omitDetailsFor.includes(status)
+        ? {}
+        : { details: members }),
       cause: error,
     });
   }
@@ -278,16 +291,18 @@ function withRetryAfter(response: Response, translated: unknown): unknown {
  *
  * @param {AcceptedProblems} accepted - Client errors the public operation declares.
  * @param {() => Promise<TResult>} call - The internal call.
+ * @param {readonly ProblemStatus[]} omitDetailsFor - Statuses whose details are not public for this route.
  * @returns {Promise<TResult>} What the call resolved with.
  * @throws {unknown} The public problem, or an error that is not a problem, unchanged.
  */
 export async function relayProblems<TResult>(
   accepted: AcceptedProblems,
   call: () => Promise<TResult>,
+  omitDetailsFor: readonly ProblemStatus[] = [],
 ): Promise<TResult> {
   try {
     return await call();
   } catch (error) {
-    throw toPublicProblem(error, accepted);
+    throw toPublicProblem(error, accepted, {}, omitDetailsFor);
   }
 }

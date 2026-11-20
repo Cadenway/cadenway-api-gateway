@@ -1,3 +1,5 @@
+import { DuplicateList } from './application/use-cases/commands/lists/duplicate-list/duplicate-list.use-case.js';
+import { DuplicateListController } from './presentation/http/controllers/lists/duplicate-list.controller.js';
 import { Module, type FactoryProvider } from '@nestjs/common';
 
 import { ClientsModule } from '../../clients/clients.module.js';
@@ -34,6 +36,11 @@ const LIST_REGISTRY: unique symbol = Symbol('ListRegistry');
  * @type {readonly FactoryProvider[]}
  */
 const PROVIDERS: readonly FactoryProvider[] = [
+  {
+    provide: DuplicateList,
+    inject: [LIST_REGISTRY],
+    useFactory: (registry: ListRegistry): DuplicateList => new DuplicateList(registry),
+  },
   {
     provide: LIST_REGISTRY,
     inject: [TaskServiceClient],
@@ -86,6 +93,6 @@ const PROVIDERS: readonly FactoryProvider[] = [
 @Module({
   imports: [AuthModule, RateLimitModule, ClientsModule],
   providers: [...PROVIDERS],
-  controllers: [ListsController],
+  controllers: [DuplicateListController, ListsController],
 })
 export class ListsModule {}
