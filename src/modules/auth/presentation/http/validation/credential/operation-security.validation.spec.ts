@@ -282,7 +282,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(180);
+    expect(operations).toHaveLength(186);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -451,6 +451,12 @@ describe('the security of every route against the public contracts', () => {
         'publishIntakeForm',
         'disableIntakeForm',
         'getTaskIntakeContact',
+        'listTaskAttachments',
+        'getTaskAttachment',
+        'startTaskAttachmentUpload',
+        'completeTaskAttachmentUpload',
+        'getTaskAttachmentDownload',
+        'deleteTaskAttachment',
       ].sort(),
     );
   });

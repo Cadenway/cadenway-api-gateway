@@ -403,6 +403,7 @@ export function createFakeTask(): FakeTask {
     countTaskGroups: vi.fn(
       task(CountTaskGroupsInternalResponse, 'get', '/v1/lists/{listId}/task-groups'),
     ),
+    checkTaskAttachmentAccess: vi.fn(() => Promise.resolve()),
     getTask: vi.fn(task(GetTaskInternalResponse, 'get', '/v1/tasks/{taskKey}')),
     updateTask: vi.fn(task(UpdateTaskInternalResponse, 'patch', '/v1/tasks/{taskKey}')),
     getTaskDetail: vi.fn(() => Promise.resolve(taskDetailCore())),

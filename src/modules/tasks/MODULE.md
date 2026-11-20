@@ -85,6 +85,10 @@ Comments and participants, watchers and dependencies are served by their respect
 
 ### Goals, reporting and intake
 
+- The six task attachment operations call the single-snapshot Task access check before each
+  Storage operation. Reads require `tasks:read`, writes require `tasks:write`. Storage owns
+  upload, verification, download and deletion. Signed capability responses carry `no-store`.
+
 - The nine operations in `openapi/public/goals.yaml` relay goals and key results to task-service.
   They preserve declared scopes, conditional requests and idempotency and rewrite creation locations
   to public paths after validating them.
