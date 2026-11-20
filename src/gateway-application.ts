@@ -151,7 +151,9 @@ export async function createGatewayApplication(
   app.use(
     '/v1/intake-forms',
     (error: unknown, request: Request, response: Response, next: NextFunction): void => {
-      noStore(request, response, () => next(error));
+      noStore(request, response, () => {
+        next(error);
+      });
     },
   );
   app.set('trust proxy', TRUSTED_PROXY_HOPS);
