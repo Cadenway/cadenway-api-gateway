@@ -16,7 +16,7 @@ export function createTrashRegistryAdapter(client: TaskServiceClient): TrashRegi
   return {
     trashTask: (taskKey, body, ifMatch) => client.trashTask(taskKey, body, ifMatch),
     listTrash: (query) => client.listTrash(query),
-    restoreTrashEntry: (entryId, body) => client.restoreTrashEntry(entryId, body),
+    restoreTrashEntry: (entryId, body, query) => client.restoreTrashEntry(entryId, body, query),
     purgeTrashEntry: (entryId) => client.purgeTrashEntry(entryId),
     emptyTrash: (body) => client.emptyTrash(body),
   };

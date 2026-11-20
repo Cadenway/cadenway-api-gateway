@@ -56,6 +56,21 @@ const SPACE_ID = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01';
  */
 const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
 
+/** First comments page returned for the task detail fixture. */
+const COMMENTS_PAGE = {
+  items: [
+    {
+      ...(responseExample('post', '/v1/tasks/{taskKey}/comments', 201) as Record<
+        string,
+        JsonBodyType
+      >),
+      taskKey: 'CAD-483',
+    },
+  ],
+  nextCursor: null,
+  total: 1,
+};
+
 /**
  * Id of Léa Petit, given a role on "Sprint 14" in the contract examples.
  */
@@ -288,6 +303,221 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     await redis.stop();
   });
 
+  /** Task example used as the duplicated task response. */
+  const duplicatedTask = {
+    ...(responseExample('get', '/v1/tasks/{taskKey}', 200) as Record<string, unknown>),
+    key: 'CAD-495',
+    version: 1,
+  };
+
+  /** Collaboration operations exercised through the real task-service client. */
+  const collaborationCases: readonly {
+    readonly name: string;
+    readonly method: 'get' | 'post' | 'put';
+    readonly publicPath: string;
+    readonly publicUrl: string;
+    readonly internalPath: string;
+    readonly internalRoute: string;
+    readonly status: number;
+    readonly reply: unknown;
+    readonly body?: object;
+    readonly headers?: Readonly<Record<string, string>>;
+    readonly upstreamHeaders?: Readonly<Record<string, string>>;
+    readonly location?: string;
+    readonly etag?: string;
+    readonly problem: { readonly status: number; readonly code: string };
+  }[] = [
+    {
+      name: 'comment creation',
+      method: 'post',
+      publicPath: '/v1/tasks/{taskKey}/comments',
+      publicUrl: '/v1/tasks/CAD-482/comments',
+      internalPath: '/internal/v1/tasks/CAD-482/comments',
+      internalRoute: 'POST /internal/v1/tasks/CAD-482/comments',
+      status: 201,
+      reply: responseExample('post', '/v1/tasks/{taskKey}/comments', 201),
+      body: { body: 'Hello' },
+      headers: { 'Idempotency-Key': 'comment-key' },
+      upstreamHeaders: {
+        ETag: '"1"',
+        Location: '/internal/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+      },
+      etag: '"1"',
+      location: '/v1/tasks/CAD-482/comments/019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01',
+      problem: { status: 403, code: 'access.role-insufficient' },
+    },
+    {
+      name: 'watcher follow',
+      method: 'put',
+      publicPath: '/v1/tasks/{taskKey}/watchers/{userId}',
+      publicUrl: `/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+      internalPath: `/internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+      internalRoute: `PUT /internal/v1/tasks/CAD-482/watchers/${CAMILLE.id}`,
+      status: 200,
+      reply: responseExample('put', '/v1/tasks/{taskKey}/watchers/{userId}', 200),
+      body: {},
+      headers: { 'If-Match': '"12"' },
+      upstreamHeaders: { ETag: '"13"' },
+      etag: '"13"',
+      problem: { status: 422, code: 'watcher.recipient-invalid' },
+    },
+    {
+      name: 'dependency creation',
+      method: 'post',
+      publicPath: '/v1/tasks/{taskKey}/dependencies',
+      publicUrl: '/v1/tasks/CAD-482/dependencies',
+      internalPath: '/internal/v1/tasks/CAD-482/dependencies',
+      internalRoute: 'POST /internal/v1/tasks/CAD-482/dependencies',
+      status: 201,
+      reply: responseExample('post', '/v1/tasks/{taskKey}/dependencies', 201),
+      body: { otherTaskKey: 'CAD-483', direction: 'blocks' },
+      headers: { 'If-Match': '"12"', 'Idempotency-Key': 'dependency-key' },
+      upstreamHeaders: {
+        ETag: '"13"',
+        Location: '/internal/v1/tasks/CAD-482/dependencies/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+      },
+      etag: '"13"',
+      location: '/v1/tasks/CAD-482/dependencies/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01',
+      problem: { status: 422, code: 'dependency.cycle' },
+    },
+    {
+      name: 'space milestones',
+      method: 'get',
+      publicPath: '/v1/spaces/{spaceId}/milestones',
+      publicUrl: `/v1/spaces/${SPACE_ID}/milestones?limit=20`,
+      internalPath: `/internal/v1/spaces/${SPACE_ID}/milestones`,
+      internalRoute: `GET /internal/v1/spaces/${SPACE_ID}/milestones?limit=20`,
+      status: 200,
+      reply: responseExample('get', '/v1/spaces/{spaceId}/milestones', 200),
+      problem: { status: 404, code: 'space.not-found' },
+    },
+    {
+      name: 'task duplication',
+      method: 'post',
+      publicPath: '/v1/tasks/{taskKey}/duplicate',
+      publicUrl: '/v1/tasks/CAD-482/duplicate',
+      internalPath: '/internal/v1/tasks/CAD-482/duplicate',
+      internalRoute: 'POST /internal/v1/tasks/CAD-482/duplicate',
+      status: 201,
+      reply: duplicatedTask,
+      body: {},
+      headers: { 'If-Match': '"12"', 'Idempotency-Key': 'task-copy-key' },
+      upstreamHeaders: {
+        ETag: `"${String(duplicatedTask.version)}"`,
+        Location: `/internal/v1/tasks/${duplicatedTask.key}`,
+      },
+      etag: `"${String(duplicatedTask.version)}"`,
+      location: `/v1/tasks/${duplicatedTask.key}`,
+      problem: { status: 409, code: 'task.archived' },
+    },
+    {
+      name: 'bulk task action',
+      method: 'post',
+      publicPath: '/v1/tasks/bulk-actions',
+      publicUrl: '/v1/tasks/bulk-actions',
+      internalPath: '/internal/v1/tasks/bulk-actions',
+      internalRoute: 'POST /internal/v1/tasks/bulk-actions',
+      status: 200,
+      reply: responseExample('post', '/v1/tasks/bulk-actions', 200),
+      body: {
+        selection: [{ taskKey: 'CAD-482', version: 12 }],
+        action: { type: 'status', status: 'done' },
+      },
+      headers: { 'Idempotency-Key': 'bulk-key' },
+      problem: { status: 422, code: 'bulk.expansion-limit-reached' },
+    },
+    {
+      name: 'task template creation',
+      method: 'post',
+      publicPath: '/v1/spaces/{spaceId}/task-templates',
+      publicUrl: `/v1/spaces/${SPACE_ID}/task-templates`,
+      internalPath: `/internal/v1/spaces/${SPACE_ID}/task-templates`,
+      internalRoute: `POST /internal/v1/spaces/${SPACE_ID}/task-templates`,
+      status: 201,
+      reply: responseExample('post', '/v1/spaces/{spaceId}/task-templates', 201),
+      body: { sourceTaskKey: 'CAD-482', name: 'Template' },
+      headers: { 'Idempotency-Key': 'template-key' },
+      upstreamHeaders: {
+        ETag: '"1"',
+        Location: `/internal/v1/spaces/${SPACE_ID}/task-templates/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+      },
+      etag: '"1"',
+      location: `/v1/spaces/${SPACE_ID}/task-templates/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+      problem: { status: 422, code: 'template.source-restricted' },
+    },
+    {
+      name: 'saved view creation',
+      method: 'post',
+      publicPath: '/v1/lists/{listId}/saved-views',
+      publicUrl: `/v1/lists/${LIST_ID}/saved-views`,
+      internalPath: `/internal/v1/lists/${LIST_ID}/saved-views`,
+      internalRoute: `POST /internal/v1/lists/${LIST_ID}/saved-views`,
+      status: 201,
+      reply: responseExample('post', '/v1/lists/{listId}/saved-views', 201),
+      body: {
+        name: 'View',
+        configuration: { layout: 'list', filters: {}, sort: 'dueDate', groupBy: null },
+      },
+      headers: { 'Idempotency-Key': 'view-key' },
+      upstreamHeaders: {
+        ETag: '"1"',
+        Location: `/internal/v1/lists/${LIST_ID}/saved-views/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+      },
+      etag: '"1"',
+      location: `/v1/lists/${LIST_ID}/saved-views/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f01`,
+      problem: { status: 409, code: 'saved-view.list-archived' },
+    },
+    {
+      name: 'favorite creation',
+      method: 'post',
+      publicPath: '/v1/me/favorites',
+      publicUrl: '/v1/me/favorites',
+      internalPath: '/internal/v1/me/favorites',
+      internalRoute: 'POST /internal/v1/me/favorites',
+      status: 201,
+      reply: responseExample('post', '/v1/me/favorites', 201),
+      body: { kind: 'list', targetId: LIST_ID },
+      headers: { 'Idempotency-Key': 'favorite-key' },
+      upstreamHeaders: {
+        ETag: '"1"',
+        Location: '/internal/v1/me/favorites/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02',
+      },
+      etag: '"1"',
+      location: '/v1/me/favorites/019a7007-8b9c-7d0e-8f1a-2b3c4d5e6f02',
+      problem: { status: 409, code: 'favorite.already-exists' },
+    },
+  ];
+
+  it.each(collaborationCases)('relays $name and its declared problem over HTTP', async (route) => {
+    taskService(route.method, route.internalPath, () =>
+      HttpResponse.json(route.reply as JsonBodyType, {
+        status: route.status,
+        headers: route.upstreamHeaders,
+      }),
+    );
+    const options = {
+      ...(route.body === undefined ? {} : { body: route.body }),
+      ...(route.headers === undefined ? {} : { headers: { ...route.headers } }),
+    };
+    const response = await send(route.method, route.publicPath, route.publicUrl, options);
+    expect(response.status, JSON.stringify(response.body)).toBe(route.status);
+    expect(response.headers.location).toBe(route.location);
+    expect(response.headers.etag).toBe(route.etag);
+    const call = onlyCall(route.internalRoute);
+    if (route.body !== undefined) expect(call.body).toMatchObject(route.body);
+    for (const [name, value] of Object.entries(route.headers ?? {}))
+      expect(call.headers.get(name)).toBe(value);
+
+    taskCalls.length = 0;
+    taskService(route.method, route.internalPath, () =>
+      taskServiceProblem(route.problem.status, route.problem.code),
+    );
+    const refused = await send(route.method, route.publicPath, route.publicUrl, options);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(route.problem.status);
+    expect(refused.body).toMatchObject({ code: route.problem.code });
+    onlyCall(route.internalRoute);
+  });
+
   it('changes a grant with If-Match and the body relayed, answering the grant and its ETag', async () => {
     const grant: unknown = responseExample('put', '/v1/lists/{listId}/grants/{userId}', 200);
     taskService('put', `/internal/v1/lists/${LIST_ID}/grants/${GRANTEE_ID}`, () =>
@@ -446,6 +676,11 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     taskService('get', '/internal/v1/tasks/CAD-452/detail', () =>
       taskServiceProblem(404, 'task.trashed', TRASHED_DETAILS),
     );
+    network.use(
+      http.get(`${TASK_URL}/internal/v1/tasks/CAD-452/comments`, () =>
+        HttpResponse.json({ items: [], nextCursor: null, total: 0 }),
+      ),
+    );
 
     const response: request.Response = await send(
       'get',
@@ -468,6 +703,9 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
       HttpResponse.json(taskDetailCore() as JsonBodyType),
     );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
 
     const response: request.Response = await send(
       'get',
@@ -476,7 +714,7 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     );
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), partial: [] });
+    expect(response.body).toEqual({ ...taskDetailCore(), comments: COMMENTS_PAGE, partial: [] });
   });
 
   it('deletes a list with 204 and its If-Match relayed', async () => {

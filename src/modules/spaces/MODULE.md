@@ -15,14 +15,15 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 
 ## API
 
-| Public route                        | Internal call                                | Token scope   |
-| ----------------------------------- | -------------------------------------------- | ------------- |
-| `GET /v1/spaces`                    | `GET /internal/v1/spaces`                    | `tasks:read`  |
-| `POST /v1/spaces`                   | `POST /internal/v1/spaces`                   | `tasks:write` |
-| `GET /v1/spaces/{spaceId}`          | `GET /internal/v1/spaces/{spaceId}`          | `tasks:read`  |
-| `PATCH /v1/spaces/{spaceId}`        | `PATCH /internal/v1/spaces/{spaceId}`        | `tasks:write` |
-| `DELETE /v1/spaces/{spaceId}`       | `DELETE /internal/v1/spaces/{spaceId}`       | `tasks:write` |
-| `GET /v1/spaces/{spaceId}/overview` | `GET /internal/v1/spaces/{spaceId}/overview` | `tasks:read`  |
+| Public route                          | Internal call                                  | Token scope   |
+| ------------------------------------- | ---------------------------------------------- | ------------- |
+| `GET /v1/spaces/{spaceId}/milestones` | `GET /internal/v1/spaces/{spaceId}/milestones` | `tasks:read`  |
+| `GET /v1/spaces`                      | `GET /internal/v1/spaces`                      | `tasks:read`  |
+| `POST /v1/spaces`                     | `POST /internal/v1/spaces`                     | `tasks:write` |
+| `GET /v1/spaces/{spaceId}`            | `GET /internal/v1/spaces/{spaceId}`            | `tasks:read`  |
+| `PATCH /v1/spaces/{spaceId}`          | `PATCH /internal/v1/spaces/{spaceId}`          | `tasks:write` |
+| `DELETE /v1/spaces/{spaceId}`         | `DELETE /internal/v1/spaces/{spaceId}`         | `tasks:write` |
+| `GET /v1/spaces/{spaceId}/overview`   | `GET /internal/v1/spaces/{spaceId}/overview`   | `tasks:read`  |
 
 ## Decisions
 
@@ -54,3 +55,5 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   task-service deletes the lists with the space and moves its tasks to the trash afterwards; the
   gateway decides nothing about either. task-service serves the deletion once its PR 3 (trash and
   deletion) is merged and deployed; until then the route answers `503 upstream.failed`.
+
+`GET /v1/spaces/{spaceId}/milestones` relays a page of visible milestones with `tasks:read`.

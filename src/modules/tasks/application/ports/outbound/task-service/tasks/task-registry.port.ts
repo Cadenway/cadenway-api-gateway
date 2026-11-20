@@ -15,6 +15,20 @@ import type { TaskServiceDocument } from '../../../../models/task-service/task-s
  */
 export interface TaskRegistry {
   // #region Methods
+  /** Relays an atomic bulk task action to task-service. */
+  executeBulkTaskAction(
+    body: TaskServiceDocument,
+    key: string | undefined,
+  ): Promise<TaskServiceDocument>;
+
+  /** Relays duplicateTask to task-service. */
+  duplicateTask(
+    taskKey: string,
+    body: TaskServiceDocument,
+    ifMatch: string | undefined,
+    key: string | undefined,
+  ): Promise<TaskServiceDocument>;
+
   /**
    * Method listTasks
    *

@@ -1,3 +1,7 @@
+import { ExecuteBulkTaskAction } from './application/use-cases/commands/tasks/execute-bulk-task-action/execute-bulk-task-action.use-case.js';
+import { ExecuteBulkTaskActionController } from './presentation/http/controllers/tasks/execute-bulk-task-action.controller.js';
+import { DuplicateTask } from './application/use-cases/commands/tasks/duplicate-task/duplicate-task.use-case.js';
+import { DuplicateTaskController } from './presentation/http/controllers/tasks/duplicate-task.controller.js';
 import { Module, type FactoryProvider, type Provider } from '@nestjs/common';
 
 import { ClientsModule } from '../../clients/clients.module.js';
@@ -49,6 +53,17 @@ const TASK_REGISTRY: unique symbol = Symbol('TaskRegistry');
  * @type {readonly FactoryProvider[]}
  */
 const PROVIDERS: readonly FactoryProvider[] = [
+  {
+    provide: ExecuteBulkTaskAction,
+    inject: [TASK_REGISTRY],
+    useFactory: (registry: TaskRegistry): ExecuteBulkTaskAction =>
+      new ExecuteBulkTaskAction(registry),
+  },
+  {
+    provide: DuplicateTask,
+    inject: [TASK_REGISTRY],
+    useFactory: (registry: TaskRegistry): DuplicateTask => new DuplicateTask(registry),
+  },
   {
     provide: TASK_REGISTRY,
     inject: [TaskServiceClient],
@@ -146,7 +161,7 @@ const PROVIDERS: readonly FactoryProvider[] = [
  *
  * @description
  * The task detail aggregate, assembled in `composition/`: its main part bound to task-service,
- * its secondary parts (none in this version) and the query that composes them.
+ * its comments secondary part and the query that composes them.
  *
  * @type {readonly Provider[]}
  */
@@ -166,6 +181,12 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
 @Module({
   imports: [AuthModule, RateLimitModule, ClientsModule],
   providers: [...PROVIDERS, ...DETAIL_PROVIDERS],
-  controllers: [TasksController, LabelsController, MyTasksController],
+  controllers: [
+    ExecuteBulkTaskActionController,
+    DuplicateTaskController,
+    TasksController,
+    LabelsController,
+    MyTasksController,
+  ],
 })
 export class TasksModule {}

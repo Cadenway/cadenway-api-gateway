@@ -156,6 +156,9 @@ const CREATE_TASK_PROBLEMS: AcceptedProblems = {
     'task.assignee-invalid',
     'task.start-date-invalid',
     'idempotency.key-reused',
+    'mention.recipient-invalid',
+    'milestone.status-invalid',
+    'milestone.dates-invalid',
   ],
 };
 
@@ -216,7 +219,7 @@ const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   403: ['access.role-insufficient'],
   404: ['task.not-found', 'task.trashed', 'organization.not-found'],
-  409: ['task.archived'],
+  409: ['task.archived', 'recurrence.already-spawned'],
   412: ['request.version-mismatch'],
   422: [
     'task.status-hidden',
@@ -227,6 +230,10 @@ const UPDATE_TASK_PROBLEMS: AcceptedProblems = {
     'task.parent-invalid',
     'task.subtask-depth-exceeded',
     'task.subtask-limit-reached',
+    'mention.recipient-invalid',
+    'milestone.status-invalid',
+    'milestone.dates-invalid',
+    'recurrence.date-out-of-range',
   ],
 };
 
@@ -838,7 +845,7 @@ export class TasksController {
    * Method getTaskDetail
    *
    * @description
-   * `GET /v1/tasks/{taskKey}/detail`: the detail of a task the gateway composes (see `GetTaskDetail`), with the `ETag` of the task. `partial` names the secondary parts that could not be read: `[]` in this version.
+   * `GET /v1/tasks/{taskKey}/detail`: the detail of a task the gateway composes (see `GetTaskDetail`), with the `ETag` of the task. `partial` names secondary parts that could not be read.
    *
    * @param {z.output<typeof GetTaskDetailParams>} params - The path parameters.
    * @param {Response} response - Response, for its headers.
@@ -863,6 +870,7 @@ export class TasksController {
       GetTaskDetailResponse,
       {
         ...detail.core,
+        ...(detail.parts.has('comments') ? { comments: detail.parts.get('comments') } : {}),
         partial: detail.partial,
       },
     );

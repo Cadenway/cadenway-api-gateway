@@ -34,6 +34,17 @@ interface JsonRequest {
    * @readonly
    */
   readonly body?: unknown;
+
+  /**
+   * Property readableDidRead
+   *
+   * @description
+   * Whether the HTTP stream delivered data to the parser.
+   *
+   * @type {boolean}
+   * @readonly
+   */
+  readonly readableDidRead?: boolean;
   // #endregion
 }
 
@@ -158,15 +169,13 @@ function invalidBody(issue: Readonly<Record<string, string>>): ProblemException 
  *   (`code: unsupported_media_type`): the form parser NestJS registers turns a body such as `&`
  *   into `{}` too, and a body in another charset may decode to nothing (a UTF-16 byte-order
  *   mark alone);
+ * - a parsed chunked request that delivered no bytes is refused (`code: required`);
  * - any other body, a literal `{}` included, goes through `ZodValidationPipe` exactly as
  *   `@Body(new ZodValidationPipe(contract))` takes it. A request without `Content-Type` is left
  *   to it: no parser reads its body, which stays `undefined` and is refused as `invalid_type`.
  *
- * Limitation: a JSON body whose decoded text is empty also reaches the gateway as `{}`, with
- * nothing left to tell it from a literal `{}`: an empty chunked body (`Transfer-Encoding:
- * chunked` with no data), an empty body under a `Content-Encoding`, or a UTF-8 byte-order mark
- * alone. It belongs to the parser of cadenway-service-kit, which should leave such a body
- * `undefined`.
+ * An empty compressed payload or a UTF-8 byte-order mark alone can still reach validation as
+ * `{}`. Distinguishing those payloads requires decoded-body information from the shared parser.
  *
  * @param {JsonRequest} request - The HTTP request, after the body parsers.
  * @param {z.ZodType} contract - Validator of the body in the public contract.
@@ -182,6 +191,14 @@ export function toRequiredBody(request: JsonRequest, contract: z.ZodType): unkno
   const contentType: string | undefined = request.headers['content-type'];
   if (contentType !== undefined && !isJsonInUtf8(contentType)) {
     throw invalidBody(UNSUPPORTED_MEDIA_TYPE_ISSUE);
+  }
+  const transferEncoding = request.headers['transfer-encoding'];
+  if (
+    request.body !== undefined &&
+    request.readableDidRead === false &&
+    transferEncoding?.split(',').at(-1)?.trim().toLowerCase() === 'chunked'
+  ) {
+    throw invalidBody(MISSING_BODY_ISSUE);
   }
   return new ZodValidationPipe(contract).transform(request.body, { type: 'body' });
 }

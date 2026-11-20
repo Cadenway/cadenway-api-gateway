@@ -22,8 +22,7 @@ const PART_DEADLINE_MS: number = 800;
  * Composes the detail of a task: the core of task-service and the secondary parts, read together.
  * The core is the main part: its failure fails the detail, as task-service answered it. A
  * secondary part that fails or does not answer within `PART_DEADLINE_MS` is named in `partial`
- * and left out. In this version task-service is the only source: no part is bound, so `partial`
- * is `[]`. The gateway decides nothing on what it composes.
+ * and left out. The comments page is a secondary part owned by task-service. The core failure takes precedence over every secondary result.
  */
 export class GetTaskDetail {
   // #region Properties
@@ -58,7 +57,7 @@ export class GetTaskDetail {
    * Binds the sources of the detail.
    *
    * @param {TaskDetailCoreSource} core - The main part, from task-service.
-   * @param {readonly TaskDetailPart[]} parts - The secondary parts; none in this version.
+   * @param {readonly TaskDetailPart[]} parts - The secondary parts.
    * @constructor
    */
   public constructor(core: TaskDetailCoreSource, parts: readonly TaskDetailPart[]) {
@@ -79,31 +78,36 @@ export class GetTaskDetail {
    * @throws {unknown} What the core source threw: the detail fails as a whole.
    */
   public async execute(taskKey: string): Promise<TaskDetail> {
-    const [core, ...answers]: [
-      TaskServiceDocument,
-      ...(readonly [string, TaskServiceDocument | undefined])[],
-    ] = await Promise.all([
-      this.core.getTaskDetail(taskKey),
-      ...this.parts.map((part: TaskDetailPart) => this.readPart(part, taskKey)),
+    const [coreResult, answers] = await Promise.all([
+      Promise.allSettled([this.core.getTaskDetail(taskKey)] as const),
+      Promise.allSettled(this.parts.map((part: TaskDetailPart) => this.readPart(part, taskKey))),
     ]);
+    const [core] = coreResult;
+    if (core.status === 'rejected') {
+      throw core.reason;
+    }
     const parts: Map<string, TaskServiceDocument> = new Map<string, TaskServiceDocument>();
     const partial: string[] = [];
-    for (const [name, document] of answers) {
+    for (const answer of answers) {
+      if (answer.status === 'rejected') {
+        throw answer.reason;
+      }
+      const [name, document] = answer.value;
       if (document === undefined) {
         partial.push(name);
       } else {
         parts.set(name, document);
       }
     }
-    return { core, parts, partial };
+    return { core: core.value, parts, partial };
   }
 
   /**
    * Method readPart
    *
    * @description
-   * Reads one secondary part within `PART_DEADLINE_MS`. It never rejects: a failure or a late
-   * answer resolves with no document, which names the part in `partial`.
+   * Reads one secondary part within `PART_DEADLINE_MS`. A failure or a late answer names the
+   * part in `partial`, unless the source requires the detail to fail.
    *
    * @param {TaskDetailPart} part - The part.
    * @param {string} taskKey - Key of the task.
@@ -120,7 +124,10 @@ export class GetTaskDetail {
     });
     try {
       return [part.name, await Promise.race([part.read(taskKey), late])];
-    } catch {
+    } catch (error) {
+      if (part.failsDetail?.(error) === true) {
+        throw error;
+      }
       return [part.name, undefined];
     } finally {
       clearTimeout(timer);

@@ -3,7 +3,7 @@ import { Writable } from 'node:stream';
 import { InternalTokenVerifier, type InternalPrincipal } from '@cadenway/nest-common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
-import { http, HttpResponse, type JsonBodyType } from 'msw';
+import { delay, http, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
@@ -50,6 +50,21 @@ const READ_TOKEN = 'cw_pat_TasksReadTokenOfCamille0000000000000';
  * Id of the list "Sprint 14" of the contract examples.
  */
 const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
+
+/** First comments page returned for the task detail fixture. */
+const COMMENTS_PAGE = {
+  items: [
+    {
+      ...(responseExample('post', '/v1/tasks/{taskKey}/comments', 201) as Record<
+        string,
+        JsonBodyType
+      >),
+      taskKey: 'CAD-483',
+    },
+  ],
+  nextCursor: null,
+  total: 1,
+};
 
 /**
  * A call task-service received.
@@ -244,6 +259,9 @@ describe('the task core routes against task-service over HTTP', () => {
     taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
       HttpResponse.json(taskDetailCore() as JsonBodyType),
     );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
 
     const response: request.Response = await send(
       'get',
@@ -252,8 +270,87 @@ describe('the task core routes against task-service over HTTP', () => {
     );
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), partial: [] });
+    expect(response.body).toEqual({ ...taskDetailCore(), comments: COMMENTS_PAGE, partial: [] });
     expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
+  });
+
+  it('fails the whole detail when the comments read denies visibility', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Not Found', status: 404, code: 'task.not-found' },
+        { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ code: 'task.not-found' });
+    expect(response.body).not.toHaveProperty('partial');
+    expect(taskCalls.map((call: TaskCall) => call.route)).toEqual(
+      expect.arrayContaining([
+        'GET /internal/v1/tasks/CAD-483/detail',
+        'GET /internal/v1/tasks/CAD-483/comments?limit=50',
+      ]),
+    );
+  });
+
+  it.each([
+    [403, 'auth.issuer-not-allowed'],
+    [404, 'comment.not-found'],
+  ])('returns partial comments for an internal %i %s', async (status, code) => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Internal', status, code },
+        { status, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+  });
+
+  it('answers the slow core problem when comments deny visibility first', async () => {
+    network.use(
+      http.get(`${TASK_URL}/internal/v1/tasks/CAD-483/detail`, async () => {
+        await delay(100);
+        return HttpResponse.json(
+          { type: 'about:blank', title: 'Internal', status: 404, code: 'task.trashed' },
+          { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+      }),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Internal', status: 404, code: 'task.not-found' },
+        { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ code: 'task.trashed' });
+  });
+
+  it('returns the authorized core with partial comments after the part deadline', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    network.use(
+      http.get(`${TASK_URL}/internal/v1/tasks/CAD-483/comments`, async () => {
+        await delay(1200);
+        return HttpResponse.json(COMMENTS_PAGE);
+      }),
+    );
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+    await delay(500);
   });
 
   it('reads "Accueil" for the user of the session, on the today of the caller', async () => {
@@ -357,5 +454,29 @@ describe('the task core routes against task-service over HTTP', () => {
     expect(logs).not.toContain(SESSION);
     expect(logs).not.toContain(READ_TOKEN);
     expect(logs).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\./u);
+  });
+  it('returns the core and marks only comments partial when comments are unavailable', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Unavailable', status: 503, code: 'service.unavailable' },
+        { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+    expect(response.body).not.toHaveProperty('comments');
+    expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
+    expect(taskCalls.map((call: TaskCall) => call.route)).toEqual(
+      expect.arrayContaining([
+        'GET /internal/v1/tasks/CAD-483/detail',
+        'GET /internal/v1/tasks/CAD-483/comments?limit=50',
+      ]),
+    );
   });
 });

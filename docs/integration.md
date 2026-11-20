@@ -351,17 +351,17 @@ request → auth guard (token) → scope guard → organization context → rate
   (`TASK_SERVICE_URL`), with the user and organization of the verified credential in the
   internal token. Reads need `tasks:read` and writes `tasks:write` for a personal API token,
   spaces and lists included; every route acts on the current organization.
-- The gateway reads no member of a task-service body: the client checks each query and body
-  against the internal contract before the call and each answer after it, and the route maps the
-  answer to the public contract through its public validator.
+- The client checks each query and body against the internal contract before the call and each
+  answer after it; the route maps the answer through its public validator. The gateway reads
+  identifiers and versions where needed for public `Location` and `ETag` headers.
 - Each route relays only the client errors its public operation declares, with their French
   titles; any other is `503 upstream.failed`. `If-Match`, `Idempotency-Key`, `today` and every
   query parameter are relayed as declared; `ETag` and `Location` are answered as the public
   operation declares them.
 - `GET /v1/tasks/{taskKey}/detail` is an aggregate: the core of task-service is its main part,
-  and each later secondary part (attachments, development links, comments) is read in parallel
-  within 800 ms and named in `partial` when it cannot be read. None exists yet: `partial` is
-  `[]`.
+  and the first comments page is read in parallel within 800 ms. A comments-only upstream
+  failure omits the page and names `comments` in `partial`; a visibility denial fails the detail.
+  Attachments and development links remain future secondary parts.
 
 ### Access, archive and trash routes
 

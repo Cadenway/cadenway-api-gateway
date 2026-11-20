@@ -201,7 +201,11 @@ const ROUTES: readonly TaskRoute[] = [
     calledWith: [TASK_KEY],
     invalid: { url: '/v1/tasks/CAD-0/detail' },
     check: (response) => {
-      expect(response.body).toEqual({ ...taskDetailCore(), partial: [] });
+      expect(response.body).toEqual({
+        ...taskDetailCore(),
+        comments: { items: [], nextCursor: null, total: 0 },
+        partial: [],
+      });
       expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
     },
   },
@@ -385,6 +389,31 @@ describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
       await runRouteCase(application, identity, routeCase);
     },
   );
+
+  it('forwards the milestone filter to list and group queries', async () => {
+    await runRouteCase(application, identity, {
+      name: 'milestone task list',
+      method: 'get',
+      path: '/v1/lists/{listId}/tasks',
+      url: `/v1/lists/${LIST_ID}/tasks?milestone=true`,
+      status: 200,
+    });
+    expect(application.task.listTasks).toHaveBeenCalledWith(
+      LIST_ID,
+      expect.objectContaining({ milestone: true }),
+    );
+    await runRouteCase(application, identity, {
+      name: 'ordinary task groups',
+      method: 'get',
+      path: '/v1/lists/{listId}/task-groups',
+      url: `/v1/lists/${LIST_ID}/task-groups?groupBy=status&milestone=false`,
+      status: 200,
+    });
+    expect(application.task.countTaskGroups).toHaveBeenCalledWith(
+      LIST_ID,
+      expect.objectContaining({ milestone: false }),
+    );
+  });
 
   it('answers 503 upstream.failed when task-service answers a detail the public contract cannot carry', async () => {
     application.task.getTaskDetail.mockResolvedValue({

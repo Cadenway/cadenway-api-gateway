@@ -3,6 +3,12 @@ import { ResilientRedisClient } from '@cadenway/nest-common/redis';
 import { Module, type Type } from '@nestjs/common';
 
 import { RedisModule } from './infrastructure/redis/redis.module.js';
+import { FavoritesModule } from './modules/favorites/favorites.module.js';
+import { SavedViewsModule } from './modules/saved-views/saved-views.module.js';
+import { TaskTemplatesModule } from './modules/task-templates/task-templates.module.js';
+import { DependenciesModule } from './modules/dependencies/dependencies.module.js';
+import { WatchersModule } from './modules/watchers/watchers.module.js';
+import { CommentsModule } from './modules/comments/comments.module.js';
 import { AccessModule } from './modules/access/access.module.js';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
 import { ArchivesModule } from './modules/archives/archives.module.js';
@@ -40,6 +46,12 @@ export const ROUTE_MODULES: readonly Type[] = [
   SpacesModule,
   ListsModule,
   TasksModule,
+  CommentsModule,
+  WatchersModule,
+  DependenciesModule,
+  TaskTemplatesModule,
+  SavedViewsModule,
+  FavoritesModule,
   AccessModule,
   ArchivesModule,
   TrashModule,

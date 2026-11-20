@@ -19,8 +19,21 @@ import {
   CreateSpaceInternalResponse,
   CreateSubtaskInternalBody,
   CreateSubtaskInternalResponse,
+  CreateTaskCommentInternalBody,
+  CreateTaskCommentInternalResponse,
+  GetTaskCommentInternalResponse,
+  UpdateTaskCommentInternalBody,
+  UpdateTaskCommentInternalResponse,
+  ListTaskParticipantsInternalQueryParams,
+  ListTaskParticipantsInternalResponse,
   CreateTaskInternalBody,
   CreateTaskInternalResponse,
+  DuplicateListInternalBody,
+  DuplicateListInternalResponse,
+  DuplicateTaskInternalBody,
+  DuplicateTaskInternalResponse,
+  ExecuteBulkTaskActionInternalBody,
+  ExecuteBulkTaskActionInternalResponse,
   EmptyTrashInternalBody,
   EmptyTrashInternalResponse,
   GetHomeInternalQueryParams,
@@ -49,12 +62,46 @@ import {
   ListListsInternalResponse,
   ListMyTasksInternalQueryParams,
   ListMyTasksInternalResponse,
+  ListFavoritesInternalQueryParams,
+  ListFavoritesInternalResponse,
+  CreateFavoriteInternalBody,
+  CreateFavoriteInternalResponse,
+  GetFavoriteInternalResponse,
+  ListSavedViewsInternalQueryParams,
+  ListSavedViewsInternalResponse,
+  CreateSavedViewInternalBody,
+  CreateSavedViewInternalResponse,
+  GetSavedViewInternalResponse,
+  UpdateSavedViewInternalBody,
+  UpdateSavedViewInternalResponse,
+  DuplicateSavedViewInternalBody,
+  DuplicateSavedViewInternalResponse,
+  ListTaskTemplatesInternalQueryParams,
+  ListTaskTemplatesInternalResponse,
+  CreateTaskTemplateInternalBody,
+  CreateTaskTemplateInternalResponse,
+  GetTaskTemplateInternalResponse,
+  ListSpaceMilestonesInternalQueryParams,
+  ListSpaceMilestonesInternalResponse,
   ListSpaceGrantsInternalQueryParams,
   ListSpaceGrantsInternalResponse,
   ListSpacesInternalQueryParams,
   ListSpacesInternalResponse,
   ListSubtasksInternalQueryParams,
   ListSubtasksInternalResponse,
+  ListTaskCommentsInternalQueryParams,
+  ListTaskCommentsInternalResponse,
+  ListTaskDependenciesInternalQueryParams,
+  ListTaskDependenciesInternalResponse,
+  CreateTaskDependencyInternalBody,
+  CreateTaskDependencyInternalResponse,
+  GetTaskDependencyInternalResponse,
+  ListDependencyCandidatesInternalQueryParams,
+  ListDependencyCandidatesInternalResponse,
+  ListTaskWatchersInternalQueryParams,
+  ListTaskWatchersInternalResponse,
+  FollowTaskWatcherInternalBody,
+  FollowTaskWatcherInternalResponse,
   ListTaskActivityInternalQueryParams,
   ListTaskActivityInternalResponse,
   ListTasksInternalQueryParams,
@@ -66,6 +113,7 @@ import {
   RemoveTaskLabelInternalBody,
   RemoveTaskLabelInternalResponse,
   RestoreTrashEntryInternalBody,
+  RestoreTrashEntryInternalQueryParams,
   RestoreTrashEntryInternalResponse,
   SetListGrantInternalBody,
   SetListGrantInternalResponse,
@@ -731,6 +779,419 @@ export class TaskServiceClient {
     );
   }
 
+  /** Lists the current actor's favorites. */
+  public listFavorites(query: unknown): Promise<z.output<typeof ListFavoritesInternalResponse>> {
+    const operation = 'listFavoritesInternal';
+    return call(
+      operation,
+      200,
+      ListFavoritesInternalResponse,
+      this.routes.listFavoritesInternal(
+        toRequest(operation, ListFavoritesInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates a favorite once and checks its location and version. */
+  public async createFavorite(
+    body: unknown,
+    key: string | undefined,
+  ): Promise<z.output<typeof CreateFavoriteInternalResponse>> {
+    const operation = 'createFavoriteInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createFavoriteInternal(
+        toRequest(operation, CreateFavoriteInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const favorite = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateFavoriteInternalResponse,
+    );
+    if (
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/me/favorites/${favorite.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== favorite.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location or ETag');
+    }
+    return favorite;
+  }
+
+  /** Reads a favorite and checks its identity and version. */
+  public async getFavorite(
+    favoriteId: string,
+  ): Promise<z.output<typeof GetFavoriteInternalResponse>> {
+    const operation = 'getFavoriteInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.getFavoriteInternal(favoriteId),
+    );
+    const favorite = expectBody(TASK_SERVICE, operation, answer, 200, GetFavoriteInternalResponse);
+    if (
+      favorite.id.toLowerCase() !== favoriteId.toLowerCase() ||
+      versionOf(operation, answer) !== favorite.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent favorite identity or ETag');
+    }
+    return favorite;
+  }
+
+  /** Deletes a favorite once with an optional version precondition. */
+  public deleteFavorite(favoriteId: string, ifMatch: string | undefined): Promise<void> {
+    return acknowledged(
+      'deleteFavoriteInternal',
+      204,
+      this.routes.deleteFavoriteInternal(favoriteId, sentOnce(withHeaders('If-Match', ifMatch))),
+    );
+  }
+
+  /** Lists a page of saved views for a list. */
+  public listSavedViews(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListSavedViewsInternalResponse>> {
+    const operation = 'listSavedViewsInternal';
+    return call(
+      operation,
+      200,
+      ListSavedViewsInternalResponse,
+      this.routes.listSavedViewsInternal(
+        listId,
+        toRequest(operation, ListSavedViewsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates a view once, validating its scoped location and version. */
+  public async createSavedView(
+    listId: string,
+    body: unknown,
+    key: string | undefined,
+  ): Promise<z.output<typeof CreateSavedViewInternalResponse>> {
+    const operation = 'createSavedViewInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createSavedViewInternal(
+        listId,
+        toRequest(operation, CreateSavedViewInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const view = expectBody(TASK_SERVICE, operation, answer, 201, CreateSavedViewInternalResponse);
+    if (
+      view.listId.toLowerCase() !== listId.toLowerCase() ||
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/lists/${listId}/saved-views/${view.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== view.version
+    )
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location, list or ETag');
+    return view;
+  }
+
+  /** Reads a view and checks its identity and version. */
+  public async getSavedView(
+    listId: string,
+    viewId: string,
+  ): Promise<z.output<typeof GetSavedViewInternalResponse>> {
+    const operation = 'getSavedViewInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.getSavedViewInternal(listId, viewId),
+    );
+    const view = expectBody(TASK_SERVICE, operation, answer, 200, GetSavedViewInternalResponse);
+    if (
+      view.listId.toLowerCase() !== listId.toLowerCase() ||
+      view.id.toLowerCase() !== viewId.toLowerCase() ||
+      versionOf(operation, answer) !== view.version
+    )
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent view identity or ETag');
+    return view;
+  }
+
+  /** Updates a view once with its optional precondition. */
+  public async updateSavedView(
+    listId: string,
+    viewId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<z.output<typeof UpdateSavedViewInternalResponse>> {
+    const operation = 'updateSavedViewInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.updateSavedViewInternal(
+        listId,
+        viewId,
+        toRequest(operation, UpdateSavedViewInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    const view = expectBody(TASK_SERVICE, operation, answer, 200, UpdateSavedViewInternalResponse);
+    if (
+      view.listId.toLowerCase() !== listId.toLowerCase() ||
+      view.id.toLowerCase() !== viewId.toLowerCase() ||
+      versionOf(operation, answer) !== view.version
+    )
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent view identity or ETag');
+    return view;
+  }
+
+  /** Deletes a view once with its optional precondition. */
+  public deleteSavedView(
+    listId: string,
+    viewId: string,
+    ifMatch: string | undefined,
+  ): Promise<void> {
+    return acknowledged(
+      'deleteSavedViewInternal',
+      204,
+      this.routes.deleteSavedViewInternal(
+        listId,
+        viewId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /** Duplicates a view once, validating its scoped location and version. */
+  public async duplicateSavedView(
+    listId: string,
+    viewId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+    key: string | undefined,
+  ): Promise<z.output<typeof DuplicateSavedViewInternalResponse>> {
+    const operation = 'duplicateSavedViewInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (key !== undefined) headers['Idempotency-Key'] = key;
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.duplicateSavedViewInternal(
+        listId,
+        viewId,
+        toRequest(operation, DuplicateSavedViewInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const view = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      DuplicateSavedViewInternalResponse,
+    );
+    if (
+      view.listId.toLowerCase() !== listId.toLowerCase() ||
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/lists/${listId}/saved-views/${view.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== view.version
+    )
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location, list or ETag');
+    return view;
+  }
+
+  /** Lists a page of task templates in a space. */
+  public listTaskTemplates(
+    spaceId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskTemplatesInternalResponse>> {
+    const operation = 'listTaskTemplatesInternal';
+    return call(
+      operation,
+      200,
+      ListTaskTemplatesInternalResponse,
+      this.routes.listTaskTemplatesInternal(
+        spaceId,
+        toRequest(operation, ListTaskTemplatesInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates a template once and checks its location and version. */
+  public async createTaskTemplate(
+    spaceId: string,
+    body: unknown,
+    key: string | undefined,
+  ): Promise<z.output<typeof CreateTaskTemplateInternalResponse>> {
+    const operation = 'createTaskTemplateInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createTaskTemplateInternal(
+        spaceId,
+        toRequest(operation, CreateTaskTemplateInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const template = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateTaskTemplateInternalResponse,
+    );
+    if (
+      template.spaceId.toLowerCase() !== spaceId.toLowerCase() ||
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/spaces/${spaceId}/task-templates/${template.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== template.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location, space or ETag');
+    }
+    return template;
+  }
+
+  /** Reads a template and checks its version header. */
+  public async getTaskTemplate(
+    spaceId: string,
+    templateId: string,
+  ): Promise<z.output<typeof GetTaskTemplateInternalResponse>> {
+    const operation = 'getTaskTemplateInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.getTaskTemplateInternal(spaceId, templateId),
+    );
+    const template = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      GetTaskTemplateInternalResponse,
+    );
+    if (
+      template.spaceId.toLowerCase() !== spaceId.toLowerCase() ||
+      template.id.toLowerCase() !== templateId.toLowerCase() ||
+      versionOf(operation, answer) !== template.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent template identity or ETag');
+    }
+    return template;
+  }
+
+  /** Deletes a template once with an optional precondition. */
+  public deleteTaskTemplate(
+    spaceId: string,
+    templateId: string,
+    ifMatch: string | undefined,
+  ): Promise<void> {
+    return acknowledged(
+      'deleteTaskTemplateInternal',
+      204,
+      this.routes.deleteTaskTemplateInternal(
+        spaceId,
+        templateId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /** Reads a page of visible milestones in a space. */
+  public listSpaceMilestones(
+    spaceId: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListSpaceMilestonesInternalResponse>> {
+    const operation = 'listSpaceMilestonesInternal';
+    return call(
+      operation,
+      200,
+      ListSpaceMilestonesInternalResponse,
+      this.routes.listSpaceMilestonesInternal(
+        spaceId,
+        toRequest(operation, ListSpaceMilestonesInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Duplicates a list once, checking its location and version headers. */
+  public async duplicateList(
+    listId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+  ): Promise<z.output<typeof DuplicateListInternalResponse>> {
+    const operation = 'duplicateListInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (idempotencyKey !== undefined) headers['Idempotency-Key'] = idempotencyKey;
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.duplicateListInternal(
+        listId,
+        toRequest(operation, DuplicateListInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const result = expectBody(TASK_SERVICE, operation, answer, 201, DuplicateListInternalResponse);
+    if (
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/lists/${result.list.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== result.list.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location or ETag');
+    }
+    return result;
+  }
+
+  /** Duplicates a task once, checking its location and version headers. */
+  public async duplicateTask(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+    idempotencyKey: string | undefined,
+  ): Promise<z.output<typeof DuplicateTaskInternalResponse>> {
+    const operation = 'duplicateTaskInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (idempotencyKey !== undefined) headers['Idempotency-Key'] = idempotencyKey;
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.duplicateTaskInternal(
+        taskKey,
+        toRequest(operation, DuplicateTaskInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const result = expectBody(TASK_SERVICE, operation, answer, 201, DuplicateTaskInternalResponse);
+    if (
+      answer.headers.get('Location') !== `/internal/v1/tasks/${result.key}` ||
+      versionOf(operation, answer) !== result.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent Location or ETag');
+    }
+    return result;
+  }
+
+  /** Applies a bulk action once with the caller's idempotency key. */
+  public executeBulkTaskAction(
+    body: unknown,
+    idempotencyKey: string | undefined,
+  ): Promise<z.output<typeof ExecuteBulkTaskActionInternalResponse>> {
+    const operation = 'executeBulkTaskActionInternal';
+    return call(
+      operation,
+      200,
+      ExecuteBulkTaskActionInternalResponse,
+      this.routes.executeBulkTaskActionInternal(
+        toRequest(operation, ExecuteBulkTaskActionInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', idempotencyKey)),
+      ),
+    );
+  }
+
   /**
    * Method listTasks
    *
@@ -876,6 +1337,333 @@ export class TaskServiceClient {
       200,
       GetTaskDetailInternalResponse,
       this.routes.getTaskDetailInternal(taskKey),
+    );
+  }
+
+  /** Reads a page of task comments from task-service. */
+  public listTaskComments(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskCommentsInternalResponse>> {
+    const operation = 'listTaskCommentsInternal';
+    return call(
+      operation,
+      200,
+      ListTaskCommentsInternalResponse,
+      this.routes.listTaskCommentsInternal(
+        taskKey,
+        toRequest(operation, ListTaskCommentsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates a comment once and checks its task, location and version. */
+  public async createTaskComment(
+    taskKey: string,
+    body: unknown,
+    key: string | undefined,
+  ): Promise<z.output<typeof CreateTaskCommentInternalResponse>> {
+    const operation = 'createTaskCommentInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createTaskCommentInternal(
+        taskKey,
+        toRequest(operation, CreateTaskCommentInternalBody, body),
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const comment = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateTaskCommentInternalResponse,
+    );
+    if (
+      comment.taskKey !== taskKey ||
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/tasks/${comment.taskKey}/comments/${comment.id}`.toLowerCase() ||
+      versionOf(operation, answer) !== comment.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent comment task, Location or ETag');
+    }
+    return comment;
+  }
+
+  /** Reads a comment and checks its task, identity and version. */
+  public async getTaskComment(
+    taskKey: string,
+    commentId: string,
+  ): Promise<z.output<typeof GetTaskCommentInternalResponse>> {
+    const operation = 'getTaskCommentInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.getTaskCommentInternal(taskKey, commentId),
+    );
+    const comment = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      GetTaskCommentInternalResponse,
+    );
+    if (
+      comment.taskKey !== taskKey ||
+      comment.id.toLowerCase() !== commentId.toLowerCase() ||
+      versionOf(operation, answer) !== comment.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent comment identity or ETag');
+    }
+    return comment;
+  }
+
+  /** Changes a comment once and checks its identity and version. */
+  public async updateTaskComment(
+    taskKey: string,
+    commentId: string,
+    body: unknown,
+    ifMatch: string,
+  ): Promise<z.output<typeof UpdateTaskCommentInternalResponse>> {
+    const operation = 'updateTaskCommentInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.updateTaskCommentInternal(
+        taskKey,
+        commentId,
+        toRequest(operation, UpdateTaskCommentInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    const comment = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      UpdateTaskCommentInternalResponse,
+    );
+    if (
+      comment.taskKey !== taskKey ||
+      comment.id.toLowerCase() !== commentId.toLowerCase() ||
+      versionOf(operation, answer) !== comment.version
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'inconsistent comment identity or ETag');
+    }
+    return comment;
+  }
+
+  /** Deletes a comment once using the optional version precondition. */
+  public deleteTaskComment(
+    taskKey: string,
+    commentId: string,
+    ifMatch: string | undefined,
+  ): Promise<void> {
+    return acknowledged(
+      'deleteTaskCommentInternal',
+      204,
+      this.routes.deleteTaskCommentInternal(
+        taskKey,
+        commentId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /** Lists the task participants eligible for mentions. */
+  public listTaskParticipants(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskParticipantsInternalResponse>> {
+    const operation = 'listTaskParticipantsInternal';
+    return call(
+      operation,
+      200,
+      ListTaskParticipantsInternalResponse,
+      this.routes.listTaskParticipantsInternal(
+        taskKey,
+        toRequest(operation, ListTaskParticipantsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads effective task watchers. */
+  public listTaskWatchers(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskWatchersInternalResponse>> {
+    const operation = 'listTaskWatchersInternal';
+    return call(
+      operation,
+      200,
+      ListTaskWatchersInternalResponse,
+      this.routes.listTaskWatchersInternal(
+        taskKey,
+        toRequest(operation, ListTaskWatchersInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Follows once and returns the task version from the upstream ETag. */
+  public async followTaskWatcher(
+    taskKey: string,
+    userId: string,
+    body: unknown,
+    ifMatch: string | undefined,
+  ): Promise<{ watcher: z.output<typeof FollowTaskWatcherInternalResponse>; version: number }> {
+    const operation = 'followTaskWatcherInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.followTaskWatcherInternal(
+        taskKey,
+        userId,
+        toRequest(operation, FollowTaskWatcherInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    const watcher = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      FollowTaskWatcherInternalResponse,
+    );
+    if (watcher.userId.toLowerCase() !== userId.toLowerCase()) {
+      throw outsideContract(TASK_SERVICE, operation, 'a watcher for another user');
+    }
+    return { watcher, version: versionOf(operation, answer) };
+  }
+
+  /** Unfollows once and returns the task version from the upstream ETag. */
+  public async unfollowTaskWatcher(
+    taskKey: string,
+    userId: string,
+    ifMatch: string | undefined,
+  ): Promise<number> {
+    const operation = 'unfollowTaskWatcherInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.unfollowTaskWatcherInternal(
+        taskKey,
+        userId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return versionOf(operation, answer);
+  }
+
+  /** Lists the visible dependencies of the anchor task. */
+  public listTaskDependencies(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListTaskDependenciesInternalResponse>> {
+    const operation = 'listTaskDependenciesInternal';
+    return call(
+      operation,
+      200,
+      ListTaskDependenciesInternalResponse,
+      this.routes.listTaskDependenciesInternal(
+        taskKey,
+        toRequest(operation, ListTaskDependenciesInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Creates one dependency, validating its location and anchor version. */
+  public async createTaskDependency(
+    taskKey: string,
+    body: unknown,
+    ifMatch: string | undefined,
+    key: string | undefined,
+  ): Promise<{
+    dependency: z.output<typeof CreateTaskDependencyInternalResponse>;
+    version: number;
+  }> {
+    const operation = 'createTaskDependencyInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (key !== undefined) headers['Idempotency-Key'] = key;
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createTaskDependencyInternal(
+        taskKey,
+        toRequest(operation, CreateTaskDependencyInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const dependency = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateTaskDependencyInternalResponse,
+    );
+    if (
+      (dependency.blocker.key !== taskKey && dependency.blocked.key !== taskKey) ||
+      (answer.headers.get('Location') ?? '').toLowerCase() !==
+        `/internal/v1/tasks/${taskKey}/dependencies/${dependency.id}`.toLowerCase()
+    ) {
+      throw outsideContract(
+        TASK_SERVICE,
+        operation,
+        'a Location that does not name the dependency',
+      );
+    }
+    return { dependency, version: versionOf(operation, answer) };
+  }
+
+  /** Reads one visible dependency. */
+  public getTaskDependency(
+    taskKey: string,
+    dependencyId: string,
+  ): Promise<z.output<typeof GetTaskDependencyInternalResponse>> {
+    return call(
+      'getTaskDependencyInternal',
+      200,
+      GetTaskDependencyInternalResponse,
+      this.routes.getTaskDependencyInternal(taskKey, dependencyId),
+    );
+  }
+
+  /** Deletes a dependency once and returns the anchor task version. */
+  public async deleteTaskDependency(
+    taskKey: string,
+    dependencyId: string,
+    ifMatch: string | undefined,
+  ): Promise<number> {
+    const operation = 'deleteTaskDependencyInternal';
+    const answer: GeneratedAnswer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.deleteTaskDependencyInternal(
+        taskKey,
+        dependencyId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return versionOf(operation, answer);
+  }
+
+  /** Lists eligible dependency candidates. */
+  public listDependencyCandidates(
+    taskKey: string,
+    query: unknown,
+  ): Promise<z.output<typeof ListDependencyCandidatesInternalResponse>> {
+    const operation = 'listDependencyCandidatesInternal';
+    return call(
+      operation,
+      200,
+      ListDependencyCandidatesInternalResponse,
+      this.routes.listDependencyCandidatesInternal(
+        taskKey,
+        toRequest(operation, ListDependencyCandidatesInternalQueryParams, query),
+      ),
     );
   }
 
@@ -1789,6 +2577,7 @@ export class TaskServiceClient {
   public restoreTrashEntry(
     entryId: string,
     body: unknown,
+    query: unknown,
   ): Promise<z.output<typeof RestoreTrashEntryInternalResponse>> {
     const operation = 'restoreTrashEntryInternal';
     return call(
@@ -1798,6 +2587,7 @@ export class TaskServiceClient {
       this.routes.restoreTrashEntryInternal(
         entryId,
         toRequest(operation, RestoreTrashEntryInternalBody, body),
+        toRequest(operation, RestoreTrashEntryInternalQueryParams, query),
         sentOnce(),
       ),
     );

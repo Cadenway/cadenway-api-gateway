@@ -1,3 +1,5 @@
+import { ListSpaceMilestones } from './application/use-cases/queries/spaces/list-space-milestones/list-space-milestones.use-case.js';
+import { ListSpaceMilestonesController } from './presentation/http/controllers/spaces/list-space-milestones.controller.js';
 import { Module, type FactoryProvider } from '@nestjs/common';
 
 import { ClientsModule } from '../../clients/clients.module.js';
@@ -33,6 +35,11 @@ const SPACE_REGISTRY: unique symbol = Symbol('SpaceRegistry');
  * @type {readonly FactoryProvider[]}
  */
 const PROVIDERS: readonly FactoryProvider[] = [
+  {
+    provide: ListSpaceMilestones,
+    inject: [SPACE_REGISTRY],
+    useFactory: (registry: SpaceRegistry): ListSpaceMilestones => new ListSpaceMilestones(registry),
+  },
   {
     provide: SPACE_REGISTRY,
     inject: [TaskServiceClient],
@@ -80,6 +87,6 @@ const PROVIDERS: readonly FactoryProvider[] = [
 @Module({
   imports: [AuthModule, RateLimitModule, ClientsModule],
   providers: [...PROVIDERS],
-  controllers: [SpacesController],
+  controllers: [ListSpaceMilestonesController, SpacesController],
 })
 export class SpacesModule {}

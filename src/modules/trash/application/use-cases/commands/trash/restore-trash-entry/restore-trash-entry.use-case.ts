@@ -47,8 +47,12 @@ export class RestoreTrashEntry {
    * @param {TaskServiceDocument} body - The empty body the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  public execute(entryId: string, body: TaskServiceDocument): Promise<TaskServiceDocument> {
-    return this.trashRegistry.restoreTrashEntry(entryId, body);
+  public execute(
+    entryId: string,
+    body: TaskServiceDocument,
+    query: TaskServiceDocument,
+  ): Promise<TaskServiceDocument> {
+    return this.trashRegistry.restoreTrashEntry(entryId, body, query);
   }
   // #endregion
 }

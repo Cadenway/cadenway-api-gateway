@@ -77,6 +77,30 @@ describe('GetTaskDetail', () => {
     await expect(pending).resolves.toEqual({ core: CORE, parts: new Map(), partial: ['comments'] });
   });
 
+  it('fails closed when the comments source denies visibility', async () => {
+    const denial = new ProblemException({ status: 404, code: 'task.not-found' });
+    await expect(
+      new GetTaskDetail(coreSource(), [
+        { ...part('comments', () => Promise.reject(denial)), failsDetail: () => true },
+      ]).execute('CAD-482'),
+    ).rejects.toBe(denial);
+  });
+
+  it('waits for a slow core failure and prefers it over a fast denied part', async () => {
+    vi.useFakeTimers();
+    const coreFailure = new ProblemException({ status: 404, code: 'task.trashed' });
+    const denial = new ProblemException({ status: 404, code: 'task.not-found' });
+    const source: TaskDetailCoreSource = {
+      getTaskDetail: () => new Promise((_resolve, reject) => setTimeout(reject, 100, coreFailure)),
+    };
+    const pending = new GetTaskDetail(source, [
+      { ...part('comments', () => Promise.reject(denial)), failsDetail: () => true },
+    ]).execute('CAD-482');
+    const expected = expect(pending).rejects.toBe(coreFailure);
+    await vi.advanceTimersByTimeAsync(100);
+    await expected;
+  });
+
   it('reads the core and the parts together', async () => {
     const order: string[] = [];
     const source: TaskDetailCoreSource = {

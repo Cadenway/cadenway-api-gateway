@@ -14,6 +14,9 @@ import type { TaskServiceClient } from '../../../../../clients/task-service.clie
  */
 export function createTaskRegistryAdapter(client: TaskServiceClient): TaskRegistry {
   return {
+    executeBulkTaskAction: (body, key) => client.executeBulkTaskAction(body, key),
+    duplicateTask: (taskKey, body, ifMatch, key) =>
+      client.duplicateTask(taskKey, body, ifMatch, key),
     listTasks: (listId, query) => client.listTasks(listId, query),
     createTask: (listId, creation, idempotencyKey) =>
       client.createTask(listId, creation, idempotencyKey),

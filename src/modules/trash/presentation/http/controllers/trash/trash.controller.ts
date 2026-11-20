@@ -6,6 +6,7 @@ import {
   PurgeTrashEntryParams,
   RestoreTrashEntryBody,
   RestoreTrashEntryParams,
+  RestoreTrashEntryQueryParams,
   RestoreTrashEntryResponse,
   TrashTaskBody,
   TrashTaskParams,
@@ -97,6 +98,7 @@ const LIST_TRASH_PROBLEMS: AcceptedProblems = {
 const RESTORE_TRASH_ENTRY_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   404: ['trash-entry.not-found', 'organization.not-found'],
+  409: ['trash-entry.not-restorable-yet'],
 };
 
 /**
@@ -351,6 +353,8 @@ export class TrashController {
   public async restoreTrashEntry(
     @Param(new ZodValidationPipe(RestoreTrashEntryParams))
     params: z.output<typeof RestoreTrashEntryParams>,
+    @Query(new ZodValidationPipe(RestoreTrashEntryQueryParams))
+    query: z.output<typeof RestoreTrashEntryQueryParams>,
     @RequiredBody(RESTORE_TRASH_ENTRY_BODY)
     body: z.output<typeof RESTORE_TRASH_ENTRY_BODY>,
   ): Promise<z.output<typeof RestoreTrashEntryResponse>> {
@@ -359,7 +363,7 @@ export class TrashController {
       'restoreTrashEntry',
       RestoreTrashEntryResponse,
       await relayProblems(RESTORE_TRASH_ENTRY_PROBLEMS, () =>
-        this.entryRestoration.execute(params.entryId, body),
+        this.entryRestoration.execute(params.entryId, body, query),
       ),
     );
   }

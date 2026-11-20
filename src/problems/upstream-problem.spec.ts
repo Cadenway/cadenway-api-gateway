@@ -72,6 +72,30 @@ describe('toPublicProblem', () => {
     });
   });
 
+  it.each(['dependency.cycle', 'mention.recipient-invalid', 'watcher.recipient-invalid'])(
+    'strips hidden identifiers from %s',
+    (code) => {
+      const translated = toPublicProblem(
+        identityProblem(422, code, { hiddenTask: 'SECRET-1', userId: 'hidden' }),
+        { 422: [code] },
+      );
+      expect((translated as ProblemException).problem).not.toHaveProperty('details');
+    },
+  );
+
+  it.each(['task.not-found', 'task.trashed', 'list.not-found', 'organization.not-found'])(
+    'strips all details from bulk 404 %s',
+    (code) => {
+      const translated = toPublicProblem(
+        identityProblem(404, code, { key: 'SECRET-1', hiddenId: 'hidden' }),
+        { 404: [code] },
+        {},
+        [404],
+      );
+      expect((translated as ProblemException).problem).not.toHaveProperty('details');
+    },
+  );
+
   it('answers a missing organization of the internal token as 503 upstream.unauthorized', () => {
     const translated: unknown = toPublicProblem(
       identityProblem(403, 'auth.organization-required'),
