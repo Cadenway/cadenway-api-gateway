@@ -36,8 +36,36 @@ describe('toRequiredBody', () => {
 
   it('accepts a chunked body, which declares no length', () => {
     expect(
-      toRequiredBody({ headers: { 'transfer-encoding': 'chunked' }, body: {} }, EMPTY_REQUEST),
+      toRequiredBody(
+        {
+          headers: { 'content-type': 'application/json', 'transfer-encoding': 'chunked' },
+          body: {},
+          readableDidRead: true,
+        },
+        EMPTY_REQUEST,
+      ),
     ).toEqual({});
+  });
+
+  it('refuses chunked JSON that delivered no bytes before the parser returned {}', () => {
+    const problem = problemOf(() =>
+      toRequiredBody(
+        {
+          headers: { 'content-type': 'application/json', 'transfer-encoding': 'Chunked' },
+          body: {},
+          readableDidRead: false,
+        },
+        EMPTY_REQUEST,
+      ),
+    );
+
+    expect(problem).toMatchObject({
+      status: 400,
+      code: 'request.invalid',
+      details: {
+        issues: [{ in: 'body', path: '', code: 'required', message: 'Expected a JSON body.' }],
+      },
+    });
   });
 
   it.each([
