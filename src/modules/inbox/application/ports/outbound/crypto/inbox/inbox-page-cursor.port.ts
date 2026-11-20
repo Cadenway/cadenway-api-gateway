@@ -1,18 +1,4 @@
-import type { InboxListQuery } from '../../../../models/inbox/inbox-list-query.model.js';
-
-/** The verified owner and effective filter of a public Inbox page. */
-export interface InboxCursorScope {
-  // #region Properties
-  /** Account whose inbox is being listed. */
-  readonly userId: string;
-
-  /** Selected organization verified by the credential guard. */
-  readonly organizationId: string;
-
-  /** Effective state after applying the public default. */
-  readonly state: InboxListQuery['state'];
-  // #endregion
-}
+import type { InboxCursorScope } from '../../../../models/inbox/inbox-cursor-scope.model.js';
 
 /** Protects a private Notification continuation at the public API boundary. */
 export interface InboxPageCursor {

@@ -7,10 +7,8 @@ import {
   type KeyObject,
 } from 'node:crypto';
 
-import type {
-  InboxCursorScope,
-  InboxPageCursor,
-} from '../../../../application/ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
+import type { InboxCursorScope } from '../../../../application/models/inbox/inbox-cursor-scope.model.js';
+import type { InboxPageCursor } from '../../../../application/ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
 
 const VERSION = 1;
 const ALGORITHM = 'aes-256-gcm';

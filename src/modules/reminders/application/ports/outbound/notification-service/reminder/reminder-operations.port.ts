@@ -3,7 +3,7 @@ import type { ReminderRecord } from '../../../../models/reminder/reminder-record
 /** Owner-scoped Reminder operations. The task identity is verified before each call. */
 export interface ReminderOperations {
   // #region Methods
-  /** Reads the private checked-task linkage. */
+  /** Reads the private task linkage for the exact requested reminder. */
   candidate(id: string): Promise<{ readonly id: string; readonly taskId: string }>;
   getTask(taskId: string): Promise<ReminderRecord>;
   setTask(

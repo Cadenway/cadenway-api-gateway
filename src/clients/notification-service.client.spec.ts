@@ -109,6 +109,21 @@ describe('NotificationServiceClient', () => {
     expect(new Headers(calls[0]?.init?.headers).get('If-Match')).toBe('"3"');
   });
 
+  it('normalizes a reminder candidate UUID and rejects a different candidate', async () => {
+    const id = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12';
+    const taskId = '019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23';
+    answer = Response.json({ id: id.toUpperCase(), taskId });
+    await expect(
+      runWithOrganizationContext(context, () => client.getReminderCandidate(id.toUpperCase())),
+    ).resolves.toEqual({ id, taskId });
+    expect(calls[0]?.url).toContain(`/reminders/${id}/candidate`);
+
+    answer = Response.json({ id: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e13', taskId });
+    await expect(
+      runWithOrganizationContext(context, () => client.getReminderCandidate(id)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
   it('rejects a returned reminder linked to a different task', async () => {
     const id = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12';
     const taskId = '019a7002-3c4d-7e5f-8a6b-7c8d9e0f1a23';

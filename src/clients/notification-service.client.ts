@@ -244,15 +244,21 @@ export class NotificationServiceClient {
     return { reminder, created: response.status === 201 };
   }
 
-  /** Reads a reminder's private task linkage before current authorization. */
+  /** Reads and binds a reminder's private task linkage to the requested UUID. */
   public async getReminderCandidate(
     id: string,
   ): Promise<z.output<typeof schemas.GetReminderCandidateInternalResponse>> {
-    return this.body(
-      'getReminderCandidateInternal',
-      this.routes.getReminderCandidateInternal(id, this.options()),
+    const operation = 'getReminderCandidateInternal';
+    const normalizedId = id.toLowerCase();
+    const candidate = await this.body(
+      operation,
+      this.routes.getReminderCandidateInternal(normalizedId, this.options()),
       schemas.GetReminderCandidateInternalResponse,
     );
+    if (candidate.id.toLowerCase() !== normalizedId) {
+      throw outsideContract(NOTIFICATION_SERVICE, operation, 'mismatched reminder candidate');
+    }
+    return { ...candidate, id: normalizedId };
   }
 
   /** Reads a reminder bound to the checked task UUID. */

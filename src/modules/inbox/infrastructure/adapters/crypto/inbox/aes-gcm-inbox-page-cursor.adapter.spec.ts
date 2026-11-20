@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { InboxCursorScope } from '../../../../application/ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
+import type { InboxCursorScope } from '../../../../application/models/inbox/inbox-cursor-scope.model.js';
 import { AesGcmInboxPageCursor } from './aes-gcm-inbox-page-cursor.adapter.js';
 
 const scope: InboxCursorScope = {

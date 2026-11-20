@@ -83,7 +83,6 @@ export class AccessReminder {
   /** Checks an owner-bound reminder and returns its current task display. */
   public async byId(id: string): Promise<{ taskId: string; taskKey: string; taskName: string }> {
     const candidate = await this.reminders.candidate(id);
-    if (candidate.id !== id) throw new Error('Invalid reminder candidate.');
     return this.visible(candidate.taskId, 'reminder.not-found');
   }
 

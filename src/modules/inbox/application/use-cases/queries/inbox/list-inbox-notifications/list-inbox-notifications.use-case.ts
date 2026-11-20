@@ -1,4 +1,5 @@
 import type { InboxCandidate } from '../../../../models/inbox/inbox-candidate.model.js';
+import type { InboxCursorScope } from '../../../../models/inbox/inbox-cursor-scope.model.js';
 import type { InboxListQuery } from '../../../../models/inbox/inbox-list-query.model.js';
 import type { InboxNotification } from '../../../../models/inbox/inbox-notification.model.js';
 import type { InboxPage } from '../../../../models/inbox/inbox-page.model.js';
@@ -7,10 +8,7 @@ import type { InboxVisibilityDecision } from '../../../../models/inbox/inbox-vis
 import type { InboxVisibilityInput } from '../../../../models/inbox/inbox-visibility-input.model.js';
 import { withInboxBudget } from '../../../../models/inbox/inbox-work-budget.model.js';
 import { InvalidInboxCursor } from '../../../../models/inbox/invalid-inbox-cursor.model.js';
-import type {
-  InboxCursorScope,
-  InboxPageCursor,
-} from '../../../../ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
+import type { InboxPageCursor } from '../../../../ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
 import type { InboxNotificationSource } from '../../../../ports/outbound/notification-service/inbox/inbox-notification-source.port.js';
 import type { InboxActorNames } from '../../../../ports/outbound/organization-service/inbox/inbox-actor-names.port.js';
 import type { InboxSubjectVisibility } from '../../../../ports/outbound/task-service/inbox/inbox-subject-visibility.port.js';

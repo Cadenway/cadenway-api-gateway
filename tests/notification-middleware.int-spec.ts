@@ -10,7 +10,7 @@ import {
   SetTaskReminderInternalResponse,
 } from '@cadenway/contracts/validators/internal/notification-service';
 import { ListInboxNotificationsResponse } from '@cadenway/contracts/validators/public/inbox';
-import { ProblemException } from '@cadenway/nest-common';
+import { InternalHttpClient, InternalTokenSigner, ProblemException } from '@cadenway/nest-common';
 import request from 'supertest';
 import {
   afterAll,
@@ -23,7 +23,10 @@ import {
   type MockInstance,
 } from 'vitest';
 
-import { NotificationServiceClient } from '../src/clients/notification-service.client.js';
+import {
+  NOTIFICATION_SERVICE,
+  NotificationServiceClient,
+} from '../src/clients/notification-service.client.js';
 import {
   CAMILLE_ORGANIZATION_SESSION,
   CAMILLE_ORGANIZATION_TOKEN,
@@ -270,6 +273,35 @@ describe('notification routes with gateway middleware', () => {
     });
     expect(response.headers['cache-control']).toBe('no-store');
     expect(complete).toHaveBeenCalledWith(reminderId, taskId, undefined);
+  });
+
+  it('returns a private upstream Problem when Notification supplies a different reminder candidate', async () => {
+    const unexpectedId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e66';
+    const upstream = new NotificationServiceClient(
+      new InternalHttpClient({
+        service: NOTIFICATION_SERVICE,
+        baseUrl: 'http://notification-service.test',
+        signer: gateway.app.get(InternalTokenSigner),
+        fetch: () => Promise.resolve(Response.json({ id: unexpectedId, taskId })),
+      }),
+    );
+    vi.spyOn(notification, 'getReminderCandidate').mockImplementation((id) =>
+      upstream.getReminderCandidate(id),
+    );
+    const response = await runRouteCase(gateway, identity, {
+      name: 'different reminder candidate',
+      method: 'get',
+      path: '/v1/reminders/{reminderId}',
+      url: `/v1/reminders/${reminderId.toUpperCase()}`,
+      status: 503,
+      code: 'upstream.failed',
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toMatchObject({ details: { service: NOTIFICATION_SERVICE } });
+    expect(response.text).not.toContain(unexpectedId);
+    expect(response.text).not.toContain(taskId);
+    expect(response.text).not.toContain('mismatched reminder candidate');
+    expect(gateway.task.resolveNotificationSubjects).not.toHaveBeenCalled();
   });
 
   it('still refuses an untrusted Origin or a non-JSON body before a bodyless write', async () => {
