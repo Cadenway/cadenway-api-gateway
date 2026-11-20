@@ -51,8 +51,8 @@ mapped to its internal route of `openapi/internal/identity-service.yaml`:
 - **Cross-site check** (`src/modules/auth/presentation/http/validation/session/cross-site.validation.ts`): every unsafe route needs an `Origin` exactly
   equal to one of `ALLOWED_ORIGINS` and `Content-Type: application/json`, signed in or not
   (see [Decisions](#decisions-of-the-walking-skeleton)), else `403 auth.csrf-rejected` before the
-  route runs. The credential guard applies it to every unsafe request the cookie authenticates, but
-  a `DELETE`, which passes on its exact `Origin` alone when it has no body.
+  route runs. The credential guard applies it to every unsafe request the cookie authenticates.
+  An empty `DELETE` or explicitly opted-in Inbox or reminder POST may omit the media type.
 - **Cookie** (`src/presentation/http/session/session-cookie.ts`): `__Host-cw_session=<token>; Path=/; Secure; HttpOnly;
 SameSite=Lax`, plus `Max-Age` (the seconds until `session.expiresAt`) for a persistent session
   only; the sign-out clears it with `Max-Age=0`. The token leaves the gateway in this header only.
@@ -253,8 +253,8 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
 - **Cross-site check.** It applies to requests the cookie authenticates, after the credential is
   known and before the introspection: no credential answers `401 auth.session-required`, not
   `403`. A `POST`, `PUT` or `PATCH` needs an exact `Origin` and `Content-Type: application/json`
-  (`organizations.yaml`, `auth.yaml`); a bodiless `DELETE` passes on its `Origin` alone
-  (`members.yaml`, `api-tokens.yaml`). A bearer token needs no `Origin`.
+  (`organizations.yaml`, `auth.yaml`). A bodiless `DELETE` and an explicitly opted-in Inbox or
+  reminder POST may omit the media type. A bearer token needs no `Origin`.
 - **Organization context.** The organization, role and scopes of a request come from the
   introspection only, into the internal token of every call. A session holds every scope. An
   operation on the current organization answers `403 organization.not-selected` before any call
@@ -450,8 +450,9 @@ Source: `cw-auth-tokens` ([Claude](../.claude/skills/cw-auth-tokens/SKILL.md), [
   Known cost: while identity-service is unavailable, so is the API.
 - CSRF: a request with an unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated by the
   session cookie must carry an `Origin` that is exactly one of the allowed origins (the webapp and
-  the website, as for CORS) and `Content-Type: application/json`; a bodiless `DELETE` passes on
-  its `Origin` alone. It is refused before the introspection otherwise.
+  the website, as for CORS) and `Content-Type: application/json`. A bodiless `DELETE` and the
+  explicitly opted-in bodyless Inbox and reminder POST operations may omit the media type.
+  Every CSRF refusal happens before introspection.
 
 ### Personal API token
 

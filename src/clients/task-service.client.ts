@@ -1,5 +1,7 @@
 import {
   CheckTaskAttachmentAccessInternalQueryParams,
+  ResolveNotificationSubjectsInternalBody,
+  ResolveNotificationSubjectsInternalResponse,
   AddChecklistItemInternalBody,
   AddChecklistItemInternalResponse,
   AddTaskLabelInternalBody,
@@ -609,6 +611,59 @@ export class TaskServiceClient {
     if (answer.headers.get('Cache-Control')?.toLowerCase() !== 'no-store') {
       throw outsideContract(TASK_SERVICE, operation, 'missing Cache-Control no-store');
     }
+  }
+
+  /** Resolves current subject visibility in one Task snapshot. */
+  public async resolveNotificationSubjects(
+    input: z.input<typeof ResolveNotificationSubjectsInternalBody>,
+    signal?: AbortSignal,
+  ): Promise<z.output<typeof ResolveNotificationSubjectsInternalResponse>> {
+    const operation = 'resolveNotificationSubjectsInternal';
+    const request = ResolveNotificationSubjectsInternalBody.parse(input);
+    const response = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.resolveNotificationSubjectsInternal(request, {
+        idempotent: false,
+        ...(signal === undefined ? {} : { signal }),
+      } as InternalRequestInit),
+    );
+    if (response.headers.get('Cache-Control')?.toLowerCase() !== 'no-store') {
+      throw outsideContract(TASK_SERVICE, operation, 'missing no-store');
+    }
+    const result = expectBody(
+      TASK_SERVICE,
+      operation,
+      response,
+      200,
+      ResolveNotificationSubjectsInternalResponse,
+    );
+    if (result.results.length !== request.subjects.length) {
+      throw outsideContract(TASK_SERVICE, operation, 'wrong number of subject decisions');
+    }
+    for (const [index, decision] of result.results.entries()) {
+      const subject = request.subjects[index];
+      if (subject === undefined) {
+        throw outsideContract(TASK_SERVICE, operation, 'unmatched subject decision');
+      }
+      if (decision.visible && 'display' in subject && decision.display === undefined) {
+        throw outsideContract(TASK_SERVICE, operation, 'missing task display');
+      }
+      if (decision.visible && decision.display !== undefined) {
+        if (
+          !('display' in subject) ||
+          (subject.subject.kind === 'task-id' &&
+            decision.display.taskId.toLowerCase() !== subject.subject.taskId.toLowerCase()) ||
+          (subject.subject.kind === 'task-key' &&
+            decision.display.taskKey !== subject.subject.taskKey) ||
+          ('display' in subject &&
+            'commentId' in subject.display !== 'commentExcerpt' in decision.display)
+        ) {
+          throw outsideContract(TASK_SERVICE, operation, 'unrequested or mismatched task display');
+        }
+      }
+    }
+    return result;
   }
 
   /** Lists visible quarterly goals. */

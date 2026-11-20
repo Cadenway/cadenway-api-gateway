@@ -311,7 +311,7 @@ export class CredentialGuard implements CanActivate {
       throw sessionRequiredProblem();
     }
     if (isUnsafeMethod(request.method)) {
-      assertCookieRequestSameSite(request, this.allowedOrigins);
+      assertCookieRequestSameSite(request, this.allowedOrigins, operation.allowBodylessPost);
     }
     const session: VerifiedSession | null =
       cookie.kind === 'token'

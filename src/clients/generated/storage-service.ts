@@ -3,12 +3,10 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ * Internal UUID of a single publication, independent of its public capability key.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
-export type TaskKey = string;
+export type IntakePublicationId = string;
 
 /**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
@@ -30,6 +28,78 @@ export type AttachmentFileName = string;
  * @pattern ^(?!\*\/)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+/(?!\*$)[!#$%&'*+\-.^_\x60|~0-9A-Za-z]+$
  */
 export type AttachmentContentType = string;
+
+/**
+ * Trusted Task allocation and previously validated file declaration relayed by the gateway.
+ */
+export interface IntakeAttachmentUploadStart {
+  attachmentId: AttachmentId;
+  /** Task's exclusive draft lease cutoff. The signed upload expires at or before it. */
+  expiresAt: string;
+  fileName: AttachmentFileName;
+  contentType: AttachmentContentType;
+  /**
+     * Validated file length in bytes, capped at 25 MiB.
+     * @minimum 1
+     * @maximum 26214400
+     */
+  sizeBytes: number;
+}
+
+/**
+ * Signed form fields to append unchanged before the file part.
+ */
+export type AttachmentUploadFields = {[key: string]: string};
+
+export interface AttachmentUpload {
+  id: AttachmentId;
+  method: 'POST';
+  /** Signed multipart upload destination, valid for five minutes. */
+  url: string;
+  /** Signed form fields to append unchanged before the file part. */
+  fields: AttachmentUploadFields;
+  expiresAt: string;
+}
+
+/**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
+ * Acknowledges verification for the identified reservation without exposing file data.
+ */
+export interface IntakeAttachmentCompletion {
+  id: AttachmentId;
+}
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
 
 export interface TaskAttachment {
   id: AttachmentId;
@@ -62,31 +132,6 @@ export interface AttachmentPage {
   nextCursor: NextCursor | null;
 }
 
-/**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
-}
-
 export interface StartAttachmentUpload {
   fileName: AttachmentFileName;
   contentType: AttachmentContentType;
@@ -98,26 +143,148 @@ export interface StartAttachmentUpload {
   sizeBytes: number;
 }
 
-/**
- * Signed form fields to append unchanged before the file part.
- */
-export type AttachmentUploadFields = {[key: string]: string};
-
-export interface AttachmentUpload {
-  id: AttachmentId;
-  method: 'POST';
-  /** Signed multipart upload destination, valid for five minutes. */
-  url: string;
-  /** Signed form fields to append unchanged before the file part. */
-  fields: AttachmentUploadFields;
-  expiresAt: string;
-}
-
 export interface AttachmentDownload {
   /** Short-lived signed URL for a download served as an attachment. */
   url: string;
   expiresAt: string;
 }
+
+/**
+ * Opaque reservation identifier, reused for the verified immutable asset.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type ProfileMediaId = string;
+
+/**
+ * An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.
+ */
+export type AvatarUploadContentType = typeof AvatarUploadContentType[keyof typeof AvatarUploadContentType];
+
+
+export const AvatarUploadContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/webp': 'image/webp',
+} as const;
+
+/**
+ * Image size in bytes, up to 5 MiB.
+ * @minimum 1
+ * @maximum 5242880
+ */
+export type ProfileMediaSizeBytes = number;
+
+/**
+ * A logo source is a square PNG or SVG image. A 512-pixel image is recommended.
+ */
+export type OrganizationLogoUploadContentType = typeof OrganizationLogoUploadContentType[keyof typeof OrganizationLogoUploadContentType];
+
+
+export const OrganizationLogoUploadContentType = {
+  'image/png': 'image/png',
+  'image/svg+xml': 'image/svg+xml',
+} as const;
+
+/**
+ * The media declaration and exclusive expiry already authorized by the owner service.
+ */
+export type SignProfileMediaTransfer = {
+  kind: 'avatar';
+  expiresAt: string;
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+} | {
+  kind: 'organization-logo';
+  expiresAt: string;
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+};
+
+/**
+ * Signed form fields to append unchanged before the file part.
+ */
+export type ProfileMediaUploadFields = {[key: string]: string};
+
+export interface ProfileMediaUpload {
+  uploadId: ProfileMediaId;
+  method: 'POST';
+  /** Signed multipart destination, valid for at most five minutes and never beyond the reservation expiry. */
+  url: string;
+  /** Signed form fields to append unchanged before the file part. */
+  fields: ProfileMediaUploadFields;
+  /** Exclusive expiry of the signed transfer. */
+  expiresAt: string;
+}
+
+/**
+ * Kind of owner and the policy used to verify its image.
+ */
+export type ProfileMediaKind = typeof ProfileMediaKind[keyof typeof ProfileMediaKind];
+
+
+export const ProfileMediaKind = {
+  avatar: 'avatar',
+  'organization-logo': 'organization-logo',
+} as const;
+
+export interface PrepareProfileMedia {
+  kind: ProfileMediaKind;
+}
+
+/**
+ * The width or height of the square prepared PNG in pixels.
+ * @minimum 1
+ * @maximum 512
+ */
+export type ProfileMediaRasterDimension = number;
+
+/**
+ * Verified PNG metadata for the immutable upload. Storage verifies the same source bytes it
+ * prepares, limits each decoded dimension to 4096 pixels and the decoded image to 4096²
+ * pixels, and produces a square PNG of at most 512 pixels per side without source metadata.
+ * A supported static SVG logo is rasterized with limits on resources and no external access.
+ */
+export interface ProfileMediaPreparation {
+  uploadId: ProfileMediaId;
+  contentType: 'image/png';
+  width: ProfileMediaRasterDimension;
+  height: ProfileMediaRasterDimension;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * `media.not-found` for an unknown, unavailable or unrelated image or reservation.
+ */
+export type ProfileMediaNotFoundResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress` when equivalent signing is running, or
+ * `media.upload-expired` when an unsigned transfer passed its original expiry.
+ */
+export type ProfileMediaReservationConflictResponse = Problem;
+
+/**
+ * `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+ * disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+ */
+export type ProfileMediaReservationRefusedResponse = Problem;
+
+/**
+ * `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+ * arrived, or `media.upload-superseded` for an invalidated prior generation.
+ */
+export type ProfileMediaUploadStateConflictResponse = Problem;
+
+/**
+ * `media.file-too-large`, `media.unsupported-type`, or `media.invalid-image` for metadata,
+ * decoding, shape, dimension or safety failures.
+ */
+export type ProfileMediaUploadRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when the dependency or durable media state is unavailable.
+ */
+export type ProfileMediaUnavailableResponse = Problem;
 
 /**
  * `request.invalid` with `details.issues`.
@@ -140,6 +307,12 @@ export type InternalAccessRefusedResponse = Problem;
 export type AttachmentNotFoundResponse = Problem;
 
 /**
+ * `attachment.not-found` for a missing, unavailable or unrelated reservation, an
+ * allocation with an expired draft, or a recorded terminal claim or release.
+ */
+export type IntakeAttachmentNotFoundResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` while the equivalent upload reservation is running.
  */
 export type UploadReservationConflictResponse = Problem;
@@ -155,6 +328,13 @@ export type UploadStateConflictResponse = Problem;
  * or `idempotency.key-reused` for a key previously used with a different request.
  */
 export type UploadStartRefusedResponse = Problem;
+
+/**
+ * `attachment.upload-metadata-mismatch` for an unsupported or inconsistent file
+ * declaration, or `idempotency.key-reused` for a different declaration of the same
+ * allocated reservation.
+ */
+export type IntakeAttachmentStartRefusedResponse = Problem;
 
 /**
  * `attachment.file-too-large` when the stored object exceeds the limit, or
@@ -204,6 +384,11 @@ export type ListTaskAttachmentsInternalParams = {
   limit?: LimitParameter;
 };
 
+export type GetAvatarImageInternalParams = {
+  /** Account id for the authorized reference. */
+  ownerUserId: string;
+};
+
 export type ListLargestAttachmentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
@@ -243,6 +428,93 @@ const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string 
 };
 
 export const getStorageServiceInternalRoutes = (fetchFn: typeof globalThis.fetch = fetch) => {
+const getStartIntakeAttachmentUploadInternalUrl = (publicationId: string,) => {
+
+
+
+
+  return `/internal/v1/intake-publications/${publicationId}/attachments`
+}
+
+/**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first obtain the same tenant,
+ * publication, attachment ID and draft expiry from the Task allocation operation.
+ * The body supplies the trusted allocated ID, expiry and file declaration.
+ *
+ * Issue one multipart upload capability for the same tenant, publication and allocated
+ * ID. Only the first declaration for that binding can be reserved. The staging
+ * destination exposed in the signed form is opaque and contains no organization,
+ * list or publication identifiers. The capability is valid for at most five minutes
+ * and never after the supplied draft expiry. A retry of the same reservation replays
+ * the original signed response and expiry. A terminal release already recorded for
+ * the allocation prevents issuance.
+ * @summary Sign an upload previously allocated by task-service
+ */
+const startIntakeAttachmentUploadInternal = async (publicationId: string,
+    intakeAttachmentUploadStart: IntakeAttachmentUploadStart, options?: RequestInit): Promise<startIntakeAttachmentUploadInternalResponse> => {
+
+  const res = await fetchFn(getStartIntakeAttachmentUploadInternalUrl(publicationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(intakeAttachmentUploadStart)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: startIntakeAttachmentUploadInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as startIntakeAttachmentUploadInternalResponse
+}
+
+
+
+const getCompleteIntakeAttachmentUploadInternalUrl = (publicationId: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/internal/v1/intake-publications/${publicationId}/attachments/${attachmentId}/completion`
+}
+
+/**
+ * Internal token: api-gateway, actor system, with the organization returned by
+ * task-service for this reservation. The gateway must first authorize completion
+ * with task-service for the current publication and draft.
+ *
+ * Verify the same immutable bytes that will be retained, and commit election of the
+ * candidate together with the verification event. A successful retry returns the
+ * same acknowledgement without another verification fact. No task attachment
+ * metadata or ordinary file facts are published by this operation. Keep the elected
+ * candidate until the Task claim or release is applied, including past the draft
+ * expiry if event delivery is delayed.
+ * @summary Verify the applicant object and pin its elected copy
+ */
+const completeIntakeAttachmentUploadInternal = async (publicationId: string,
+    attachmentId: string, options?: RequestInit): Promise<completeIntakeAttachmentUploadInternalResponse> => {
+
+  const res = await fetchFn(getCompleteIntakeAttachmentUploadInternalUrl(publicationId,attachmentId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeIntakeAttachmentUploadInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeIntakeAttachmentUploadInternalResponse
+}
+
+
+
 const getListTaskAttachmentsInternalUrl = (taskKey: string,
     params?: ListTaskAttachmentsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -483,6 +755,174 @@ const getTaskAttachmentDownloadInternal = async (taskKey: string,
 
 
 
+const getSignProfileMediaTransferInternalUrl = (uploadId: ProfileMediaId,) => {
+
+
+
+
+  return `/internal/v1/profile-media-uploads/${uploadId}/transfer`
+}
+
+/**
+ * The gateway calls only after the owning service allocated this id for the verified actor,
+ * scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
+ * an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
+ * owner's original expiry, at most five minutes after reservation. An authorized repeat for
+ * the same reservation and declaration returns the original signed response, never a renewed
+ * capability. If there is no signed response and the reserved expiry has passed, the
+ * operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
+ * user. An avatar uses the account id with no organization scope, while a logo uses the
+ * organization in the token and the id of the verified uploader.
+ * @summary Sign a reserved profile image transfer
+ */
+const signProfileMediaTransferInternal = async (uploadId: ProfileMediaId,
+    signProfileMediaTransfer: SignProfileMediaTransfer, options?: RequestInit): Promise<signProfileMediaTransferInternalResponse> => {
+
+  const res = await fetchFn(getSignProfileMediaTransferInternalUrl(uploadId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(signProfileMediaTransfer)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: signProfileMediaTransferInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as signProfileMediaTransferInternalResponse
+}
+
+
+
+const getPrepareProfileMediaInternalUrl = (uploadId: ProfileMediaId,) => {
+
+
+
+
+  return `/internal/v1/profile-media-uploads/${uploadId}/preparation`
+}
+
+/**
+ * The gateway calls only for a pending reservation verified by its owner. The actor and
+ * scope must match the transfer. Storage verifies the reserved declaration and uploaded
+ * bytes of one pinned generation. It decodes one static square image with a declared
+ * allowed encoding, at most 4,096 pixels per side and at most 16,777,216 pixels, then
+ * encodes a metadata-free PNG at most 512 pixels per side without upscaling. Avatar input
+ * is PNG, JPEG or WebP at least 256 pixels per side. Logo input is PNG or SVG. SVG input
+ * must be self-contained and static with no external resource access. The decode and
+ * rasterization run within byte, pixel, memory and time limits.
+ *
+ * The immutable derivative uses the upload id as asset id. Repeated preparation returns
+ * the same accepted preparation. Storage retains this candidate until an authoritative
+ * owner decision. An abandoned reservation fences late preparation and cleanup of the
+ * staging object accounts for the original signed expiry. This action alone never changes
+ * the published reference. Issuer api-gateway only, verified actor user.
+ * @summary Verify and prepare a profile image
+ */
+const prepareProfileMediaInternal = async (uploadId: ProfileMediaId,
+    prepareProfileMedia: PrepareProfileMedia, options?: RequestInit): Promise<prepareProfileMediaInternalResponse> => {
+
+  const res = await fetchFn(getPrepareProfileMediaInternalUrl(uploadId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(prepareProfileMedia)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: prepareProfileMediaInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as prepareProfileMediaInternalResponse
+}
+
+
+
+const getGetAvatarImageInternalUrl = (assetId: ProfileMediaId,
+    params: GetAvatarImageInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/avatars/${assetId}?${stringifiedParams}` : `/internal/v1/avatars/${assetId}`
+}
+
+/**
+ * The gateway calls only after the current avatar reference and authorization were
+ * resolved. ownerUserId is the verified actor's own account or the user id returned by
+ * the live organization member lookup. Storage requires the exact avatar asset and that
+ * account id. Any organization in the token is not part of avatar ownership. A different
+ * ownerUserId requires the token organization used by the gateway for the directory check.
+ * Issuer api-gateway and actor user only. The owner-referenced candidate is readable while
+ * the durable adoption fact is in transit. Retired or rejected objects are unavailable.
+ * @summary Read an authorized PNG avatar derivative
+ */
+const getAvatarImageInternal = async (assetId: ProfileMediaId,
+    params: GetAvatarImageInternalParams, options?: RequestInit): Promise<getAvatarImageInternalResponse> => {
+
+  const res = await fetchFn(getGetAvatarImageInternalUrl(assetId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: getAvatarImageInternalResponse['data'] = body as getAvatarImageInternalResponse['data']
+  return { data, status: res.status, headers: res.headers } as getAvatarImageInternalResponse
+}
+
+
+
+const getGetOrganizationLogoImageInternalUrl = (assetId: ProfileMediaId,) => {
+
+
+
+
+  return `/internal/v1/organization/logo-assets/${assetId}`
+}
+
+/**
+ * The gateway calls only after checking current membership and resolving the current
+ * logo reference in the same organization-service read. Storage requires the exact logo
+ * asset in the verified organization. Issuer api-gateway, actor user and organization
+ * required. The owner-referenced candidate is readable while the durable adoption fact
+ * is in transit. Retired or rejected objects are unavailable.
+ * @summary Read an authorized PNG logo derivative
+ */
+const getOrganizationLogoImageInternal = async (assetId: ProfileMediaId, options?: RequestInit): Promise<getOrganizationLogoImageInternalResponse> => {
+
+  const res = await fetchFn(getGetOrganizationLogoImageInternalUrl(assetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: getOrganizationLogoImageInternalResponse['data'] = body as getOrganizationLogoImageInternalResponse['data']
+  return { data, status: res.status, headers: res.headers } as getOrganizationLogoImageInternalResponse
+}
+
+
+
 const getListLargestAttachmentsInternalUrl = (params?: ListLargestAttachmentsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -526,8 +966,108 @@ const listLargestAttachmentsInternal = async (params?: ListLargestAttachmentsInt
 
 
 
-return { listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl };
+return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl };
 };
+
+export type startIntakeAttachmentUploadInternalResponse201 = {
+  data: AttachmentUpload
+  status: 201
+}
+
+export type startIntakeAttachmentUploadInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type startIntakeAttachmentUploadInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type startIntakeAttachmentUploadInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type startIntakeAttachmentUploadInternalResponse404 = {
+  data: IntakeAttachmentNotFoundResponse
+  status: 404
+}
+
+export type startIntakeAttachmentUploadInternalResponse409 = {
+  data: UploadReservationConflictResponse
+  status: 409
+}
+
+export type startIntakeAttachmentUploadInternalResponse422 = {
+  data: IntakeAttachmentStartRefusedResponse
+  status: 422
+}
+
+export type startIntakeAttachmentUploadInternalResponse503 = {
+  data: UnavailableResponse
+  status: 503
+}
+
+export type startIntakeAttachmentUploadInternalResponseSuccess = (startIntakeAttachmentUploadInternalResponse201) & {
+  headers: Headers;
+};
+export type startIntakeAttachmentUploadInternalResponseError = (startIntakeAttachmentUploadInternalResponse400 | startIntakeAttachmentUploadInternalResponse401 | startIntakeAttachmentUploadInternalResponse403 | startIntakeAttachmentUploadInternalResponse404 | startIntakeAttachmentUploadInternalResponse409 | startIntakeAttachmentUploadInternalResponse422 | startIntakeAttachmentUploadInternalResponse503) & {
+  headers: Headers;
+};
+
+export type startIntakeAttachmentUploadInternalResponse = (startIntakeAttachmentUploadInternalResponseSuccess | startIntakeAttachmentUploadInternalResponseError)
+
+
+export type completeIntakeAttachmentUploadInternalResponse200 = {
+  data: IntakeAttachmentCompletion
+  status: 200
+}
+
+export type completeIntakeAttachmentUploadInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type completeIntakeAttachmentUploadInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type completeIntakeAttachmentUploadInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type completeIntakeAttachmentUploadInternalResponse404 = {
+  data: IntakeAttachmentNotFoundResponse
+  status: 404
+}
+
+export type completeIntakeAttachmentUploadInternalResponse409 = {
+  data: UploadStateConflictResponse
+  status: 409
+}
+
+export type completeIntakeAttachmentUploadInternalResponse422 = {
+  data: UploadContentRefusedResponse
+  status: 422
+}
+
+export type completeIntakeAttachmentUploadInternalResponse503 = {
+  data: UnavailableResponse
+  status: 503
+}
+
+export type completeIntakeAttachmentUploadInternalResponseSuccess = (completeIntakeAttachmentUploadInternalResponse200) & {
+  headers: Headers;
+};
+export type completeIntakeAttachmentUploadInternalResponseError = (completeIntakeAttachmentUploadInternalResponse400 | completeIntakeAttachmentUploadInternalResponse401 | completeIntakeAttachmentUploadInternalResponse403 | completeIntakeAttachmentUploadInternalResponse404 | completeIntakeAttachmentUploadInternalResponse409 | completeIntakeAttachmentUploadInternalResponse422 | completeIntakeAttachmentUploadInternalResponse503) & {
+  headers: Headers;
+};
+
+export type completeIntakeAttachmentUploadInternalResponse = (completeIntakeAttachmentUploadInternalResponseSuccess | completeIntakeAttachmentUploadInternalResponseError)
+
 
 export type listTaskAttachmentsInternalResponse200 = {
   data: AttachmentPage
@@ -787,6 +1327,186 @@ export type getTaskAttachmentDownloadInternalResponseError = (getTaskAttachmentD
 };
 
 export type getTaskAttachmentDownloadInternalResponse = (getTaskAttachmentDownloadInternalResponseSuccess | getTaskAttachmentDownloadInternalResponseError)
+
+
+export type signProfileMediaTransferInternalResponse200 = {
+  data: ProfileMediaUpload
+  status: 200
+}
+
+export type signProfileMediaTransferInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type signProfileMediaTransferInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type signProfileMediaTransferInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type signProfileMediaTransferInternalResponse404 = {
+  data: ProfileMediaNotFoundResponse
+  status: 404
+}
+
+export type signProfileMediaTransferInternalResponse409 = {
+  data: ProfileMediaReservationConflictResponse
+  status: 409
+}
+
+export type signProfileMediaTransferInternalResponse422 = {
+  data: ProfileMediaReservationRefusedResponse
+  status: 422
+}
+
+export type signProfileMediaTransferInternalResponse503 = {
+  data: ProfileMediaUnavailableResponse
+  status: 503
+}
+
+export type signProfileMediaTransferInternalResponseSuccess = (signProfileMediaTransferInternalResponse200) & {
+  headers: Headers;
+};
+export type signProfileMediaTransferInternalResponseError = (signProfileMediaTransferInternalResponse400 | signProfileMediaTransferInternalResponse401 | signProfileMediaTransferInternalResponse403 | signProfileMediaTransferInternalResponse404 | signProfileMediaTransferInternalResponse409 | signProfileMediaTransferInternalResponse422 | signProfileMediaTransferInternalResponse503) & {
+  headers: Headers;
+};
+
+export type signProfileMediaTransferInternalResponse = (signProfileMediaTransferInternalResponseSuccess | signProfileMediaTransferInternalResponseError)
+
+
+export type prepareProfileMediaInternalResponse200 = {
+  data: ProfileMediaPreparation
+  status: 200
+}
+
+export type prepareProfileMediaInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type prepareProfileMediaInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type prepareProfileMediaInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type prepareProfileMediaInternalResponse404 = {
+  data: ProfileMediaNotFoundResponse
+  status: 404
+}
+
+export type prepareProfileMediaInternalResponse409 = {
+  data: ProfileMediaUploadStateConflictResponse
+  status: 409
+}
+
+export type prepareProfileMediaInternalResponse422 = {
+  data: ProfileMediaUploadRefusedResponse
+  status: 422
+}
+
+export type prepareProfileMediaInternalResponse503 = {
+  data: ProfileMediaUnavailableResponse
+  status: 503
+}
+
+export type prepareProfileMediaInternalResponseSuccess = (prepareProfileMediaInternalResponse200) & {
+  headers: Headers;
+};
+export type prepareProfileMediaInternalResponseError = (prepareProfileMediaInternalResponse400 | prepareProfileMediaInternalResponse401 | prepareProfileMediaInternalResponse403 | prepareProfileMediaInternalResponse404 | prepareProfileMediaInternalResponse409 | prepareProfileMediaInternalResponse422 | prepareProfileMediaInternalResponse503) & {
+  headers: Headers;
+};
+
+export type prepareProfileMediaInternalResponse = (prepareProfileMediaInternalResponseSuccess | prepareProfileMediaInternalResponseError)
+
+
+export type getAvatarImageInternalResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type getAvatarImageInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getAvatarImageInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getAvatarImageInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getAvatarImageInternalResponse404 = {
+  data: ProfileMediaNotFoundResponse
+  status: 404
+}
+
+export type getAvatarImageInternalResponse503 = {
+  data: ProfileMediaUnavailableResponse
+  status: 503
+}
+
+export type getAvatarImageInternalResponseSuccess = (getAvatarImageInternalResponse200) & {
+  headers: Headers;
+};
+export type getAvatarImageInternalResponseError = (getAvatarImageInternalResponse400 | getAvatarImageInternalResponse401 | getAvatarImageInternalResponse403 | getAvatarImageInternalResponse404 | getAvatarImageInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getAvatarImageInternalResponse = (getAvatarImageInternalResponseSuccess | getAvatarImageInternalResponseError)
+
+
+export type getOrganizationLogoImageInternalResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type getOrganizationLogoImageInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getOrganizationLogoImageInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getOrganizationLogoImageInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getOrganizationLogoImageInternalResponse404 = {
+  data: ProfileMediaNotFoundResponse
+  status: 404
+}
+
+export type getOrganizationLogoImageInternalResponse503 = {
+  data: ProfileMediaUnavailableResponse
+  status: 503
+}
+
+export type getOrganizationLogoImageInternalResponseSuccess = (getOrganizationLogoImageInternalResponse200) & {
+  headers: Headers;
+};
+export type getOrganizationLogoImageInternalResponseError = (getOrganizationLogoImageInternalResponse400 | getOrganizationLogoImageInternalResponse401 | getOrganizationLogoImageInternalResponse403 | getOrganizationLogoImageInternalResponse404 | getOrganizationLogoImageInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getOrganizationLogoImageInternalResponse = (getOrganizationLogoImageInternalResponseSuccess | getOrganizationLogoImageInternalResponseError)
 
 
 export type listLargestAttachmentsInternalResponse200 = {

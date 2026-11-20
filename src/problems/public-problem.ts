@@ -217,9 +217,14 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['intake-form.not-found', 'Formulaire introuvable'],
   ['intake-form.list-archived', 'Liste archivée'],
   ['intake-form.defaults-invalid', 'Valeurs par défaut invalides'],
+  ['attachment.upload-not-ready', 'La pièce jointe est en cours de vérification'],
   ['watcher.recipient-invalid', 'Ce destinataire est indisponible.'],
   ['watcher.limit-reached', 'La limite des abonnements est atteinte.'],
   ['trash-entry.not-found', 'Cet élément n’est plus dans la corbeille.'],
+  ['notification.not-found', 'Notification introuvable.'],
+  ['reminder.not-found', 'Rappel introuvable.'],
+  ['reminder.already-completed', 'Ce rappel est déjà terminé.'],
+  ['reminder.date-not-in-future', 'Choisissez une date et une heure à venir.'],
 ]);
 
 /**

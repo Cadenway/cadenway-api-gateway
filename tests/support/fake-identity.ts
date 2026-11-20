@@ -161,6 +161,7 @@ export function createFakeIdentity(): FakeIdentity {
   return {
     introspect: vi.fn((token: string) => Promise.resolve(SESSIONS.get(token) ?? null)),
     introspectApiToken: vi.fn((token: string) => Promise.resolve(API_TOKENS.get(token) ?? null)),
+    issueRealtimeTicket: vi.fn(unexpected),
     discoverSignInMethods: vi.fn(unexpected),
     signUp: vi.fn(unexpected),
     resendSignUpCode: vi.fn(unexpected),

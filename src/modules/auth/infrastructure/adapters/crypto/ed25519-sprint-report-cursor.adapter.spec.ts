@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { generateKeyPairSync, sign } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import type { SprintReportCursorScope } from '../../../application/models/reporting/sprint-report-cursor-scope.model.js';
@@ -25,6 +25,25 @@ function sealedCursor(): string {
 }
 
 describe('Ed25519SprintReportCursor', () => {
+  it('preserves the exact Sprint report signature format', () => {
+    const encoded = Buffer.from(innerCursor).toString('base64url');
+    const fields = [
+      scope.organizationId,
+      scope.userId,
+      scope.listId,
+      scope.today,
+      scope.timeZone,
+      encoded,
+    ];
+    const message = Buffer.from(
+      `\0cadenway-api-gateway/sprint-report-cursor/v1\0${JSON.stringify(fields)}`,
+    );
+    const signature = sign(null, message, key).toString('base64url');
+    const cursor = `v1.${encoded}.${signature}`;
+    expect(sealedCursor()).toBe(cursor);
+    expect(codec.open(cursor, scope)).toBe(innerCursor);
+  });
+
   it('preserves the upstream cursor across instances using the same key', () => {
     const otherInstance = new Ed25519SprintReportCursor(key);
     expect(otherInstance.open(sealedCursor(), scope)).toBe(innerCursor);

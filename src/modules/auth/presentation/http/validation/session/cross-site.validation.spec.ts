@@ -101,6 +101,26 @@ describe('assertCookieRequestSameSite', () => {
     return Object.assign(requestWith(headers), { method });
   }
 
+  it.each<Record<string, string>>([
+    { Origin: 'https://app.cadenway.test' },
+    { Origin: 'https://app.cadenway.test', 'Content-Length': '0' },
+  ])('accepts an opted-in empty POST carrying %j', (headers) => {
+    expect(() => {
+      assertCookieRequestSameSite(cookieRequest('POST', headers), ALLOWED, true);
+    }).not.toThrow();
+  });
+
+  it.each<Record<string, string>>([
+    { Origin: 'https://evil.test' },
+    { Origin: 'https://app.cadenway.test', 'Content-Length': '1' },
+    { Origin: 'https://app.cadenway.test', 'Transfer-Encoding': 'chunked' },
+    { Origin: 'https://app.cadenway.test', 'Content-Type': 'text/plain' },
+  ])('refuses an opted-in empty POST carrying %j', (headers) => {
+    expect(() => {
+      assertCookieRequestSameSite(cookieRequest('POST', headers), ALLOWED, true);
+    }).toThrow(ProblemException);
+  });
+
   it.each([
     [
       'a JSON body',

@@ -13,11 +13,15 @@ import {
   type MockInstance,
 } from 'vitest';
 
-import { createFakeIdentity } from '../../../../../../../tests/support/fake-identity.js';
+import {
+  CAMILLE_ORGANIZATION_TOKEN,
+  createFakeIdentity,
+} from '../../../../../../../tests/support/fake-identity.js';
 import {
   createRouteApplication,
   type RouteApplication,
 } from '../../../../../../../tests/support/route-application.js';
+import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
 import { CountIntakeRequest } from '../../../../../rate-limit/public/addresses/count-intake-request.js';
 import type { IntakeRegistry } from '../../../../application/ports/outbound/task-service/intake/intake-registry.port.js';
 import { DisableIntake } from '../../../../application/use-cases/commands/intake/disable-intake/disable-intake.use-case.js';
@@ -258,6 +262,34 @@ describe('anonymous intake HTTP protections', () => {
     expect(limited.status).toBe(429);
     expect(limited.headers['cache-control']).toBe('no-store');
     expect(limited.headers['retry-after']).toBe('27');
+  });
+
+  it('keeps public submissions text-only before attachment upload routes are available', async () => {
+    const path = `/v1/intake-forms/${key}/submissions`;
+    const draft = request(application.server)
+      .post(path)
+      .set('Intake-Draft-Key', 'D'.repeat(43))
+      .send({ title: 'Help' });
+    const claim = request(application.server)
+      .post(path)
+      .send({ title: 'Help', attachmentIds: ['019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15'] });
+    for (const response of await Promise.all([draft, claim])) {
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({ code: 'request.invalid' });
+      expect(response.headers['cache-control']).toBe('no-store');
+    }
+    expect(application.task.submitPublicIntakeForm).not.toHaveBeenCalled();
+  });
+
+  it('defers changes to an intake form attachment policy until uploads are available', async () => {
+    const response = await request(application.server)
+      .patch(`/v1/lists/${listId}/intake-form`)
+      .set('Cookie', `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`)
+      .set('Origin', ALLOWED_ORIGIN)
+      .send({ fields: { attachments: 'required' } });
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ code: 'request.invalid' });
+    expect(application.task.updateIntakeFormConfiguration).not.toHaveBeenCalled();
   });
 
   it('retains no-store for malformed JSON', async () => {

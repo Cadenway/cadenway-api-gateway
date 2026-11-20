@@ -151,14 +151,15 @@ export function conformBody<TSchema extends z.ZodType>(
  * Awaits a generated call. The generated code parses a success body with `JSON.parse`, whose
  * `SyntaxError` quotes part of the body, which may hold a token: a body that is not JSON becomes
  * `503 upstream.failed` without that message, so it reaches neither the browser nor the log line
- * of the request. Every other error, the problems of the internal HTTP client included, is thrown
- * unchanged.
+ * of the request. After the headers arrive, a body deadline or socket loss uses the matching
+ * transport problem. Problems already classified by the internal HTTP client pass through unchanged.
  *
  * @param {string} service - Name of the called service.
  * @param {string} operation - `operationId` of the call.
  * @param {Promise<TResponse>} call - The generated call.
  * @returns {Promise<TResponse>} What the call resolved with.
- * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON.
+ * @throws {ProblemException} 503 `upstream.failed` for a body that is not JSON, `upstream.timeout`
+ * for a body deadline, or `upstream.unreachable` for a socket loss while reading the body.
  */
 export async function answered<TResponse>(
   service: string,
@@ -170,6 +171,21 @@ export async function answered<TResponse>(
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw outsideContract(service, operation, 'a body that is not JSON');
+    }
+    const timedOut =
+      error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    const socketLost =
+      error instanceof TypeError &&
+      error.cause instanceof Error &&
+      'code' in error.cause &&
+      (error.cause.code === 'UND_ERR_SOCKET' || error.cause.code === 'ECONNRESET');
+    if (timedOut || socketLost) {
+      throw new ProblemException({
+        status: 503,
+        code: timedOut ? 'upstream.timeout' : 'upstream.unreachable',
+        detail: 'A service this request depends on is not available.',
+        details: { service },
+      });
     }
     throw error;
   }
