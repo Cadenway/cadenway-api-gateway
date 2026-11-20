@@ -32,6 +32,7 @@ export const PUBLIC_SPEC_NAMES: readonly string[] = [
   'reports.yaml',
   'intake.yaml',
   'attachments.yaml',
+  'documents.yaml',
   'profile-media.yaml',
   'inbox.yaml',
   'reminders.yaml',

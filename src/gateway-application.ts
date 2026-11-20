@@ -107,9 +107,15 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 // A capture-free path prevents Express decoding an invalid member ID before setting the header.
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
+const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
-function noStoreProfileMedia(request: Request, response: Response, next: NextFunction): void {
+function noStorePrivateResource(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+  pathParameter: 'memberId' | 'documentId',
+): void {
   response.setHeader('Cache-Control', 'private, no-store');
   try {
     decodeURI(request.originalUrl.split('?', 1)[0] ?? '');
@@ -122,7 +128,7 @@ function noStoreProfileMedia(request: Request, response: Response, next: NextFun
           issues: [
             {
               in: 'path',
-              path: 'memberId',
+              path: pathParameter,
               code: 'invalid_format',
               message: 'Invalid path encoding.',
             },
@@ -185,12 +191,26 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
-  app.use(PROFILE_MEDIA_PATH, noStoreProfileMedia);
+  app.use(PROFILE_MEDIA_PATH, (request: Request, response: Response, next: NextFunction): void => {
+    noStorePrivateResource(request, response, next, 'memberId');
+  });
+  app.use(DOCUMENTS_PATH, (request: Request, response: Response, next: NextFunction): void => {
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      delete request.headers['if-none-match'];
+      delete request.headers['if-modified-since'];
+    }
+    noStorePrivateResource(request, response, next, 'documentId');
+  });
   app.use(
-    PROFILE_MEDIA_PATH,
+    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
-      if (error instanceof ProblemException || toProblem(error).status !== 400) {
+      const problem = toProblem(error);
+      if (
+        error instanceof ProblemException ||
+        problem.status !== 400 ||
+        problem.code === 'request.body-too-large'
+      ) {
         next(error);
         return;
       }

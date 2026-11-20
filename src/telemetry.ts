@@ -12,14 +12,7 @@ import { startTelemetry } from '@cadenway/nest-common/telemetry';
 
 startTelemetry({
   service: 'api-gateway',
-  sensitiveHttpPathPrefixes: [
-    '/v1/intake-forms/',
-    '/internal/v1/intake-forms/',
-    '/v1/inbox/',
-    '/internal/v1/inbox/',
-    '/v1/members/',
-    '/internal/v1/avatars/',
-    '/internal/v1/organization/logo-assets/',
-    '/internal/v1/profile-media-uploads/',
-  ],
+  // The kit requires a trailing slash in a prefix, including for the Document collection.
+  // These prefixes protect the search query on both hops; templated route attributes are retained.
+  sensitiveHttpPathPrefixes: ['/v1/', '/internal/v1/'],
 });
