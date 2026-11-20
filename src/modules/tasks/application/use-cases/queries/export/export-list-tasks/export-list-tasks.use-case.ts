@@ -85,7 +85,7 @@ export class ExportListTasks {
         if (frame.kind === 'metadata' && filename === undefined) {
           filename = frame.filename;
           service = 'api-gateway';
-          await this.write(() => fileSpool.writeHeader(`${frame.header}\r\n`));
+          await this.write(() => fileSpool.writeHeader(`${frame.header}\r\n`, signal));
           service = 'task-service';
         } else if (
           frame.kind === 'row' &&
@@ -180,7 +180,7 @@ export class ExportListTasks {
     }
   }
 
-  /** Writes each encoded row once and records only the sorting name when it is needed. */
+  /** Encodes one bounded batch and records only the sorting name when it is needed. */
   private async writeRows(
     spool: ListTaskCsvSpool,
     rows: readonly ListTaskExportRow[],
@@ -188,17 +188,18 @@ export class ExportListTasks {
     firstNames: (string | undefined)[] | undefined,
     signal: AbortSignal,
   ): Promise<void> {
-    for (const row of rows) {
+    const lines = rows.map((row) => {
       signal.throwIfAborted();
       const knownNames = row.assigneeIds.flatMap((id) => {
         const name = names.get(id.toLowerCase());
         return name === undefined ? [] : [name];
       });
       const cells = [...row.beforeAssignees, assigneeCell(knownNames), ...row.afterAssignees];
-      await this.write(() => spool.writeRow(`${cells.join(';')}\r\n`));
       const firstAssignee = row.assigneeIds[0]?.toLowerCase();
       firstNames?.push(firstAssignee === undefined ? undefined : names.get(firstAssignee));
-    }
+      return `${cells.join(';')}\r\n`;
+    });
+    await this.write(() => spool.writeRows(lines, signal));
   }
 
   /** Hides local disk paths and system diagnostics from an unavailable export. */

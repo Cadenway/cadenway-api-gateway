@@ -86,13 +86,34 @@ class DiskListTaskCsvSpool implements ListTaskCsvSpool {
 
   // #region Methods
   /** Writes the first CSV record, separate from the sorted row index. */
-  public async writeHeader(line: string): Promise<void> {
-    this.header = await this.append(line);
+  public async writeHeader(line: string, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    const buffer = Buffer.from(line, 'utf8');
+    const offset = this.offset;
+    await this.append(buffer, signal);
+    this.header = { offset, length: buffer.length };
   }
 
-  /** Appends one row and remembers its byte range. */
-  public async writeRow(line: string): Promise<void> {
-    this.rows.push(await this.append(line));
+  /** Appends a bounded batch in one write when accepted and indexes every row. */
+  public async writeRows(lines: readonly string[], signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    let nextOffset = this.offset;
+    const ranges = lines.map((line): FileRange => {
+      const length = Buffer.byteLength(line, 'utf8');
+      const range = { offset: nextOffset, length };
+      nextOffset += length;
+      return range;
+    });
+    if (nextOffset > FILE_CAPACITY) throw new Error('The export spool is full.');
+    const buffer = Buffer.allocUnsafe(nextOffset - this.offset);
+    let encoded = 0;
+    for (const line of lines) {
+      signal.throwIfAborted();
+      encoded += buffer.write(line, encoded, 'utf8');
+    }
+    if (encoded !== buffer.length) throw new Error('The export spool could not encode its batch.');
+    await this.append(buffer, signal);
+    this.rows.push(...ranges);
   }
 
   /** Returns the prepared document without copying its file contents. */
@@ -112,23 +133,22 @@ class DiskListTaskCsvSpool implements ListTaskCsvSpool {
     ));
   }
 
-  /** Completes short writes and checks the byte ceiling before writing a record. */
-  private async append(line: string): Promise<FileRange> {
-    const buffer = Buffer.from(line, 'utf8');
-    const range = { offset: this.offset, length: buffer.length };
-    if (this.offset + range.length > FILE_CAPACITY) throw new Error('The export spool is full.');
-    while (this.offset < range.offset + range.length) {
-      const start = this.offset - range.offset;
+  /** Completes short writes without exceeding the original byte limit or ignoring cancellation. */
+  private async append(buffer: Buffer, signal: AbortSignal): Promise<void> {
+    if (this.offset + buffer.length > FILE_CAPACITY) throw new Error('The export spool is full.');
+    for (let written = 0; written < buffer.length;) {
+      signal.throwIfAborted();
       const { bytesWritten } = await this.handle.write(
         buffer,
-        start,
-        range.length - start,
+        written,
+        buffer.length - written,
         this.offset,
       );
       if (bytesWritten === 0) throw new Error('The export spool did not accept a write.');
+      written += bytesWritten;
       this.offset += bytesWritten;
     }
-    return range;
+    signal.throwIfAborted();
   }
 
   /** Streams the file directly for ordinary sorts and visits one indexed row at a time for people. */

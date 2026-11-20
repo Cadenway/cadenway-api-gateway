@@ -50,15 +50,16 @@ function testSpool() {
   let header = '';
   const rows: string[] = [];
   const dispose = vi.fn().mockResolvedValue(undefined);
+  const writeRows = vi.fn<ListTaskCsvSpool['writeRows']>((lines) => {
+    rows.push(...lines);
+    return Promise.resolve();
+  });
   const spool: ListTaskCsvSpool = {
     writeHeader: vi.fn((line: string) => {
       header = line;
       return Promise.resolve();
     }),
-    writeRow: vi.fn((line: string) => {
-      rows.push(line);
-      return Promise.resolve();
-    }),
+    writeRows,
     finish: (filename, order) => {
       const text = header + (order?.map((index) => rows[index]) ?? rows).join('');
       return {
@@ -70,7 +71,7 @@ function testSpool() {
     },
     dispose,
   };
-  return { spool, dispose };
+  return { spool, dispose, writeRows };
 }
 
 function readSequentially<T>(values: Iterable<T>): AsyncIterable<T> {
@@ -92,19 +93,20 @@ function setup(rows: readonly ListTaskExportRow[]): {
   readonly read: ReturnType<typeof vi.fn<ListTaskExportSource['read']>>;
   readonly lookup: ReturnType<typeof vi.fn<MemberNameSource['lookup']>>;
   readonly dispose: ReturnType<typeof vi.fn>;
+  readonly writeRows: ReturnType<typeof vi.fn<ListTaskCsvSpool['writeRows']>>;
   readonly exportList: ExportListTasks;
 } {
   const read = vi
     .fn<ListTaskExportSource['read']>()
     .mockImplementation(() => Promise.resolve(readSequentially(projection(rows))));
   const lookup = vi.fn<MemberNameSource['lookup']>().mockResolvedValue({ items: [] });
-  const { spool, dispose } = testSpool();
+  const { spool, dispose, writeRows } = testSpool();
   const exportList = new ExportListTasks(
     { read },
     { lookup },
     { open: () => Promise.resolve(spool) },
   );
-  return { read, lookup, dispose, exportList };
+  return { read, lookup, dispose, writeRows, exportList };
 }
 
 describe('ExportListTasks', () => {
@@ -186,9 +188,10 @@ describe('ExportListTasks', () => {
   });
 
   it('looks up assignees in bounded batches before reading the next set of rows', async () => {
-    const { lookup, exportList } = setup(manyRows(5201));
+    const { lookup, writeRows, exportList } = setup(manyRows(5201));
     await exportList.execute('list-id', {});
     expect(lookup.mock.calls.map(([ids]) => ids.length)).toEqual([2560, 2560, 81]);
+    expect(writeRows.mock.calls.map(([lines]) => lines.length)).toEqual([128, 128, 5]);
     expect(new Set(lookup.mock.calls.flatMap(([ids]) => ids)).size).toBe(5201);
   });
 
