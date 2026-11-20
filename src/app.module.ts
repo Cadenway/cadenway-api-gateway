@@ -18,6 +18,7 @@ import { ListsModule } from './modules/lists/lists.module.js';
 import { MembersModule } from './modules/members/members.module.js';
 import { MeRoutesModule } from './modules/me/me.module.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { RealtimeTicketsModule } from './modules/realtime-tickets/realtime-tickets.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
@@ -37,6 +38,7 @@ import { TwoStepVerificationModule } from './modules/two-step-verification/two-s
 export const ROUTE_MODULES: readonly Type[] = [
   AuthRoutesModule,
   MeRoutesModule,
+  RealtimeTicketsModule,
   SessionsModule,
   TwoStepVerificationModule,
   OrganizationsModule,
