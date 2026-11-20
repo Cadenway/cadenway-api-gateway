@@ -36,6 +36,13 @@ const SPEC_METHODS: ReadonlyMap<number, string> = new Map<number, string>([
   [RequestMethod.DELETE, 'delete'],
 ]);
 
+const BODYLESS_POSTS = new Set([
+  'markInboxNotificationsRead',
+  'markInboxNotificationRead',
+  'archiveInboxNotification',
+  'completeReminder',
+]);
+
 /**
  * Interface ServedRoute
  *
@@ -260,12 +267,18 @@ function contractOperations(): readonly ContractOperation[] {
           isNode(responses) && isNode(responses['403'])
             ? [...problemCodes(spec, forbiddenPointer), ...describedCodes(spec, forbiddenPointer)]
             : [];
+        const operationId = String(operation.operationId);
+        const bodylessPost = BODYLESS_POSTS.has(operationId);
+        if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
+          throw new Error(`${operationId} no longer has a bodyless POST contract.`);
+        }
         operations.push({
           key: `${method} ${path}`,
           security: {
-            operationId: String(operation.operationId),
+            operationId,
             security: security as OperationSecurity['security'],
             organization: forbidden.includes('organization.not-selected'),
+            ...(bodylessPost ? { allowBodylessPost: true } : {}),
           },
         });
       }
@@ -282,7 +295,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(181);
+    expect(operations).toHaveLength(196);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

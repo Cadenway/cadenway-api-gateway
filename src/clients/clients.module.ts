@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import type { AppConfig } from '../config/app-config.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
+import { NOTIFICATION_SERVICE, NotificationServiceClient } from './notification-service.client.js';
 import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
 
 /**
@@ -15,6 +16,18 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
  */
 @Module({
   providers: [
+    {
+      provide: NotificationServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): NotificationServiceClient =>
+        new NotificationServiceClient(
+          new InternalHttpClient({
+            service: NOTIFICATION_SERVICE,
+            baseUrl: config.NOTIFICATION_SERVICE_URL,
+            signer,
+          }),
+        ),
+    },
     {
       provide: IdentityServiceClient,
       inject: [CONFIG, InternalTokenSigner],
@@ -52,6 +65,11 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
         ),
     },
   ],
-  exports: [IdentityServiceClient, OrganizationServiceClient, TaskServiceClient],
+  exports: [
+    IdentityServiceClient,
+    OrganizationServiceClient,
+    TaskServiceClient,
+    NotificationServiceClient,
+  ],
 })
 export class ClientsModule {}

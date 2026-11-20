@@ -220,6 +220,10 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['watcher.recipient-invalid', 'Ce destinataire est indisponible.'],
   ['watcher.limit-reached', 'La limite des abonnements est atteinte.'],
   ['trash-entry.not-found', 'Cet élément n’est plus dans la corbeille.'],
+  ['notification.not-found', 'Notification introuvable.'],
+  ['reminder.not-found', 'Rappel introuvable.'],
+  ['reminder.already-completed', 'Ce rappel est déjà terminé.'],
+  ['reminder.date-not-in-future', 'Choisissez une date et une heure à venir.'],
 ]);
 
 /**
