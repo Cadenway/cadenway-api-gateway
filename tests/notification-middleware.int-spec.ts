@@ -2,12 +2,14 @@ import 'reflect-metadata';
 
 import {
   GetNotificationPreferencesInternalResponse,
+  ListInboxNotificationsInternalResponse,
   ListInboxUnreadSubjectsInternalResponse,
   ListRemindersInternalResponse,
   ListVisibleReminderRecordsInternalResponse,
   MarkInboxNotificationsReadInternalResponse,
   SetTaskReminderInternalResponse,
 } from '@cadenway/contracts/validators/internal/notification-service';
+import { ListInboxNotificationsResponse } from '@cadenway/contracts/validators/public/inbox';
 import { ProblemException } from '@cadenway/nest-common';
 import request from 'supertest';
 import {
@@ -22,7 +24,12 @@ import {
 } from 'vitest';
 
 import { NotificationServiceClient } from '../src/clients/notification-service.client.js';
-import { CAMILLE_TOKEN, createFakeIdentity } from './support/fake-identity.js';
+import {
+  CAMILLE_ORGANIZATION_SESSION,
+  CAMILLE_ORGANIZATION_TOKEN,
+  CAMILLE_TOKEN,
+  createFakeIdentity,
+} from './support/fake-identity.js';
 import { expectPublicResponse, responseExample } from './support/public-contract.js';
 import { runRouteCase } from './support/route-cases.js';
 import { createRouteApplication, type RouteApplication } from './support/route-application.js';
@@ -44,6 +51,16 @@ const reminder = SetTaskReminderInternalResponse.parse({
 const preferences = GetNotificationPreferencesInternalResponse.parse(
   responseExample('get', '/v1/me/notification-preferences', 200),
 );
+const firstNotification = {
+  id: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11',
+  kind: 'mention',
+  subject: null,
+  actorUserId: null,
+  createdAt: '2026-11-09T08:48:00Z',
+  readAt: null,
+  archivedAt: null,
+  version: 1,
+};
 
 describe('notification routes with gateway middleware', () => {
   let gateway: RouteApplication;
@@ -205,7 +222,6 @@ describe('notification routes with gateway middleware', () => {
       method: 'post',
       path: '/v1/inbox/notifications/read-all',
       url: '/v1/inbox/notifications/read-all',
-      headers: { 'Content-Type': 'application/json' },
       status: 200,
     });
     expect(markRead).toHaveBeenCalledWith(
@@ -216,6 +232,165 @@ describe('notification routes with gateway middleware', () => {
       },
       expect.any(AbortSignal),
     );
+  });
+
+  it.each(['read', 'archive'] as const)(
+    'accepts a bodyless Inbox %s POST from the app',
+    async (action) => {
+      const candidate = vi
+        .spyOn(notification, 'getInboxNotificationCandidate')
+        .mockResolvedValue(firstNotification);
+      const operation =
+        action === 'read' ? 'markInboxNotificationRead' : 'archiveInboxNotification';
+      const mutate = vi.spyOn(notification, operation).mockResolvedValue(firstNotification);
+      const response = await runRouteCase(gateway, identity, {
+        name: `bodyless Inbox ${action}`,
+        method: 'post',
+        path: `/v1/inbox/notifications/{notificationId}/${action}`,
+        url: `/v1/inbox/notifications/${firstNotification.id}/${action}`,
+        status: 200,
+      });
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(candidate).toHaveBeenCalledWith(firstNotification.id);
+      expect(mutate).toHaveBeenCalledWith(firstNotification.id, { subject: null }, undefined);
+    },
+  );
+
+  it('accepts a bodyless reminder completion POST from the app', async () => {
+    vi.spyOn(notification, 'getReminderCandidate').mockResolvedValue({ id: reminderId, taskId });
+    const complete = vi
+      .spyOn(notification, 'completeReminder')
+      .mockResolvedValue({ ...reminder, completedAt: reminder.remindAt });
+    const response = await runRouteCase(gateway, identity, {
+      name: 'bodyless reminder completion',
+      method: 'post',
+      path: '/v1/reminders/{reminderId}/complete',
+      url: `/v1/reminders/${reminderId}/complete`,
+      status: 200,
+    });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(complete).toHaveBeenCalledWith(reminderId, taskId, undefined);
+  });
+
+  it('still refuses an untrusted Origin or a non-JSON body before a bodyless write', async () => {
+    const path = '/v1/inbox/notifications/read-all';
+    const untrusted = await runRouteCase(gateway, identity, {
+      name: 'empty POST from an untrusted origin',
+      method: 'post',
+      path,
+      url: path,
+      origin: 'https://other.example',
+      status: 403,
+      code: 'auth.csrf-rejected',
+    });
+    const text = await request(gateway.server)
+      .post(path)
+      .set('Cookie', `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('Content-Type', 'text/plain')
+      .send('not JSON');
+    expectPublicResponse('post', path, text);
+    expect(text.status).toBe(403);
+    expect(text.body).toMatchObject({ code: 'auth.csrf-rejected' });
+    expect(text.headers['cache-control']).toBe('no-store');
+    expect(untrusted.headers['cache-control']).toBe('no-store');
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('resumes across a hidden Inbox candidate without exposing its scan position', async () => {
+    const path = '/v1/inbox/notifications';
+    const hidden = {
+      ...firstNotification,
+      id: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e22',
+      createdAt: '2026-11-09T08:47:00Z',
+      subject: { kind: 'task-id', taskId },
+    };
+    const last = { ...firstNotification, id: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e33' };
+    const privateCursor = Buffer.from(
+      JSON.stringify({ createdAt: hidden.createdAt, id: hidden.id }),
+    ).toString('base64url');
+    const listCandidates = vi
+      .spyOn(notification, 'listInboxNotifications')
+      .mockResolvedValueOnce(
+        ListInboxNotificationsInternalResponse.parse({
+          items: [
+            { record: firstNotification, cursorAfter: 'after-visible' },
+            { record: hidden, cursorAfter: privateCursor },
+            { record: last, cursorAfter: 'after-lookahead' },
+          ],
+          nextCursor: null,
+        }),
+      )
+      .mockResolvedValueOnce(
+        ListInboxNotificationsInternalResponse.parse({
+          items: [{ record: last, cursorAfter: 'after-lookahead' }],
+          nextCursor: null,
+        }),
+      );
+    gateway.task.resolveNotificationSubjects.mockResolvedValue({ results: [{ visible: false }] });
+    gateway.logLines.length = 0;
+    const page = await runRouteCase(gateway, identity, {
+      name: 'list only visible records',
+      method: 'get',
+      path,
+      url: `${path}?limit=1`,
+      status: 200,
+    });
+    expect(page.body).toMatchObject({ items: [{ id: firstNotification.id }] });
+    expect(page.text).not.toContain(hidden.id);
+    const { nextCursor: cursor } = ListInboxNotificationsResponse.parse(page.body);
+    if (cursor === null) throw new Error('The first page should expose a continuation.');
+    expect(cursor).not.toBe(privateCursor);
+    expect(Buffer.from(cursor, 'base64url').includes(privateCursor)).toBe(false);
+
+    for (const mismatch of [
+      { cursor: privateCursor },
+      { cursor: `${cursor}=` },
+      { cursor, state: 'unread' },
+      { cursor, organizationId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e44' },
+      { cursor, userId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e55' },
+    ]) {
+      const { organizationId, userId, state } = mismatch;
+      if (organizationId !== undefined || userId !== undefined) {
+        identity.introspect.mockResolvedValueOnce({
+          ...CAMILLE_ORGANIZATION_SESSION,
+          ...(organizationId === undefined ? {} : { organizationId }),
+          ...(userId === undefined ? {} : { userId }),
+        });
+      }
+      const query = new URLSearchParams({ cursor: mismatch.cursor, ...(state ? { state } : {}) });
+      const refusal = await runRouteCase(gateway, identity, {
+        name: 'reject an invalid continuation before the Notification scan',
+        method: 'get',
+        path,
+        url: `${path}?${query.toString()}`,
+        status: 400,
+        code: 'request.invalid',
+      });
+      expect(refusal.body).toMatchObject({
+        details: { issues: [{ in: 'query', path: 'cursor' }] },
+      });
+      expect(refusal.headers['cache-control']).toBe('no-store');
+    }
+    expect(listCandidates).toHaveBeenCalledTimes(1);
+    expect(unreadSubjects).toHaveBeenCalledTimes(1);
+
+    const resumed = await runRouteCase(gateway, identity, {
+      name: 'resume with explicit default state and a different page size',
+      method: 'get',
+      path,
+      url: `${path}?cursor=${cursor}&state=active&limit=2`,
+      status: 200,
+    });
+    expect(resumed.body).toMatchObject({ items: [{ id: last.id }], nextCursor: null });
+    expect(listCandidates).toHaveBeenLastCalledWith(
+      { cursor: privateCursor, state: 'active', limit: 100 },
+      expect.any(AbortSignal),
+    );
+    const logs = gateway.logLines.join('\n');
+    expect(logs).not.toContain(cursor);
+    expect(logs).not.toContain(privateCursor);
+    expect(logs).not.toContain(hidden.id);
   });
 
   it('does not disclose unread weight when Task denies the current subject', async () => {
@@ -236,6 +411,7 @@ describe('notification routes with gateway middleware', () => {
       method: 'get',
       path: '/v1/reminders',
       url: '/v1/reminders',
+      headers: { 'If-None-Match': '*' },
       status: 200,
     });
     expect(page.body).toEqual({ items: [], nextCursor: null, pendingCount: 0 });

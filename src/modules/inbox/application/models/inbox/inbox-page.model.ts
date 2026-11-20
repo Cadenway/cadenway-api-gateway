@@ -6,7 +6,7 @@ export interface InboxPage {
   /** Items in Notification's original ordering. */
   readonly items: readonly InboxNotification[];
 
-  /** Private continuation for the gateway to expose as an opaque cursor. */
+  /** Encrypted public continuation scoped to the verified owner and filter. */
   readonly nextCursor: string | null;
 
   /** Number of accessible active unread notifications. */

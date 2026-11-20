@@ -1,10 +1,10 @@
-/** Validated owner-scoped filter, page size and private continuation. */
+/** Validated owner-scoped filter, page size and continuation. */
 export interface InboxListQuery {
   // #region Properties
   /** Inbox membership filter. */
   readonly state: 'active' | 'unread' | 'archived';
 
-  /** Opaque Notification cursor bound to the authenticated owner and filter. */
+  /** Gateway cursor at the use case boundary and Notification cursor at its source. */
   readonly cursor: string | null;
 
   /** Maximum returned items, between one and 100. */

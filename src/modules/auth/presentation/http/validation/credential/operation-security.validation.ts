@@ -78,6 +78,9 @@ export interface OperationSecurity {
    * @readonly
    */
   readonly organization: boolean;
+
+  /** Allows a POST with no request body in its contract to omit Content-Type. */
+  readonly allowBodylessPost?: true;
   // #endregion
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { InboxCandidate } from '../../../../models/inbox/inbox-candidate.model.js';
+import type { InboxPageCursor } from '../../../../ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
 import type { InboxActorNames } from '../../../../ports/outbound/organization-service/inbox/inbox-actor-names.port.js';
 import type { InboxNotificationSource } from '../../../../ports/outbound/notification-service/inbox/inbox-notification-source.port.js';
 import type { InboxSubjectVisibility } from '../../../../ports/outbound/task-service/inbox/inbox-subject-visibility.port.js';
@@ -9,6 +10,7 @@ import { ListInboxNotifications } from './list-inbox-notifications.use-case.js';
 
 const firstTask = { kind: 'task-key', taskKey: 'CAD-482' } as const;
 const hiddenList = { kind: 'list', listId: 'hidden-list' } as const;
+const owner = { organizationId: 'org', userId: 'owner' };
 
 function candidate(id: string, input: Partial<InboxCandidate> = {}): InboxCandidate {
   return {
@@ -84,33 +86,40 @@ describe('ListInboxNotifications', () => {
         items: [{ userId: 'visible-actor', name: 'Visible actor' }],
       }),
     };
+    const cursors = {
+      open: vi.fn<InboxPageCursor['open']>().mockReturnValueOnce('after-hidden'),
+      seal: vi.fn<InboxPageCursor['seal']>().mockReturnValueOnce('sealed-cursor'),
+    };
     const list = new ListInboxNotifications(
       source,
       visibility,
       names,
       new ScanInboxUnread(source, visibility),
+      cursors,
     );
 
-    await expect(list.execute({ state: 'active', cursor: null, limit: 1 })).resolves.toEqual({
-      items: [
-        {
-          id: 'first',
-          kind: 'mention',
-          actor: { userId: 'visible-actor', name: 'Visible actor' },
-          task: { taskKey: 'CAD-482', name: 'Current task' },
-          excerpt: 'Current comment',
-          status: 'todo',
-          createdAt: '2026-11-20T10:40:00Z',
-          readAt: null,
-          archivedAt: null,
-          version: 1,
-        },
-      ],
-      nextCursor: 'after-hidden',
-      unreadCount: 8,
-    });
+    await expect(list.execute({ state: 'active', cursor: null, limit: 1 }, owner)).resolves.toEqual(
+      {
+        items: [
+          {
+            id: 'first',
+            kind: 'mention',
+            actor: { userId: 'visible-actor', name: 'Visible actor' },
+            task: { taskKey: 'CAD-482', name: 'Current task' },
+            excerpt: 'Current comment',
+            status: 'todo',
+            createdAt: '2026-11-20T10:40:00Z',
+            readAt: null,
+            archivedAt: null,
+            version: 1,
+          },
+        ],
+        nextCursor: 'sealed-cursor',
+        unreadCount: 8,
+      },
+    );
     await expect(
-      list.execute({ state: 'active', cursor: 'after-hidden', limit: 1 }),
+      list.execute({ state: 'active', cursor: 'sealed-cursor', limit: 2 }, owner),
     ).resolves.toMatchObject({
       items: [{ id: 'owner-only', actor: null, task: null, excerpt: null, status: null }],
       nextCursor: null,
@@ -122,6 +131,18 @@ describe('ListInboxNotifications', () => {
     );
     expect(visibility.resolve).toHaveBeenCalledWith(
       [{ subject: firstTask, display: { commentId: 'live-comment' } }, { subject: hiddenList }],
+      expect.any(AbortSignal),
+    );
+    expect(cursors.seal).toHaveBeenCalledExactlyOnceWith('after-hidden', {
+      ...owner,
+      state: 'active',
+    });
+    expect(cursors.open).toHaveBeenCalledExactlyOnceWith('sealed-cursor', {
+      ...owner,
+      state: 'active',
+    });
+    expect(source.listCandidates).toHaveBeenLastCalledWith(
+      { state: 'active', cursor: 'after-hidden', limit: 100 },
       expect.any(AbortSignal),
     );
   });
@@ -147,9 +168,10 @@ describe('ListInboxNotifications', () => {
       visibility,
       names,
       new ScanInboxUnread(source, visibility),
+      { open: () => null, seal: () => null },
     );
     await expect(
-      list.execute({ state: 'archived', cursor: null, limit: 20 }),
+      list.execute({ state: 'archived', cursor: null, limit: 20 }, owner),
     ).rejects.toMatchObject({
       service: 'task-service',
       code: 'upstream.failed',

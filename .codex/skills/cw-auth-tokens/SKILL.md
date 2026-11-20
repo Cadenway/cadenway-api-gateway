@@ -26,8 +26,9 @@ description: "The token types the gateway accepts (session, personal API token),
   Known cost: while identity-service is unavailable, so is the API.
 - CSRF: a request with an unsafe method (`POST`, `PUT`, `PATCH`, `DELETE`) authenticated by the
   session cookie must carry an `Origin` that is exactly one of the allowed origins (the webapp and
-  the website, as for CORS) and `Content-Type: application/json`; a bodiless `DELETE` passes on
-  its `Origin` alone. It is refused before the introspection otherwise.
+  the website, as for CORS) and `Content-Type: application/json`. A bodiless `DELETE` and the
+  explicitly opted-in bodyless Inbox and reminder POST operations may omit the media type.
+  Every CSRF refusal happens before introspection.
   Sessionless routes in `openapi/public/auth.yaml` require the allowed `Origin` and
   `Content-Type: application/json` whether or not a session is present.
 

@@ -115,20 +115,24 @@ function hasBody(request: Request): boolean {
  *   `application/json` all the same;
  * - every other unsafe request must carry `Content-Type: application/json`, as
  *   `openapi/public/organizations.yaml` and `openapi/public/auth.yaml` require (each of them has a
- *   JSON body in the contracts, so `members.yaml` and `api-tokens.yaml` agree).
+ *   JSON body in the contracts, so `members.yaml` and `api-tokens.yaml` agree). An explicitly
+ *   declared bodyless POST also passes on its Origin when it has no body and no media type.
  *
  * A request authenticated by a personal API token carries no ambient credential and never comes
  * here.
  *
  * @param {Request} request - Incoming request.
  * @param {readonly string[]} allowedOrigins - `ALLOWED_ORIGINS` of the configuration.
+ * @param {boolean} allowBodylessPost - Whether this POST's contract omits a request body.
  * @throws {ProblemException} 403 `auth.csrf-rejected` when the request fails the check.
  */
 export function assertCookieRequestSameSite(
   request: Request,
   allowedOrigins: readonly string[],
+  allowBodylessPost = false,
 ): void {
-  if (request.method.toUpperCase() !== 'DELETE') {
+  const method = request.method.toUpperCase();
+  if (method !== 'DELETE' && !(allowBodylessPost && method === 'POST')) {
     assertSameSiteRequest(request, allowedOrigins);
     return;
   }

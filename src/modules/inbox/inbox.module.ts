@@ -1,4 +1,4 @@
-import { ProblemException } from '@cadenway/nest-common';
+import { CONFIG, ProblemException } from '@cadenway/nest-common';
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
 
 import { ClientsModule } from '../../clients/clients.module.js';
@@ -6,9 +6,11 @@ import { NotificationServiceClient } from '../../clients/notification-service.cl
 import { noStore } from '../../presentation/http/middleware/no-store.middleware.js';
 import { OrganizationServiceClient } from '../../clients/organization-service.client.js';
 import { TaskServiceClient } from '../../clients/task-service.client.js';
+import type { AppConfig } from '../../config/app-config.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { RateLimitModule } from '../rate-limit/rate-limit.module.js';
 import { InboxGenerationChanged } from './application/models/inbox/inbox-generation-changed.model.js';
+import type { InboxPageCursor } from './application/ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
 import type { InboxNotificationCommand } from './application/ports/outbound/notification-service/inbox/inbox-notification-command.port.js';
 import type { InboxNotificationSource } from './application/ports/outbound/notification-service/inbox/inbox-notification-source.port.js';
 import type { InboxActorNames } from './application/ports/outbound/organization-service/inbox/inbox-actor-names.port.js';
@@ -18,6 +20,7 @@ import { MarkInboxNotificationsRead } from './application/use-cases/commands/inb
 import { GetInboxUnreadCount } from './application/use-cases/queries/inbox/get-inbox-unread-count/get-inbox-unread-count.use-case.js';
 import { ListInboxNotifications } from './application/use-cases/queries/inbox/list-inbox-notifications/list-inbox-notifications.use-case.js';
 import { ScanInboxUnread } from './application/use-cases/queries/inbox/scan-inbox-unread/scan-inbox-unread.use-case.js';
+import { AesGcmInboxPageCursor } from './infrastructure/adapters/crypto/inbox/aes-gcm-inbox-page-cursor.adapter.js';
 import { inboxNotificationCommand } from './infrastructure/adapters/notification-service/inbox/inbox-notification-command.adapter.js';
 import { inboxNotificationSource } from './infrastructure/adapters/notification-service/inbox/inbox-notification-source.adapter.js';
 import { inboxActorNames } from './infrastructure/adapters/organization-service/inbox/inbox-actor-names.adapter.js';
@@ -28,6 +31,7 @@ const SOURCE = Symbol('INBOX_SOURCE');
 const COMMAND = Symbol('INBOX_COMMAND');
 const VISIBILITY = Symbol('INBOX_VISIBILITY');
 const NAMES = Symbol('INBOX_NAMES');
+const CURSORS = Symbol('INBOX_CURSORS');
 
 /** Converts an internal generation conflict into an application retry signal. */
 async function generationChecked<T>(call: () => Promise<T>): Promise<T> {
@@ -67,6 +71,12 @@ async function generationChecked<T>(call: () => Promise<T>): Promise<T> {
     { provide: VISIBILITY, inject: [TaskServiceClient], useFactory: inboxSubjectVisibility },
     { provide: NAMES, inject: [OrganizationServiceClient], useFactory: inboxActorNames },
     {
+      provide: CURSORS,
+      inject: [CONFIG],
+      useFactory: (config: Pick<AppConfig, 'INTERNAL_TOKEN_PRIVATE_JWK'>): InboxPageCursor =>
+        new AesGcmInboxPageCursor(Buffer.from(config.INTERNAL_TOKEN_PRIVATE_JWK.d, 'base64url')),
+    },
+    {
       provide: ScanInboxUnread,
       inject: [SOURCE, VISIBILITY],
       useFactory: (source: InboxNotificationSource, visibility: InboxSubjectVisibility) =>
@@ -74,13 +84,14 @@ async function generationChecked<T>(call: () => Promise<T>): Promise<T> {
     },
     {
       provide: ListInboxNotifications,
-      inject: [SOURCE, VISIBILITY, NAMES, ScanInboxUnread],
+      inject: [SOURCE, VISIBILITY, NAMES, ScanInboxUnread, CURSORS],
       useFactory: (
         source: InboxNotificationSource,
         visibility: InboxSubjectVisibility,
         names: InboxActorNames,
         unread: ScanInboxUnread,
-      ) => new ListInboxNotifications(source, visibility, names, unread),
+        cursors: InboxPageCursor,
+      ) => new ListInboxNotifications(source, visibility, names, unread, cursors),
     },
     {
       provide: GetInboxUnreadCount,

@@ -100,6 +100,8 @@ export class RemindersController {
     const page = await this.relay(undefined, () =>
       this.listReminders.execute({ organizationId, userId, ...query }, remainingBudgetMs()),
     );
+    delete request.headers['if-none-match'];
+    delete request.headers['if-modified-since'];
     return conformBody('notification-service', 'listReminders', ListRemindersResponse, {
       ...page,
       items: [...page.items],
@@ -165,7 +167,7 @@ export class RemindersController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof GetReminderResponse>> {
     return this.versioned(response, request, GetReminderResponse, 'getReminder', () =>
-      this.access.execute('get', params.reminderId),
+      this.access.execute('get', params.reminderId.toLowerCase()),
     );
   }
 
@@ -187,7 +189,7 @@ export class RemindersController {
       undefined,
       UpdateReminderNoteResponse,
       'updateReminderNote',
-      () => this.access.execute('update', params.reminderId, body, ifMatch),
+      () => this.access.execute('update', params.reminderId.toLowerCase(), body, ifMatch),
     );
   }
 
@@ -205,7 +207,7 @@ export class RemindersController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<void> {
     await this.relay(response, () =>
-      this.access.execute('remove', params.reminderId, undefined, ifMatch),
+      this.access.execute('remove', params.reminderId.toLowerCase(), undefined, ifMatch),
     );
   }
 
@@ -224,7 +226,7 @@ export class RemindersController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof SnoozeReminderResponse>> {
     return this.versioned(response, undefined, SnoozeReminderResponse, 'snoozeReminder', () =>
-      this.access.execute('snooze', params.reminderId, body, ifMatch),
+      this.access.execute('snooze', params.reminderId.toLowerCase(), body, ifMatch),
     );
   }
 
@@ -234,6 +236,7 @@ export class RemindersController {
     operationId: 'completeReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    allowBodylessPost: true,
   })
   public async complete(
     @Param(new ZodValidationPipe(CompleteReminderParams))
@@ -242,7 +245,7 @@ export class RemindersController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof CompleteReminderResponse>> {
     return this.versioned(response, undefined, CompleteReminderResponse, 'completeReminder', () =>
-      this.access.execute('complete', params.reminderId, undefined, ifMatch),
+      this.access.execute('complete', params.reminderId.toLowerCase(), undefined, ifMatch),
     );
   }
 

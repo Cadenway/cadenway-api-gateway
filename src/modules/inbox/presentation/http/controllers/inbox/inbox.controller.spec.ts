@@ -1,14 +1,24 @@
 import 'reflect-metadata';
 
-import { ProblemException } from '@cadenway/nest-common';
-import { Catch, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
+import {
+  OrganizationContextInterceptor,
+  ProblemException,
+  setRequestOrganizationContext,
+} from '@cadenway/nest-common';
+import {
+  Catch,
+  type ArgumentsHost,
+  type ExceptionFilter,
+  type ExecutionContext,
+} from '@nestjs/common';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { attachVerifiedCredential } from '../../../../../../presentation/http/session/request-session.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { InboxNotFound } from '../../../../application/models/inbox/inbox-not-found.model.js';
@@ -35,6 +45,10 @@ describe('InboxController', () => {
   const readAll = vi.fn();
   const change = vi.fn();
   const id = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e11';
+  const owner = {
+    organizationId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e12',
+    userId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e13',
+  };
   const record = {
     id,
     kind: 'mention',
@@ -61,11 +75,24 @@ describe('InboxController', () => {
       ],
     })
       .overrideGuard(CredentialGuard)
-      .useValue({ canActivate: () => true })
+      .useValue({
+        canActivate: (context: ExecutionContext): boolean => {
+          const incoming = context.switchToHttp().getRequest<Request>();
+          setRequestOrganizationContext(incoming, {
+            organizationId: owner.organizationId,
+            actor: { type: 'user', id: owner.userId },
+            role: 'member',
+            scopes: [],
+          });
+          attachVerifiedCredential(incoming, { kind: 'session', id, userId: owner.userId });
+          return true;
+        },
+      })
       .overrideGuard(RateLimitGuard)
       .useValue({ canActivate: () => true })
       .compile();
     app = module.createNestApplication();
+    app.useGlobalInterceptors(new OrganizationContextInterceptor());
     app.useGlobalFilters(new TestProblemFilter());
     await app.init();
     server = app.getHttpServer() as App;
@@ -84,7 +111,7 @@ describe('InboxController', () => {
       .set('If-None-Match', '*');
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ items: [record] });
-    expect(list).toHaveBeenCalledWith({ state: 'unread', limit: 5, cursor: null });
+    expect(list).toHaveBeenCalledWith({ state: 'unread', limit: 5, cursor: null }, owner);
   });
 
   it('returns a version for an exact checked notification mutation', async () => {

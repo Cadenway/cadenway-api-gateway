@@ -94,6 +94,8 @@ describe('RemindersController', () => {
     getTask.mockResolvedValue(record);
     setTask.mockResolvedValue({ reminder: record, created: true });
     update.mockResolvedValue(record);
+    snooze.mockResolvedValue(record);
+    complete.mockResolvedValue(record);
   });
 
   afterAll(async () => app.close());
@@ -119,6 +121,22 @@ describe('RemindersController', () => {
     const response = await request(server).get(`/v1/reminders/${reminderId}`);
     expect(response.status).toBe(404);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { method: 'get', suffix: '', status: 200 },
+    { method: 'patch', suffix: '', status: 200, body: { note: null } },
+    { method: 'delete', suffix: '', status: 204 },
+    { method: 'post', suffix: '/snooze', status: 200, body: { remindAt: record.remindAt } },
+    { method: 'post', suffix: '/complete', status: 200 },
+  ] as const)('canonicalizes an uppercase reminder UUID on $method $suffix', async (test) => {
+    const pending = request(server)[test.method](
+      `/v1/reminders/${reminderId.toUpperCase()}${test.suffix}`,
+    );
+    const response = await ('body' in test ? pending.send(test.body) : pending);
+    expect(response.status).toBe(test.status);
+    expect(candidate).toHaveBeenCalledExactlyOnceWith(reminderId);
+    if (test.status === 200) expect(response.body).toMatchObject({ id: reminderId });
   });
 
   it('creates against the checked task and returns the public location', async () => {

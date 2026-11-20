@@ -8,7 +8,12 @@ import {
   MarkInboxNotificationReadResponse,
   MarkInboxNotificationsReadResponse,
 } from '@cadenway/contracts/validators/public/inbox';
-import { formatEtag, ProblemException, ZodValidationPipe } from '@cadenway/nest-common';
+import {
+  formatEtag,
+  getOrganizationContext,
+  ProblemException,
+  ZodValidationPipe,
+} from '@cadenway/nest-common';
 import {
   Controller,
   Get,
@@ -27,10 +32,12 @@ import type { z } from 'zod';
 import { conformBody } from '../../../../../../problems/upstream-answer.js';
 import { toPublicProblem } from '../../../../../../problems/upstream-problem.js';
 import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
+import { verifiedSessionOf } from '../../../../../../presentation/http/session/request-session.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { InboxNotFound } from '../../../../application/models/inbox/inbox-not-found.model.js';
 import { InboxUnavailable } from '../../../../application/models/inbox/inbox-unavailable.model.js';
+import { InvalidInboxCursor } from '../../../../application/models/inbox/invalid-inbox-cursor.model.js';
 import { ChangeInboxNotification } from '../../../../application/use-cases/commands/inbox/change-inbox-notification/change-inbox-notification.use-case.js';
 import { MarkInboxNotificationsRead } from '../../../../application/use-cases/commands/inbox/mark-inbox-notifications-read/mark-inbox-notifications-read.use-case.js';
 import { GetInboxUnreadCount } from '../../../../application/use-cases/queries/inbox/get-inbox-unread-count/get-inbox-unread-count.use-case.js';
@@ -63,8 +70,19 @@ export class InboxController {
     query: z.output<typeof ListInboxNotificationsQueryParams>,
     @Req() request: Request,
   ): Promise<z.output<typeof ListInboxNotificationsResponse>> {
+    const organizationId = getOrganizationContext()?.organizationId;
+    const session = verifiedSessionOf(request);
+    if (!organizationId || session === undefined) {
+      throw new Error('The inbox list requires a verified organization and session.');
+    }
     const result = await this.relay(() =>
-      this.list.execute({ ...query, cursor: query.cursor ?? null }),
+      this.list.execute(
+        { ...query, cursor: query.cursor ?? null },
+        {
+          organizationId,
+          userId: session.userId,
+        },
+      ),
     );
     delete request.headers['if-none-match'];
     delete request.headers['if-modified-since'];
@@ -104,6 +122,7 @@ export class InboxController {
     operationId: 'markInboxNotificationsRead',
     security: [{ sessionCookie: [] }],
     organization: true,
+    allowBodylessPost: true,
   })
   public async markAll(): Promise<z.output<typeof MarkInboxNotificationsReadResponse>> {
     return conformBody(
@@ -121,6 +140,7 @@ export class InboxController {
     operationId: 'markInboxNotificationRead',
     security: [{ sessionCookie: [] }],
     organization: true,
+    allowBodylessPost: true,
   })
   public async markRead(
     @Param(new ZodValidationPipe(MarkInboxNotificationReadParams))
@@ -149,6 +169,7 @@ export class InboxController {
     operationId: 'archiveInboxNotification',
     security: [{ sessionCookie: [] }],
     organization: true,
+    allowBodylessPost: true,
   })
   public async archive(
     @Param(new ZodValidationPipe(ArchiveInboxNotificationParams))
@@ -177,6 +198,14 @@ export class InboxController {
     } catch (error) {
       if (error instanceof InboxNotFound) {
         throw new ProblemException({ status: 404, code: 'notification.not-found' });
+      }
+      if (error instanceof InvalidInboxCursor) {
+        throw new ProblemException({
+          status: 400,
+          code: 'request.invalid',
+          detail: 'The request does not match its contract.',
+          details: { issues: [{ in: 'query', path: 'cursor', code: 'invalid_cursor' }] },
+        });
       }
       if (error instanceof InboxUnavailable) {
         throw new ProblemException({

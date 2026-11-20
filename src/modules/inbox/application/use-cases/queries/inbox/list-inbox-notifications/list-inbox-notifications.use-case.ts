@@ -6,6 +6,11 @@ import { InboxUnavailable } from '../../../../models/inbox/inbox-unavailable.mod
 import type { InboxVisibilityDecision } from '../../../../models/inbox/inbox-visibility-decision.model.js';
 import type { InboxVisibilityInput } from '../../../../models/inbox/inbox-visibility-input.model.js';
 import { withInboxBudget } from '../../../../models/inbox/inbox-work-budget.model.js';
+import { InvalidInboxCursor } from '../../../../models/inbox/invalid-inbox-cursor.model.js';
+import type {
+  InboxCursorScope,
+  InboxPageCursor,
+} from '../../../../ports/outbound/crypto/inbox/inbox-page-cursor.port.js';
 import type { InboxNotificationSource } from '../../../../ports/outbound/notification-service/inbox/inbox-notification-source.port.js';
 import type { InboxActorNames } from '../../../../ports/outbound/organization-service/inbox/inbox-actor-names.port.js';
 import type { InboxSubjectVisibility } from '../../../../ports/outbound/task-service/inbox/inbox-subject-visibility.port.js';
@@ -71,21 +76,34 @@ export class ListInboxNotifications {
     private readonly visibility: InboxSubjectVisibility,
     private readonly names: InboxActorNames,
     private readonly unread: ScanInboxUnread,
+    private readonly cursors: InboxPageCursor,
   ) {}
   // #endregion
 
   // #region Methods
-  /** Scans the page and badge independently within one request budget. */
-  public execute(query: InboxListQuery, budgetMs?: number): Promise<InboxPage> {
+  /** Opens the owner's continuation before scanning the page and badge within one budget. */
+  public async execute(
+    query: InboxListQuery,
+    owner: Omit<InboxCursorScope, 'state'>,
+    budgetMs?: number,
+  ): Promise<InboxPage> {
+    const scope: InboxCursorScope = { ...owner, state: query.state };
+    const cursor = query.cursor === null ? null : this.cursors.open(query.cursor, scope);
+    if (query.cursor !== null && cursor === null) throw new InvalidInboxCursor();
+
     return withInboxBudget(async (signal) => {
       const [page, unreadCount] = await Promise.all([
-        this.page(query, signal).then(async ({ items, nextCursor }) => ({
+        this.page({ ...query, cursor }, signal).then(async ({ items, nextCursor }) => ({
           items: await this.enrich(items, signal),
           nextCursor,
         })),
         this.unread.retry(signal, async () => (await this.unread.execute(signal)).unreadCount),
       ]);
-      return { ...page, unreadCount };
+      const nextCursor =
+        page.nextCursor === null ? null : this.cursors.seal(page.nextCursor, scope);
+      if (page.nextCursor !== null && nextCursor === null)
+        throw new InboxUnavailable('notification-service');
+      return { items: page.items, nextCursor, unreadCount };
     }, budgetMs);
   }
 
