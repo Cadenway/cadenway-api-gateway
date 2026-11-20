@@ -19,6 +19,8 @@ import type {
   ReceivedInvitationPage,
 } from '@cadenway/contracts/types/internal/organization-service';
 import {
+  LookupMemberNamesInternalBody,
+  LookupMemberNamesInternalResponse,
   AcceptInvitationInternalResponse,
   ChangeMemberRoleInternalResponse,
   CreateOrganizationInternalResponse,
@@ -200,6 +202,30 @@ export class OrganizationServiceClient {
   // #endregion
 
   // #region Methods
+  /** Resolves the names of requested current members within the verified organization. */
+  public async lookupMemberNames(
+    userIds: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<z.output<typeof LookupMemberNamesInternalResponse>> {
+    const operation = 'lookupMemberNamesInternal';
+    const request = LookupMemberNamesInternalBody.safeParse({ userIds });
+    if (!request.success) {
+      throw new Error('The gateway built lookupMemberNamesInternal outside the internal contract.');
+    }
+    return expectBody(
+      operation,
+      await answered(
+        operation,
+        this.routes.lookupMemberNamesInternal(request.data, {
+          signal,
+          idempotent: false,
+        } as InternalRequestInit),
+      ),
+      200,
+      LookupMemberNamesInternalResponse,
+    );
+  }
+
   /**
    * Method createOrganization
    *

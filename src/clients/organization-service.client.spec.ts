@@ -165,6 +165,24 @@ describe('OrganizationServiceClient', () => {
     });
   });
 
+  it('validates the name lookup and signs the caller organization', async () => {
+    answer.mockReturnValue(json(200, { items: [{ userId: CAMILLE.id, name: 'Camille' }] }));
+
+    await expect(asOwner(() => client.lookupMemberNames([CAMILLE.id]))).resolves.toEqual({
+      items: [{ userId: CAMILLE.id, name: 'Camille' }],
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      url: `${BASE_URL}/internal/v1/member-names/lookup`,
+      body: { userIds: [CAMILLE.id] },
+      principal: { actor: { type: 'user', id: CAMILLE.id }, organizationId: ATELIER_NORD_ID },
+    });
+    await expect(asOwner(() => client.lookupMemberNames([]))).rejects.toThrow(
+      'outside the internal contract',
+    );
+    expect(calls).toHaveLength(1);
+  });
+
   it('creates an organization, without retrying a 503', async () => {
     answer.mockReturnValue(json(503, { type: 'about:blank', title: 'x', status: 503, code: 'x' }));
 

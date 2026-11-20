@@ -130,6 +130,7 @@ export function createFakeOrganization(): FakeOrganization {
     getOrganization: vi.fn(unexpected),
     updateOrganization: vi.fn(unexpected),
     listMembers: vi.fn(unexpected),
+    lookupMemberNames: vi.fn(unexpected),
     getMember: vi.fn(unexpected),
     changeMemberRole: vi.fn(unexpected),
     removeMember: vi.fn(unexpected),

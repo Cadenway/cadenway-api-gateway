@@ -6,9 +6,11 @@ import { apiTokenIntrospectorProvider } from './composition/providers/adapters/a
 import { bearerFailureLimitProvider } from './composition/providers/adapters/api-token/bearer-failure-limit.provider.js';
 import { sessionIntrospectorProvider } from './composition/providers/adapters/session/session-introspector.provider.js';
 import { verifyApiTokenProvider } from './composition/providers/use-cases/api-token/verify-api-token.provider.js';
+import { sprintReportCursorProvider } from './composition/providers/use-cases/reporting/sprint-report-cursor.provider.js';
 import { verifySessionProvider } from './composition/providers/use-cases/session/verify-session.provider.js';
 import { VerifyApiToken } from './public/api-token/verify-api-token.js';
 import { CredentialGuard } from './public/credential/credential-guard.js';
+import { SprintReportCursor } from './public/reporting/sprint-report-cursor.js';
 import { CsrfGuard } from './public/session/csrf-guard.js';
 import { VerifySession } from './public/session/verify-session.js';
 
@@ -27,11 +29,12 @@ import { VerifySession } from './public/session/verify-session.js';
     sessionIntrospectorProvider,
     apiTokenIntrospectorProvider,
     bearerFailureLimitProvider,
+    sprintReportCursorProvider,
     verifySessionProvider,
     verifyApiTokenProvider,
     CsrfGuard,
     CredentialGuard,
   ],
-  exports: [CsrfGuard, CredentialGuard, VerifySession, VerifyApiToken],
+  exports: [CsrfGuard, CredentialGuard, VerifySession, VerifyApiToken, SprintReportCursor],
 })
 export class AuthModule {}

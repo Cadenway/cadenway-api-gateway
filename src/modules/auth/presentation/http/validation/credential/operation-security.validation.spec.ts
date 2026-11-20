@@ -160,10 +160,9 @@ function servedRoutes(): readonly ServedRoute[] {
  * Function describedCodes
  *
  * @description
- * Lists the codes a response declares in the list of its description, the backquoted codes
- * before the colon of a list item, never a code named in passing elsewhere: a
- * response may declare a code it gives no example of (`PolicyWriteForbidden` of
- * `organizations.yaml` declares `organization.not-selected` only in its description).
+ * Lists the codes a response declares in its description, including codes from a local
+ * response component named by an explicit "The codes in ..." reference. This covers
+ * codes the description declares without a problem example.
  *
  * @param {PublicSpec} spec - The spec.
  * @param {string} pointer - Pointer of the response, which may be a reference.
@@ -174,16 +173,19 @@ function describedCodes(spec: PublicSpec, pointer: string): readonly string[] {
   if (typeof description !== 'string') {
     return [];
   }
-  return description
-    .split('\n')
-    .filter(
-      (line: string) => line.trimStart().startsWith('- `') || line.trimStart().startsWith('`'),
-    )
-    .flatMap((line: string) =>
-      [...(line.split(':', 1)[0] ?? '').matchAll(/`([a-z-]+(?:\.[a-z-]+)+)`/gu)].map(
-        (match) => match[1] ?? '',
-      ),
-    );
+  const component = /^The codes in `([a-zA-Z0-9_-]+)`/u.exec(description)?.[1];
+  const inherited: unknown =
+    component === undefined
+      ? undefined
+      : resolveNode(spec, `/components/responses/${component}`).node.description;
+  const listedLines = [description, typeof inherited === 'string' ? inherited : '']
+    .flatMap((text) => text.split('\n'))
+    .filter((line) => line.trimStart().startsWith('- `') || line.trimStart().startsWith('`'));
+  return listedLines.flatMap((line: string) =>
+    [...(line.split(':', 1)[0] ?? '').matchAll(/`([a-z-]+(?:\.[a-z-]+)+)`/gu)].map(
+      (match) => match[1] ?? '',
+    ),
+  );
 }
 
 /**
@@ -280,7 +282,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(159);
+    expect(operations).toHaveLength(180);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -430,9 +432,38 @@ describe('the security of every route against the public contracts', () => {
         'createFavorite',
         'getFavorite',
         'deleteFavorite',
+        'listGoals',
+        'createGoal',
+        'getGoal',
+        'updateGoal',
+        'deleteGoal',
+        'createGoalResult',
+        'getGoalResult',
+        'updateGoalResult',
+        'deleteGoalResult',
+        'getTeamDashboard',
+        'getSprintReport',
+        'getListWorkload',
+        'getListTimesheet',
+        'exportListTasks',
+        'getIntakeFormConfiguration',
+        'updateIntakeFormConfiguration',
+        'publishIntakeForm',
+        'disableIntakeForm',
+        'getTaskIntakeContact',
       ].sort(),
     );
   });
+
+  it.each(['getPublicIntakeForm', 'submitPublicIntakeForm'])(
+    '%s accepts anonymous requests without an organization',
+    (operationId) => {
+      const route = served.find(
+        (candidate: ServedRoute) => candidate.security?.operationId === operationId,
+      );
+      expect(route?.security).toEqual({ operationId, security: [], organization: false });
+    },
+  );
 });
 
 describe('reading an operation security', () => {

@@ -117,6 +117,7 @@ describe('gateway start-up', () => {
     expect(response.body).toMatchObject({ status: 404, code: 'http.not-found' });
     expect(response.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/u);
     expect(response.headers['access-control-expose-headers']).toContain('X-Request-Id');
+    expect(response.headers['access-control-expose-headers']).toContain('Content-Disposition');
   });
 
   it('sets the security headers and hides the framework', async () => {

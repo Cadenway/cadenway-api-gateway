@@ -162,9 +162,54 @@ import {
   UpdateTaskInternalBody,
   UpdateTaskInternalResponse,
 } from '@cadenway/contracts/validators/internal/task-service';
-import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
+import type {
+  InternalHttpClient,
+  InternalRequestInit,
+  InternalTokenClaims,
+} from '@cadenway/nest-common';
+import { trace } from '@opentelemetry/api';
+import {
+  ListGoalsInternalQueryParams,
+  ListGoalsInternalResponse,
+  CreateGoalInternalQueryParams,
+  CreateGoalInternalBody,
+  CreateGoalInternalResponse,
+  GetGoalInternalQueryParams,
+  GetGoalInternalResponse,
+  UpdateGoalInternalQueryParams,
+  UpdateGoalInternalBody,
+  UpdateGoalInternalResponse,
+  CreateGoalResultInternalBody,
+  CreateGoalResultInternalResponse,
+  GetGoalResultInternalResponse,
+  UpdateGoalResultInternalBody,
+  UpdateGoalResultInternalResponse,
+  GetSprintReportInternalQueryParams,
+  GetSprintReportInternalResponse,
+  GetListWorkloadInternalQueryParams,
+  GetListWorkloadInternalResponse,
+  GetListTimesheetInternalQueryParams,
+  GetListTimesheetInternalResponse,
+  ExportListTasksInternalParams,
+  ExportListTasksInternalQueryParams,
+  GetTeamDashboardInternalQueryParams,
+  GetTeamDashboardInternalResponse,
+  GetIntakeFormConfigurationInternalResponse,
+  UpdateIntakeFormConfigurationInternalBody,
+  UpdateIntakeFormConfigurationInternalResponse,
+  PublishIntakeFormInternalResponse,
+  GetTaskIntakeContactInternalResponse,
+  GetPublicIntakeFormInternalResponse,
+  SubmitPublicIntakeFormInternalBody,
+  SubmitPublicIntakeFormInternalResponse,
+} from '@cadenway/contracts/validators/internal/task-service';
 import type { z } from 'zod';
 
+import {
+  readTaskCsvExport,
+  TASK_CSV_NDJSON,
+  type TaskCsvExportFrame,
+} from '../infrastructure/http/task-csv-export-stream.js';
 import {
   answered,
   expectBody,
@@ -465,6 +510,19 @@ function sentOnce(init: InternalRequestInit = {}): InternalRequestInit {
   return { ...init, idempotent: false };
 }
 
+/** Signs anonymous intake calls for the gateway itself without an organization. */
+function intakeSystemClaims(): InternalRequestInit {
+  const traceId = trace.getActiveSpan()?.spanContext().traceId;
+  const claims: InternalTokenClaims = {
+    actor: { type: 'system', id: null },
+    organizationId: null,
+    role: null,
+    scopes: [],
+    ...(traceId === undefined ? {} : { traceId }),
+  };
+  return { claims };
+}
+
 /**
  * Class TaskServiceClient
  *
@@ -479,9 +537,10 @@ function sentOnce(init: InternalRequestInit = {}): InternalRequestInit {
  *   what and answers what the actor does not see `404`.
  * - Every query and body is checked against the internal contract before it is sent, and every
  *   success after it is answered; a mismatching answer is `503 upstream.failed`.
- * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
- *   retry after a connection error or a `503` for an idempotent call, and the circuit breaker of
- *   task-service. Retried are every `GET` and a creation with an `Idempotency-Key`, which
+ * - The internal HTTP client gives ordinary calls up to 2 seconds, one retry after a connection
+ *   error or a `503` for an idempotent call, and the circuit breaker of task-service. The CSV
+ *   export is sent once and only its streamed body uses the longer export budget. Retried are
+ *   other `GET` requests and a creation with an `Idempotency-Key`, which
  *   task-service replays. Every other mutation is sent once (`sentOnce`), with or without
  *   `If-Match`: the `PATCH` of a space, a list, a task or a checklist item; the `DELETE` of a space
  *   or a list; the `PUT` and `DELETE` of an assignee and of a grant; the addition and removal of a
@@ -521,7 +580,7 @@ export class TaskServiceClient {
    * @param {InternalHttpClient} http - Internal HTTP client built for task-service.
    * @constructor
    */
-  public constructor(http: InternalHttpClient) {
+  public constructor(private readonly http: InternalHttpClient) {
     this.routes = getTaskServiceInternalRoutes(
       async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
         if (typeof input !== 'string') {
@@ -534,6 +593,369 @@ export class TaskServiceClient {
   // #endregion
 
   // #region Methods
+  /** Lists visible quarterly goals. */
+  public listGoals(query: unknown): Promise<z.output<typeof ListGoalsInternalResponse>> {
+    const operation = 'listGoalsInternal';
+    return call(
+      operation,
+      200,
+      ListGoalsInternalResponse,
+      this.routes.listGoalsInternal(toRequest(operation, ListGoalsInternalQueryParams, query)),
+    );
+  }
+
+  /** Creates one goal and checks its public Location and ETag. */
+  public async createGoal(
+    body: unknown,
+    query: unknown,
+    key?: string,
+  ): Promise<VersionedBody<typeof CreateGoalInternalResponse>> {
+    const operation = 'createGoalInternal';
+    const params = toRequest(operation, CreateGoalInternalQueryParams, query);
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createGoalInternal(
+        toRequest(operation, CreateGoalInternalBody, body),
+        params,
+        sentOnce(withHeaders('Idempotency-Key', key)),
+      ),
+    );
+    const goal = expectBody(TASK_SERVICE, operation, answer, 201, CreateGoalInternalResponse);
+    const version = versionOf(operation, answer);
+    if (
+      version !== goal.version ||
+      answer.headers.get('Location') !== `/v1/goals/${goal.id}?today=${params.today}`
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent goal Location or ETag');
+    }
+    return { body: goal, version };
+  }
+
+  /** Reads a goal and its current aggregate version. */
+  public getGoal(
+    goalId: string,
+    query: unknown,
+  ): Promise<VersionedBody<typeof GetGoalInternalResponse>> {
+    const operation = 'getGoalInternal';
+    return versionedBody(
+      operation,
+      GetGoalInternalResponse,
+      this.routes.getGoalInternal(goalId, toRequest(operation, GetGoalInternalQueryParams, query)),
+      (body) => body.version,
+    );
+  }
+
+  /** Updates a goal under the provided condition. */
+  public updateGoal(
+    goalId: string,
+    body: unknown,
+    query: unknown,
+    ifMatch?: string,
+  ): Promise<VersionedBody<typeof UpdateGoalInternalResponse>> {
+    const operation = 'updateGoalInternal';
+    return versionedBody(
+      operation,
+      UpdateGoalInternalResponse,
+      this.routes.updateGoalInternal(
+        goalId,
+        toRequest(operation, UpdateGoalInternalBody, body),
+        toRequest(operation, UpdateGoalInternalQueryParams, query),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (value) => value.version,
+    );
+  }
+
+  /** Deletes a goal once. */
+  public deleteGoal(goalId: string, ifMatch?: string): Promise<void> {
+    return acknowledged(
+      'deleteGoalInternal',
+      204,
+      this.routes.deleteGoalInternal(goalId, sentOnce(withHeaders('If-Match', ifMatch))),
+    );
+  }
+
+  /** Adds a key result and returns the parent goal version. */
+  public async createGoalResult(
+    goalId: string,
+    body: unknown,
+    ifMatch?: string,
+    key?: string,
+  ): Promise<VersionedBody<typeof CreateGoalResultInternalResponse>> {
+    const operation = 'createGoalResultInternal';
+    const headers: Record<string, string> = {};
+    if (ifMatch !== undefined) headers['If-Match'] = ifMatch;
+    if (key !== undefined) headers['Idempotency-Key'] = key;
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.createGoalResultInternal(
+        goalId,
+        toRequest(operation, CreateGoalResultInternalBody, body),
+        sentOnce({ headers }),
+      ),
+    );
+    const result = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      CreateGoalResultInternalResponse,
+    );
+    const version = versionOf(operation, answer);
+    if (
+      answer.headers.get('Location')?.toLowerCase() !==
+      `/v1/goals/${goalId}/results/${result.id}`.toLowerCase()
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent goal result Location');
+    }
+    return { body: result, version };
+  }
+
+  /** Reads a result and its parent goal version. */
+  public async getGoalResult(
+    goalId: string,
+    resultId: string,
+  ): Promise<VersionedBody<typeof GetGoalResultInternalResponse>> {
+    const operation = 'getGoalResultInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.getGoalResultInternal(goalId, resultId),
+    );
+    return {
+      body: expectBody(TASK_SERVICE, operation, answer, 200, GetGoalResultInternalResponse),
+      version: versionOf(operation, answer),
+    };
+  }
+
+  /** Updates one result under its goal version. */
+  public async updateGoalResult(
+    goalId: string,
+    resultId: string,
+    body: unknown,
+    ifMatch?: string,
+  ): Promise<VersionedBody<typeof UpdateGoalResultInternalResponse>> {
+    const operation = 'updateGoalResultInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.updateGoalResultInternal(
+        goalId,
+        resultId,
+        toRequest(operation, UpdateGoalResultInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+    return {
+      body: expectBody(TASK_SERVICE, operation, answer, 200, UpdateGoalResultInternalResponse),
+      version: versionOf(operation, answer),
+    };
+  }
+
+  /** Deletes one result under its goal version. */
+  public deleteGoalResult(goalId: string, resultId: string, ifMatch?: string): Promise<void> {
+    return acknowledged(
+      'deleteGoalResultInternal',
+      204,
+      this.routes.deleteGoalResultInternal(
+        goalId,
+        resultId,
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+    );
+  }
+
+  /** Reads a sprint report page. */
+  public getSprintReport(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof GetSprintReportInternalResponse>> {
+    const operation = 'getSprintReportInternal';
+    return call(
+      operation,
+      200,
+      GetSprintReportInternalResponse,
+      this.routes.getSprintReportInternal(
+        listId,
+        toRequest(operation, GetSprintReportInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads a list's workload. */
+  public getListWorkload(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof GetListWorkloadInternalResponse>> {
+    const operation = 'getListWorkloadInternal';
+    return call(
+      operation,
+      200,
+      GetListWorkloadInternalResponse,
+      this.routes.getListWorkloadInternal(
+        listId,
+        toRequest(operation, GetListWorkloadInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads a weekly list timesheet. */
+  public getListTimesheet(
+    listId: string,
+    query: unknown,
+  ): Promise<z.output<typeof GetListTimesheetInternalResponse>> {
+    const operation = 'getListTimesheetInternal';
+    return call(
+      operation,
+      200,
+      GetListTimesheetInternalResponse,
+      this.routes.getListTimesheetInternal(
+        listId,
+        toRequest(operation, GetListTimesheetInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Opens the authorized NDJSON projection with a bounded body deadline and no retry. */
+  public async exportListTasks(
+    listId: string,
+    query: unknown,
+    signal?: AbortSignal,
+  ): Promise<AsyncIterable<TaskCsvExportFrame>> {
+    const operation = 'exportListTasksInternal';
+    const params = toRequest(operation, ExportListTasksInternalParams, { listId });
+    const url = this.routes.getExportListTasksInternalUrl(
+      params.listId,
+      toRequest(operation, ExportListTasksInternalQueryParams, query),
+    );
+    const init: InternalRequestInit = {
+      method: 'GET',
+      headers: { Accept: TASK_CSV_NDJSON },
+      idempotent: false,
+      streamTimeoutMs: 120_000,
+      signal,
+    };
+    return readTaskCsvExport(await this.http.fetch(url, init), signal);
+  }
+
+  /** Reads the visible team dashboard. */
+  public getTeamDashboard(
+    query: unknown,
+  ): Promise<z.output<typeof GetTeamDashboardInternalResponse>> {
+    const operation = 'getTeamDashboardInternal';
+    return call(
+      operation,
+      200,
+      GetTeamDashboardInternalResponse,
+      this.routes.getTeamDashboardInternal(
+        toRequest(operation, GetTeamDashboardInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads the editable intake settings and their version. */
+  public getIntakeFormConfiguration(
+    listId: string,
+  ): Promise<VersionedBody<typeof GetIntakeFormConfigurationInternalResponse>> {
+    const operation = 'getIntakeFormConfigurationInternal';
+    return versionedBody(
+      operation,
+      GetIntakeFormConfigurationInternalResponse,
+      this.routes.getIntakeFormConfigurationInternal(listId),
+      (body) => body.version,
+    );
+  }
+
+  /** Updates intake settings under the supplied version. */
+  public updateIntakeFormConfiguration(
+    listId: string,
+    body: unknown,
+    ifMatch?: string,
+  ): Promise<VersionedBody<typeof UpdateIntakeFormConfigurationInternalResponse>> {
+    const operation = 'updateIntakeFormConfigurationInternal';
+    return versionedBody(
+      operation,
+      UpdateIntakeFormConfigurationInternalResponse,
+      this.routes.updateIntakeFormConfigurationInternal(
+        listId,
+        toRequest(operation, UpdateIntakeFormConfigurationInternalBody, body),
+        sentOnce(withHeaders('If-Match', ifMatch)),
+      ),
+      (value) => value.version,
+    );
+  }
+
+  /** Publishes the intake form. */
+  public publishIntakeForm(
+    listId: string,
+    ifMatch?: string,
+  ): Promise<VersionedBody<typeof PublishIntakeFormInternalResponse>> {
+    const operation = 'publishIntakeFormInternal';
+    return versionedBody(
+      operation,
+      PublishIntakeFormInternalResponse,
+      this.routes.publishIntakeFormInternal(listId, sentOnce(withHeaders('If-Match', ifMatch))),
+      (body) => body.version,
+    );
+  }
+
+  /** Revokes the active intake publication. */
+  public async disableIntakeForm(listId: string, ifMatch?: string): Promise<number> {
+    const operation = 'disableIntakeFormInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.disableIntakeFormInternal(listId, sentOnce(withHeaders('If-Match', ifMatch))),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    return versionOf(operation, answer);
+  }
+
+  /** Reads the applicant contact after task-service authorization. */
+  public getTaskIntakeContact(
+    taskKey: string,
+  ): Promise<z.output<typeof GetTaskIntakeContactInternalResponse>> {
+    return call(
+      'getTaskIntakeContactInternal',
+      200,
+      GetTaskIntakeContactInternalResponse,
+      this.routes.getTaskIntakeContactInternal(taskKey),
+    );
+  }
+
+  /** Reads a public intake form as the unscoped gateway system actor. */
+  public getPublicIntakeForm(
+    publicKey: string,
+  ): Promise<z.output<typeof GetPublicIntakeFormInternalResponse>> {
+    return call(
+      'getPublicIntakeFormInternal',
+      200,
+      GetPublicIntakeFormInternalResponse,
+      this.routes.getPublicIntakeFormInternal(publicKey, intakeSystemClaims()),
+    );
+  }
+
+  /** Submits to a public intake form once with the supplied replay key. */
+  public submitPublicIntakeForm(
+    publicKey: string,
+    body: unknown,
+    key?: string,
+  ): Promise<z.output<typeof SubmitPublicIntakeFormInternalResponse>> {
+    const operation = 'submitPublicIntakeFormInternal';
+    return call(
+      operation,
+      200,
+      SubmitPublicIntakeFormInternalResponse,
+      this.routes.submitPublicIntakeFormInternal(
+        publicKey,
+        toRequest(operation, SubmitPublicIntakeFormInternalBody, body),
+        sentOnce({ ...intakeSystemClaims(), ...withHeaders('Idempotency-Key', key) }),
+      ),
+    );
+  }
+
   /**
    * Method listSpaces
    *

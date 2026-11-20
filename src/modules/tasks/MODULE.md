@@ -83,4 +83,23 @@ returning its public path. The producer owns all work log authorization and dura
 
 Comments and participants, watchers and dependencies are served by their respective capability modules.
 
+### Goals, reporting and intake
+
+- The nine operations in `openapi/public/goals.yaml` relay goals and key results to task-service.
+  They preserve declared scopes, conditional requests and idempotency and rewrite creation locations
+  to public paths after validating them.
+- The five reporting and export operations in `openapi/public/lists.yaml` and
+  `openapi/public/reports.yaml` relay the caller's report options. The gateway seals the sprint
+  cursor for the actor, organization, list, date and time zone. Task-service selects and authorizes
+  CSV rows in a bounded internal stream. The gateway resolves assignee names in bounded
+  Organization requests, escapes them and writes the CSV to a private temporary file. For people
+  sorting it stores names and row offsets in memory and uses French ordering. It sends the
+  download headers only after the internal stream is complete and the CSV is ready.
+  The gateway uses one export slot per process and up to 1 GiB of writable disk for that slot.
+  Preparation has a 120-second budget. Download closes after 30 seconds without progress.
+- The five authenticated intake operations in `openapi/public/intake.yaml` relay the verified
+  organization and actor. The two anonymous routes send a system token without an organization
+  and rate-limit each address to 30 form reads and 10 submissions per minute independently.
+  Task-service owns publication, submission, private contact and idempotency decisions.
+
 `POST /v1/tasks/{taskKey}/duplicate` relays a duplication once with `tasks:write`, source `If-Match` and `Idempotency-Key`; it returns the new task location and version.

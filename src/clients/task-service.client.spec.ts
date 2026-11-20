@@ -505,7 +505,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
   function answer(
     method: 'get' | 'post' | 'put' | 'patch' | 'delete',
     path: string,
-    reply: () => Response,
+    reply: (request: Request) => Response,
   ): void {
     server.use(
       http[method](`${BASE_URL}${path}`, async ({ request }) => {
@@ -521,7 +521,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
             (request.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
           ),
         });
-        return reply();
+        return reply(request);
       }),
     );
   }
@@ -597,6 +597,105 @@ describe('TaskServiceClient against task-service over HTTP', () => {
       actor: { type: 'user', id: CAMILLE.id },
       organizationId: ATELIER_NORD_ID,
     });
+  });
+
+  it('opens an NDJSON export through the generated route with the verified user and organization', async () => {
+    const frames = [
+      { kind: 'metadata', filename: 'sprint.csv', header: '"Identifiant"' },
+      { kind: 'complete', rowCount: 0 },
+    ];
+    answer('get', '/internal/v1/lists/:listId/tasks/export', (request) => {
+      expect(request.headers.get('Accept')).toBe('application/x-ndjson');
+      return new HttpResponse(`${frames.map((frame) => JSON.stringify(frame)).join('\n')}\n`, {
+        headers: { 'Content-Type': 'application/x-ndjson' },
+      });
+    });
+
+    const stream = await asCamille(() =>
+      client.exportListTasks(LIST_ID, { sheetSortColumn: 'people' }),
+    );
+
+    const result: unknown[] = [];
+    for await (const frame of stream) result.push(frame);
+
+    expect(result).toEqual(frames);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('sheetSortColumn=people');
+    expect(calls[0]?.principal).toMatchObject({
+      issuer: GATEWAY_ISSUER,
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('does not retry an unavailable export', async () => {
+    answer('get', '/internal/v1/lists/:listId/tasks/export', () =>
+      json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+
+    await expect(asCamille(() => client.exportListTasks(LIST_ID, {}))).rejects.toBeInstanceOf(
+      ProblemException,
+    );
+    expect(calls).toHaveLength(1);
+  });
+
+  it('retains a typed row-limit refusal before handing off an export body', async () => {
+    answer('get', '/internal/v1/lists/:listId/tasks/export', () =>
+      json(
+        {
+          type: 'about:blank',
+          title: 'Export too large',
+          status: 422,
+          code: 'list.export-row-limit-reached',
+        },
+        422,
+        { 'Content-Type': 'application/problem+json' },
+      ),
+    );
+
+    await expect(asCamille(() => client.exportListTasks(LIST_ID, {}))).rejects.toMatchObject({
+      problem: { status: 422, code: 'list.export-row-limit-reached' },
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('uses an unscoped system token for public intake submissions and forwards the replay key', async () => {
+    const key = 'A'.repeat(43);
+    answer('post', '/internal/v1/intake-forms/:publicKey/submissions', () =>
+      json({ receipt: 'B'.repeat(43) }),
+    );
+
+    await client.submitPublicIntakeForm(key, { title: 'Aide' }, 'request-1');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.idempotencyKey).toBe('request-1');
+    expect(calls[0]?.principal).toMatchObject({
+      actor: { type: 'system', id: null },
+      organizationId: null,
+    });
+  });
+
+  it('does not retry a public intake submission even when it has a replay key', async () => {
+    const key = 'A'.repeat(43);
+    answer('post', '/internal/v1/intake-forms/:publicKey/submissions', () =>
+      json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503),
+    );
+
+    await expect(
+      client.submitPublicIntakeForm(key, { title: 'Aide' }, 'request-1'),
+    ).rejects.toBeInstanceOf(ProblemException);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('returns the intake ETag on a no-content publication revocation', async () => {
+    answer(
+      'delete',
+      '/internal/v1/lists/:listId/intake-form/publication',
+      () => new HttpResponse(null, { status: 204, headers: { ETag: '"3"' } }),
+    );
+
+    await expect(asCamille(() => client.disableIntakeForm(LIST_ID, '"2"'))).resolves.toBe(3);
+    expect(calls[0]?.ifMatch).toBe('"2"');
   });
 
   it('sends the array filters comma-separated and every other parameter as declared', async () => {

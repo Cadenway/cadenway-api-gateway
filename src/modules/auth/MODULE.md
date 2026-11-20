@@ -7,13 +7,14 @@ Identity client exported by the shared clients module.
 
 ## Public entry points
 
-| Entry point                        | Consumers                                                                                                                                                                                                                  |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| auth.module                        | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
-| public/session/csrf-guard          | auth-routes                                                                                                                                                                                                                |
-| public/credential/credential-guard | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
-| public/session/verify-session      | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
-| public/api-token/verify-api-token  | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| Entry point                           | Consumers                                                                                                                                                                                                                  |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| auth.module                           | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| public/session/csrf-guard             | auth-routes                                                                                                                                                                                                                |
+| public/credential/credential-guard    | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| public/session/verify-session         | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| public/api-token/verify-api-token     | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites |
+| public/reporting/sprint-report-cursor | tasks                                                                                                                                                                                                                      |
 
 `CredentialGuard` is published for the route modules; the `VerifySession` and `VerifyApiToken`
 providers are exported because a module that applies the guard instantiates it in its own
@@ -22,6 +23,10 @@ injector. Route handlers declare the security of their public operation with
 
 ## Decisions
 
+- A Sprint report cursor given to a caller is a bounded envelope signed by the gateway and
+  bound to the verified organization and account, list, date and time zone. The signing
+  input is separate from JWT signing input. A signing-key rotation invalidates earlier
+  envelopes. Task still validates its inner cursor and checks current access on every page.
 - The security of each operation is copied from `openapi/public/` onto its handler and checked
   against the shipped specs by `operation-security.validation.spec.ts`: a route the contract does
   not declare, or a security that differs from it, fails the unit tests.

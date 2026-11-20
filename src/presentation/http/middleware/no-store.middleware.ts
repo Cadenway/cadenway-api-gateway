@@ -4,10 +4,8 @@ import type { NextFunction, Request, Response } from 'express';
  * Function noStore
  *
  * @description
- * Sets `Cache-Control: no-store` before the route runs, so that every answer of a route about
- * the session, its errors included, stays out of the browser and proxy caches: the routes that
- * sign in and `GET /v1/me` must carry it (`openapi/public/auth.yaml`), and the other routes of
- * the authentication answer about an address or a code.
+ * Sets `Cache-Control: no-store` for routes that handle sensitive data, including errors.
+ * Authentication and public intake use it to keep responses out of browser and proxy caches.
  *
  * @param {Request} _request - Incoming request.
  * @param {Response} response - Response of the request.
