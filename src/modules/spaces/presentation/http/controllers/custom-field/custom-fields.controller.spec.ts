@@ -134,7 +134,7 @@ describe('CustomFieldsController', () => {
     registry.listSpace.mockRejectedValueOnce(
       new ProblemException({ status: 404, code: 'custom-field.not-found' }),
     );
-    await expect(controller.list({ spaceId }, {})).rejects.toMatchObject({
+    await expect(controller.list({ spaceId }, { limit: 20 })).rejects.toMatchObject({
       problem: { status: 503, code: 'upstream.failed' },
     });
   });
