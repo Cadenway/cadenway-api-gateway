@@ -55,9 +55,14 @@ import { ListSpaceCustomFields } from '../../../../application/use-cases/queries
 import { GetSpaceCustomField } from '../../../../application/use-cases/queries/custom-field/get-space-custom-field/get-space-custom-field.use-case.js';
 import { ListListCustomFields } from '../../../../application/use-cases/queries/custom-field/list-list-custom-fields/list-list-custom-fields.use-case.js';
 
-/** Refusals common to active definition reads. */
-const READ: AcceptedProblems = {
+/** Refusals common to the definition collection and its items. */
+const LIST_SPACE: AcceptedProblems = {
   400: ['request.invalid'],
+  404: ['space.not-found', 'organization.not-found'],
+};
+/** Refusals for a single active definition. */
+const READ: AcceptedProblems = {
+  ...LIST_SPACE,
   404: ['space.not-found', 'organization.not-found', 'custom-field.not-found'],
 };
 /** Refusals common to manager writes. */
@@ -114,7 +119,7 @@ export class CustomFieldsController {
       'task-service',
       'listSpaceCustomFields',
       ListSpaceCustomFieldsResponse,
-      await relayProblems(READ, () => this.listSpace.execute(params.spaceId, query)),
+      await relayProblems(LIST_SPACE, () => this.listSpace.execute(params.spaceId, query)),
     );
   }
 

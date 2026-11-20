@@ -54,10 +54,15 @@ const REQUEST: AcceptedProblems = {
   412: ['request.version-mismatch'],
   422: ['approval.reviewer-invalid'],
 };
-const VOTE: AcceptedProblems = {
-  ...REQUEST,
+const WITHDRAW: AcceptedProblems = {
+  ...READ,
   403: ['access.role-insufficient', 'approval.reviewer-required'],
   404: ['task.not-found', 'task.trashed', 'organization.not-found', 'approval.round-not-found'],
+  409: ['task.archived', 'approval.milestone-unsupported'],
+  412: ['request.version-mismatch'],
+};
+const VOTE: AcceptedProblems = {
+  ...WITHDRAW,
   409: [
     'task.archived',
     'approval.milestone-unsupported',
@@ -65,10 +70,6 @@ const VOTE: AcceptedProblems = {
     'recurrence.already-spawned',
   ],
   422: ['task.status-hidden', 'task.subtask-limit-reached', 'recurrence.date-out-of-range'],
-};
-const WITHDRAW: AcceptedProblems = {
-  ...VOTE,
-  409: ['task.archived', 'approval.milestone-unsupported'],
 };
 
 /** Public approval operations on the caller's visible task. */

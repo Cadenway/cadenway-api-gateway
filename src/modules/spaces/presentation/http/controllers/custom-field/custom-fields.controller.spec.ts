@@ -128,6 +128,16 @@ describe('CustomFieldsController', () => {
       problem: { status: 412, code: 'request.version-mismatch' },
     });
   });
+
+  it('masks a field-specific refusal returned for a collection', async () => {
+    const { controller, registry } = setup();
+    registry.listSpace.mockRejectedValueOnce(
+      new ProblemException({ status: 404, code: 'custom-field.not-found' }),
+    );
+    await expect(controller.list({ spaceId }, {})).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
 });
 
 const routes: readonly TaskRoute[] = [

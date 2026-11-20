@@ -1,3 +1,4 @@
+import { ProblemException } from '@cadenway/nest-common';
 import type { Response } from 'express';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -93,6 +94,18 @@ describe('TaskApprovalController', () => {
     await expect(controller.get({ taskKey }, response)).rejects.toMatchObject({
       problem: { status: 503, code: 'upstream.failed' },
     });
+  });
+
+  it('masks vote-only refusals returned during withdrawal', async () => {
+    const { controller, registry, response } = setup();
+    registry.withdrawTaskApprovalVote.mockRejectedValueOnce(
+      new ProblemException({ status: 422, code: 'task.status-hidden' }),
+    );
+    await expect(controller.withdraw({ taskKey, roundId }, '"12"', response)).rejects.toMatchObject(
+      {
+        problem: { status: 503, code: 'upstream.failed' },
+      },
+    );
   });
 });
 
