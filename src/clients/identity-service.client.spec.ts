@@ -82,6 +82,9 @@ interface RecordedCall {
    * @readonly
    */
   readonly ifMatch: string | null;
+
+  /** Idempotency key supplied for a reservation. */
+  readonly idempotencyKey: string | null;
   // #endregion
 }
 
@@ -167,6 +170,7 @@ describe('IdentityServiceClient', () => {
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
         principal: await verifier.verify(authorization.replace(/^Bearer /u, '')),
         ifMatch: headers.get('If-Match'),
+        idempotencyKey: headers.get('Idempotency-Key'),
       });
       return answer();
     };
@@ -178,6 +182,142 @@ describe('IdentityServiceClient', () => {
         fetch: fetchImplementation,
       }),
     );
+  });
+
+  describe('avatar ownership', () => {
+    const uploadId = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
+    const reservation = { uploadId, expiresAt: '2026-11-20T20:00:00.000Z' };
+    const avatarPath = `/internal/v1/users/${CAMILLE.id}/avatar`;
+    const caller: OrganizationContext = {
+      organizationId: null,
+      actor: { type: 'user', id: CAMILLE.id },
+      role: null,
+      scopes: [],
+    };
+
+    it('binds a replayable reservation to the verified account outside an organization', async () => {
+      const upload = { contentType: 'image/webp', sizeBytes: 43_024 } as const;
+      const response = json(201, reservation);
+      response.headers.set('Location', `${avatarPath}/uploads/${uploadId}`);
+      answer.mockReturnValueOnce(response);
+
+      await expect(
+        runWithOrganizationContext(caller, () =>
+          client.reserveAvatarUpload(CAMILLE.id, upload, 'avatar-replay'),
+        ),
+      ).resolves.toStrictEqual(reservation);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: `http://identity-service.test:3010${avatarPath}/uploads`,
+        body: upload,
+        idempotencyKey: 'avatar-replay',
+        principal: { actor: caller.actor, organizationId: null },
+      });
+    });
+
+    it('rejects a reservation with an unrelated Location', async () => {
+      const response = json(201, reservation);
+      response.headers.set('Location', `${avatarPath}/uploads`);
+      answer.mockReturnValueOnce(response);
+
+      await expect(
+        runWithOrganizationContext(caller, () =>
+          client.reserveAvatarUpload(
+            CAMILLE.id,
+            { contentType: 'image/png', sizeBytes: 500 },
+            undefined,
+          ),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+      expect(calls[0]?.idempotencyKey).toBeNull();
+    });
+
+    it('relays the unsupported declaration so Identity returns its typed refusal', async () => {
+      const declaration = { contentType: 'image/tiff', sizeBytes: 500 };
+      answer.mockReturnValueOnce(
+        json(422, {
+          title: 'Unsupported avatar source',
+          status: 422,
+          code: 'media.unsupported-type',
+        }),
+      );
+
+      await expect(
+        runWithOrganizationContext(caller, () =>
+          client.reserveAvatarUpload(CAMILLE.id, declaration, undefined),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 422, code: 'media.unsupported-type' } });
+      expect(calls[0]?.body).toStrictEqual(declaration);
+    });
+
+    it('accepts the same reservation id in uppercase and rejects an unrelated state', async () => {
+      answer
+        .mockReturnValueOnce(json(200, { ...reservation, state: 'committed' }))
+        .mockReturnValueOnce(json(200, { ...reservation, state: 'pending' }));
+
+      await expect(
+        runWithOrganizationContext(caller, () =>
+          client.getAvatarUploadState(CAMILLE.id, uploadId.toUpperCase()),
+        ),
+      ).resolves.toStrictEqual({ ...reservation, state: 'committed' });
+      await expect(
+        runWithOrganizationContext(caller, () =>
+          client.getAvatarUploadState(CAMILLE.id, '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02'),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    });
+
+    it('relays a strong commit ETag and rejects a weak deletion ETag', async () => {
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 204, headers: { ETag: '"12"' } }))
+        .mockReturnValueOnce(new Response(null, { status: 204, headers: { ETag: 'W/"13"' } }));
+
+      await expect(
+        runWithOrganizationContext(caller, () => client.setAvatar(CAMILLE.id, uploadId, '"11"')),
+      ).resolves.toStrictEqual({ etag: '"12"' });
+      await expect(
+        runWithOrganizationContext(caller, () => client.deleteAvatar(CAMILLE.id, '"12"')),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+      expect(calls).toMatchObject([
+        {
+          method: 'PUT',
+          url: `http://identity-service.test:3010${avatarPath}`,
+          body: { uploadId },
+          ifMatch: '"11"',
+        },
+        {
+          method: 'DELETE',
+          url: `http://identity-service.test:3010${avatarPath}`,
+          body: undefined,
+          ifMatch: '"12"',
+        },
+      ]);
+    });
+
+    it('keeps the verified organization on a member avatar read', async () => {
+      const memberUserId = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02';
+      const inOrganization: OrganizationContext = {
+        ...caller,
+        organizationId: ATELIER_NORD_ID,
+        role: 'member',
+        scopes: ['members:read'],
+      };
+      answer.mockReturnValueOnce(json(200, { assetId: uploadId }));
+
+      await expect(
+        runWithOrganizationContext(inOrganization, () => client.getAvatarReference(memberUserId)),
+      ).resolves.toStrictEqual({ assetId: uploadId });
+      expect(calls[0]).toMatchObject({
+        method: 'GET',
+        url: `http://identity-service.test:3010/internal/v1/users/${memberUserId}/avatar-reference`,
+        principal: {
+          actor: caller.actor,
+          organizationId: ATELIER_NORD_ID,
+          scopes: ['members:read'],
+        },
+      });
+    });
   });
 
   describe('introspect', () => {

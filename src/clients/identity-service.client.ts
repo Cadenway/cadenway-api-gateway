@@ -14,6 +14,7 @@ import type {
   CodeRequest,
   CodeSent,
   CodeVerification,
+  CurrentAvatarReference,
   DeletionRequest,
   DeletionScheduled,
   EmailChangeCodeSent,
@@ -31,6 +32,8 @@ import type {
   PasswordResetToken,
   PasswordSignIn,
   ProfilePatch,
+  ProfileMediaReservation,
+  ProfileMediaReservationState,
   ReauthenticationRequest,
   RecentAuthentication,
   RealtimeTicket,
@@ -48,6 +51,7 @@ import type {
   SignInMethodsRequest,
   SignUpRequest,
   SignUpVerification,
+  StartAvatarUpload,
   TwoStepChange,
   TwoStepVerification,
   User,
@@ -64,6 +68,8 @@ import {
   CreateApiTokenInternalResponse,
   DiscoverSignInMethodsInternalResponse,
   GetAuthenticationPolicyInternalResponse,
+  GetAvatarReferenceInternalResponse,
+  GetAvatarUploadStateInternalResponse,
   GetSignInChallengeSecurityKeyOptionsInternalResponse,
   GetTwoStepVerificationInternalResponse,
   GetUserResponse,
@@ -80,6 +86,7 @@ import {
   RequestPasswordResetInternalResponse,
   RequestSignInCodeInternalResponse,
   ResendSignUpCodeInternalResponse,
+  ReserveAvatarUploadInternalResponse,
   RevokeOtherSessionsInternalResponse,
   ScheduleAccountDeletionInternalResponse,
   SignInWithCodeInternalResponse,
@@ -299,6 +306,19 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
   return ifMatch === undefined ? {} : { headers: { 'If-Match': ifMatch } };
 }
 
+/** Checks the version header of a successful avatar mutation. */
+function avatarEtag(
+  operation: string,
+  response: GeneratedResponse & { readonly headers: Headers },
+): { etag: string } {
+  expectStatus(operation, response, 204);
+  const etag = response.headers.get('ETag');
+  if (etag === null || !/^"[1-9][0-9]*"$/u.test(etag)) {
+    throw outsideContract(IDENTITY_SERVICE, operation, 'no strong avatar ETag');
+  }
+  return { etag };
+}
+
 /**
  * Function signInOf
  *
@@ -345,8 +365,8 @@ function signInOf(
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call (both introspections are
  *   declared idempotent by their contract, as `GET`, `PUT` and `DELETE` are, but the password
- *   change; the flows and the other `POST` and `PATCH` calls are not retried), and the circuit
- *   breaker of identity-service. It throws its problems: a relayed client error, or
+ *   change and avatar mutations; the flows and the other `POST` and `PATCH` calls are not retried),
+ *   and the circuit breaker of identity-service. It throws its problems: a relayed client error, or
  *   `503 upstream.*`.
  * - Passwords, reset tokens, codes, backup codes, challenge and trusted device tokens and WebAuthn
  *   answers travel in the bodies only, never in a path, a query or a log line; the TOTP secret
@@ -767,6 +787,85 @@ export class IdentityServiceClient {
       200,
       GetUserResponse,
     );
+  }
+
+  /** Reserves an avatar for the verified account and relays the optional replay key. */
+  public async reserveAvatarUpload(
+    userId: string,
+    body: { readonly contentType: string; readonly sizeBytes: number },
+    idempotencyKey: string | undefined,
+  ): Promise<ProfileMediaReservation> {
+    const operation = 'reserveAvatarUploadInternal';
+    const options: InternalRequestInit = {
+      ...NOT_RETRIED,
+      ...(idempotencyKey === undefined ? {} : { headers: { 'Idempotency-Key': idempotencyKey } }),
+    };
+    // The generated MIME type lists accepted values. The owner checks live authorization and
+    // reservation replay before applying that policy, including the contracted 422 refusals.
+    const declaration: StartAvatarUpload = {
+      contentType: body.contentType as StartAvatarUpload['contentType'],
+      sizeBytes: body.sizeBytes,
+    };
+    const response = await answered(
+      operation,
+      this.routes.reserveAvatarUploadInternal(userId, declaration, options),
+    );
+    const reservation = expectBody(operation, response, 201, ReserveAvatarUploadInternalResponse);
+    const location = this.routes.getGetAvatarUploadStateInternalUrl(userId, reservation.uploadId);
+    if (response.headers.get('Location')?.toLowerCase() !== location.toLowerCase()) {
+      throw outsideContract(IDENTITY_SERVICE, operation, 'an inconsistent reservation Location');
+    }
+    return reservation;
+  }
+
+  /** Reads the state of this verified account's reservation before Storage preparation. */
+  public async getAvatarUploadState(
+    userId: string,
+    uploadId: string,
+  ): Promise<ProfileMediaReservationState> {
+    const operation = 'getAvatarUploadStateInternal';
+    const response = await answered(
+      operation,
+      this.routes.getAvatarUploadStateInternal(userId, uploadId),
+    );
+    const reservation = expectBody(operation, response, 200, GetAvatarUploadStateInternalResponse);
+    if (reservation.uploadId.toLowerCase() !== uploadId.toLowerCase()) {
+      throw outsideContract(IDENTITY_SERVICE, operation, 'an inconsistent reservation id');
+    }
+    return reservation;
+  }
+
+  /** Commits this account's prepared avatar once and returns Identity's current ETag. */
+  public async setAvatar(
+    userId: string,
+    uploadId: string,
+    ifMatch: string | undefined,
+  ): Promise<{ etag: string }> {
+    const operation = 'setAvatarInternal';
+    const options: InternalRequestInit = { ...NOT_RETRIED, ...ifMatchHeader(ifMatch) };
+    const response = await answered(
+      operation,
+      this.routes.setAvatarInternal(userId, { uploadId }, options),
+    );
+    return avatarEtag(operation, response);
+  }
+
+  /** Clears this account's avatar once and returns Identity's current ETag. */
+  public async deleteAvatar(
+    userId: string,
+    ifMatch: string | undefined,
+  ): Promise<{ etag: string }> {
+    const operation = 'deleteAvatarInternal';
+    const options: InternalRequestInit = { ...NOT_RETRIED, ...ifMatchHeader(ifMatch) };
+    const response = await answered(operation, this.routes.deleteAvatarInternal(userId, options));
+    return avatarEtag(operation, response);
+  }
+
+  /** Reads the current avatar reference, keeping verified organization claims for member reads. */
+  public async getAvatarReference(userId: string): Promise<CurrentAvatarReference> {
+    const operation = 'getAvatarReferenceInternal';
+    const response = await answered(operation, this.routes.getAvatarReferenceInternal(userId));
+    return expectBody(operation, response, 200, GetAvatarReferenceInternalResponse);
   }
 
   /**

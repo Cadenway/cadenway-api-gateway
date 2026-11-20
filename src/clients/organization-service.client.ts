@@ -16,7 +16,10 @@ import type {
   OrganizationCreated,
   OrganizationCreation,
   OrganizationPatch,
+  ProfileMediaReservation,
+  ProfileMediaReservationState,
   ReceivedInvitationPage,
+  StartOrganizationLogoUpload,
 } from '@cadenway/contracts/types/internal/organization-service';
 import {
   LookupMemberNamesInternalBody,
@@ -26,12 +29,14 @@ import {
   CreateOrganizationInternalResponse,
   GetMemberInternalResponse,
   GetOrganizationInternalResponse,
+  GetOrganizationLogoUploadStateInternalResponse,
   InviteMembersInternalResponse,
   ListInvitationsInternalResponse,
   ListMembersInternalResponse,
   ListMyOrganizationsInternalResponse,
   ListReceivedInvitationsInternalResponse,
   ResendInvitationInternalResponse,
+  ReserveOrganizationLogoUploadInternalResponse,
   UpdateOrganizationInternalResponse,
 } from '@cadenway/contracts/validators/internal/organization-service';
 import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
@@ -41,6 +46,7 @@ import {
   answered as answeredBy,
   expectBody as expectBodyOf,
   expectStatus as expectStatusOf,
+  outsideContract,
   type GeneratedResponse,
 } from '../problems/upstream-answer.js';
 import { getOrganizationServiceInternalRoutes } from './generated/organization-service.js';
@@ -144,6 +150,19 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
   return ifMatch === undefined ? {} : { headers: { 'If-Match': ifMatch } };
 }
 
+/** Checks the version header of a successful organization logo mutation. */
+function logoEtag(
+  operation: string,
+  response: GeneratedResponse & { readonly headers: Headers },
+): { etag: string } {
+  expectStatus(operation, response, 204);
+  const etag = response.headers.get('ETag');
+  if (etag === null || !/^"[1-9][0-9]*"$/u.test(etag)) {
+    throw outsideContract(ORGANIZATION_SERVICE, operation, 'no strong organization logo ETag');
+  }
+  return { etag };
+}
+
 /**
  * Class OrganizationServiceClient
  *
@@ -158,9 +177,9 @@ function ifMatchHeader(ifMatch: string | undefined): RequestInit {
  *   decides every role rule from its own members, never from that role.
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call (`GET`, and `DELETE` but the
- *   removal of a member; the `POST` and `PATCH` calls are not retried), and the circuit breaker of
- *   organization-service. It throws
- *   its problems: a relayed client error, or `503 upstream.*`.
+ *   removal of a member and logo mutations; the `POST` and `PATCH` calls are not retried), and the
+ *   circuit breaker of organization-service. It throws its problems: a relayed client error, or
+ *   `503 upstream.*`.
  * - Every success is checked against the internal contract before it is returned; a mismatch is
  *   `503 upstream.failed`.
  */
@@ -282,6 +301,86 @@ export class OrganizationServiceClient {
       200,
       GetOrganizationInternalResponse,
     );
+  }
+
+  /** Reserves a logo in the verified organization and relays the optional replay key. */
+  public async reserveOrganizationLogoUpload(
+    body: { readonly contentType: string; readonly sizeBytes: number },
+    idempotencyKey: string | undefined,
+  ): Promise<ProfileMediaReservation> {
+    const operation = 'reserveOrganizationLogoUploadInternal';
+    const options: InternalRequestInit = {
+      idempotent: false,
+      ...(idempotencyKey === undefined ? {} : { headers: { 'Idempotency-Key': idempotencyKey } }),
+    };
+    // The generated MIME type lists accepted values. The owner checks live authorization and
+    // reservation replay before applying that policy, including the contracted 422 refusals.
+    const declaration: StartOrganizationLogoUpload = {
+      contentType: body.contentType as StartOrganizationLogoUpload['contentType'],
+      sizeBytes: body.sizeBytes,
+    };
+    const response = await answered(
+      operation,
+      this.routes.reserveOrganizationLogoUploadInternal(declaration, options),
+    );
+    const reservation = expectBody(
+      operation,
+      response,
+      201,
+      ReserveOrganizationLogoUploadInternalResponse,
+    );
+    const location = this.routes.getGetOrganizationLogoUploadStateInternalUrl(reservation.uploadId);
+    if (response.headers.get('Location')?.toLowerCase() !== location.toLowerCase()) {
+      throw outsideContract(
+        ORGANIZATION_SERVICE,
+        operation,
+        'an inconsistent reservation Location',
+      );
+    }
+    return reservation;
+  }
+
+  /** Reads this organization's reservation state before Storage preparation. */
+  public async getOrganizationLogoUploadState(
+    uploadId: string,
+  ): Promise<ProfileMediaReservationState> {
+    const operation = 'getOrganizationLogoUploadStateInternal';
+    const response = await answered(
+      operation,
+      this.routes.getOrganizationLogoUploadStateInternal(uploadId),
+    );
+    const reservation = expectBody(
+      operation,
+      response,
+      200,
+      GetOrganizationLogoUploadStateInternalResponse,
+    );
+    if (reservation.uploadId.toLowerCase() !== uploadId.toLowerCase()) {
+      throw outsideContract(ORGANIZATION_SERVICE, operation, 'an inconsistent reservation id');
+    }
+    return reservation;
+  }
+
+  /** Commits the prepared logo once and returns Organization's current ETag. */
+  public async setOrganizationLogo(
+    uploadId: string,
+    ifMatch: string | undefined,
+  ): Promise<{ etag: string }> {
+    const operation = 'setOrganizationLogoInternal';
+    const options: InternalRequestInit = { idempotent: false, ...ifMatchHeader(ifMatch) };
+    const response = await answered(
+      operation,
+      this.routes.setOrganizationLogoInternal({ uploadId }, options),
+    );
+    return logoEtag(operation, response);
+  }
+
+  /** Clears the current organization's logo once and returns Organization's current ETag. */
+  public async deleteOrganizationLogo(ifMatch: string | undefined): Promise<{ etag: string }> {
+    const operation = 'deleteOrganizationLogoInternal';
+    const options: InternalRequestInit = { idempotent: false, ...ifMatchHeader(ifMatch) };
+    const response = await answered(operation, this.routes.deleteOrganizationLogoInternal(options));
+    return logoEtag(operation, response);
   }
 
   /**

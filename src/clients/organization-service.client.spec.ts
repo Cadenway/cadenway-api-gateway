@@ -42,6 +42,9 @@ interface RecordedCall {
   /** `If-Match` of the call. */
   readonly ifMatch: string | null;
 
+  /** Idempotency key supplied for a reservation. */
+  readonly idempotencyKey: string | null;
+
   /** The internal token, verified as organization-service verifies it. */
   readonly principal: InternalPrincipal;
   // #endregion
@@ -121,6 +124,7 @@ describe('OrganizationServiceClient', () => {
         url: input instanceof Request ? input.url : input.toString(),
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
         ifMatch: headers.get('If-Match'),
+        idempotencyKey: headers.get('Idempotency-Key'),
         principal: await verifier.verify(
           (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
         ),
@@ -240,6 +244,105 @@ describe('OrganizationServiceClient', () => {
       url: `${BASE_URL}/internal/v1/organization`,
       body: { description: null },
       ifMatch: '"3"',
+    });
+  });
+
+  describe('logo ownership', () => {
+    const uploadId = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
+    const reservation = { uploadId, expiresAt: '2026-11-20T20:00:00.000Z' };
+    const logoPath = '/internal/v1/organization/logo';
+
+    it('preserves the logo reference on the authorized organization read', async () => {
+      answer.mockReturnValueOnce(json(200, { ...ATELIER_NORD, logoId: uploadId }));
+      await expect(asOwner(() => client.getOrganization())).resolves.toMatchObject({
+        logoId: uploadId,
+      });
+    });
+
+    it('relays the logo declaration, verified organization and replay key', async () => {
+      const upload = { contentType: 'image/svg+xml', sizeBytes: 43_024 } as const;
+      const response = json(201, reservation);
+      response.headers.set('Location', `${logoPath}/uploads/${uploadId}`);
+      answer.mockReturnValueOnce(response);
+
+      await expect(
+        asOwner(() => client.reserveOrganizationLogoUpload(upload, 'logo-replay')),
+      ).resolves.toStrictEqual(reservation);
+      expect(calls[0]).toMatchObject({
+        method: 'POST',
+        url: `${BASE_URL}${logoPath}/uploads`,
+        body: upload,
+        idempotencyKey: 'logo-replay',
+        principal: { actor: OWNER.actor, organizationId: ATELIER_NORD_ID, role: 'owner' },
+      });
+    });
+
+    it('sends one reservation even when it carries a replay key and Organization returns 503', async () => {
+      answer.mockReturnValueOnce(new Response(null, { status: 503 }));
+
+      await expect(
+        asOwner(() =>
+          client.reserveOrganizationLogoUpload(
+            { contentType: 'image/png', sizeBytes: 500 },
+            'logo-replay',
+          ),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.unavailable' } });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('relays the unsupported declaration so Organization returns its typed refusal', async () => {
+      const declaration = { contentType: 'image/tiff', sizeBytes: 500 };
+      answer.mockReturnValueOnce(
+        json(422, {
+          title: 'Unsupported logo source',
+          status: 422,
+          code: 'media.unsupported-type',
+        }),
+      );
+
+      await expect(
+        asOwner(() => client.reserveOrganizationLogoUpload(declaration, undefined)),
+      ).rejects.toMatchObject({ problem: { status: 422, code: 'media.unsupported-type' } });
+      expect(calls[0]?.body).toStrictEqual(declaration);
+    });
+
+    it('validates the state of the requested logo reservation', async () => {
+      answer
+        .mockReturnValueOnce(json(200, { ...reservation, state: 'committed' }))
+        .mockReturnValueOnce(json(200, { ...reservation, state: 'pending' }));
+
+      await expect(
+        asOwner(() => client.getOrganizationLogoUploadState(uploadId)),
+      ).resolves.toStrictEqual({
+        ...reservation,
+        state: 'committed',
+      });
+      await expect(
+        asOwner(() =>
+          client.getOrganizationLogoUploadState('019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b02'),
+        ),
+      ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+      expect(calls[0]?.url).toBe(`${BASE_URL}${logoPath}/uploads/${uploadId}`);
+    });
+
+    it('relays a strong commit ETag and rejects a deletion without an ETag', async () => {
+      answer
+        .mockReturnValueOnce(new Response(null, { status: 204, headers: { ETag: '"12"' } }))
+        .mockReturnValueOnce(new Response(null, { status: 204 }));
+
+      await expect(
+        asOwner(() => client.setOrganizationLogo(uploadId, '"11"')),
+      ).resolves.toStrictEqual({
+        etag: '"12"',
+      });
+      await expect(asOwner(() => client.deleteOrganizationLogo(undefined))).rejects.toMatchObject({
+        problem: { status: 503, code: 'upstream.failed' },
+      });
+      expect(calls).toMatchObject([
+        { method: 'PUT', url: `${BASE_URL}${logoPath}`, body: { uploadId }, ifMatch: '"11"' },
+        { method: 'DELETE', url: `${BASE_URL}${logoPath}`, body: undefined, ifMatch: null },
+      ]);
     });
   });
 

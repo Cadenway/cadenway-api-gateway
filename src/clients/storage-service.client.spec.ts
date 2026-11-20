@@ -83,6 +83,85 @@ describe('StorageServiceClient', () => {
     );
   });
 
+  it('strips selected-organization claims from a personal signed transfer', async () => {
+    const transfer = {
+      uploadId: id,
+      method: 'POST',
+      url: 'https://files.example.test/uploads',
+      fields: { key: 'profile-media/staging/opaque' },
+      expiresAt: '2026-11-20T14:05:00Z',
+    };
+    answer = Response.json(transfer, { headers: { 'Cache-Control': 'no-store' } });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.signProfileMediaTransfer(
+          id,
+          {
+            kind: 'avatar',
+            expiresAt: transfer.expiresAt,
+            contentType: 'image/png',
+            sizeBytes: 50,
+          },
+          'account',
+        ),
+      ),
+    ).resolves.toEqual(transfer);
+    const headers = new Headers(calls[0]?.init?.headers);
+    const token = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(token).toMatchObject({
+      actor: context.actor,
+      organizationId: null,
+      role: null,
+      scopes: [],
+    });
+  });
+
+  it('keeps verified tenant claims for a member read and validates returned PNG bytes', async () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 11]);
+    answer = new Response(png, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': '9',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.getAvatarImage(id, CAMILLE.id, 'organization'),
+      ),
+    ).resolves.toEqual(Buffer.from(png));
+    expect(calls[0]?.url).toContain(`ownerUserId=${CAMILLE.id}`);
+    const headers = new Headers(calls[0]?.init?.headers);
+    const token = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(token.organizationId).toBe(ATELIER_NORD_ID);
+  });
+
+  it('fails a chunked derivative as soon as the byte limit is exceeded', async () => {
+    const chunks = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(5 * 1024 * 1024));
+        controller.enqueue(Uint8Array.of(0));
+        controller.close();
+      },
+    });
+    answer = new Response(chunks, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+    await expect(
+      runWithOrganizationContext(context, () => client.getOrganizationLogoImage(id)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    expect(calls).toHaveLength(1);
+  });
+
   it('signs a scoped list request and validates the returned page', async () => {
     answer = Response.json({ items: [attachment], nextCursor: null, unexpected: 'discarded' });
     const page = await runWithOrganizationContext(context, () =>

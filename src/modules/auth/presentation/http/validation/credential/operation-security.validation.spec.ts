@@ -295,7 +295,7 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(205);
+    expect(operations).toHaveLength(214);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -331,7 +331,7 @@ describe('the security of every route against the public contracts', () => {
     },
   );
 
-  it('derives a token scope only for the two member reads and the task operations', () => {
+  it('derives a token scope only for member reads and the task operations', () => {
     const withToken: string[] = operations
       .filter((operation: ContractOperation) => apiTokenScopesOf(operation.security) !== undefined)
       .map((operation: ContractOperation) => operation.security.operationId)
@@ -340,6 +340,7 @@ describe('the security of every route against the public contracts', () => {
     expect(withToken).toEqual(
       [
         'getMember',
+        'getMemberAvatar',
         'listMembers',
         'listSpaces',
         'createSpace',
