@@ -11,6 +11,7 @@ export function createIntakeRegistry(client: TaskServiceClient): IntakeRegistry 
     disable: async (id, version) => ({ version: await client.disableIntakeForm(id, version) }),
     contact: (key) => client.getTaskIntakeContact(key),
     getPublic: (key) => client.getPublicIntakeForm(key),
-    submit: (key, body, idempotencyKey) => client.submitPublicIntakeForm(key, body, idempotencyKey),
+    submit: (key, body, idempotencyKey, draftKey) =>
+      client.submitPublicIntakeForm(key, body, idempotencyKey, draftKey),
   };
 }

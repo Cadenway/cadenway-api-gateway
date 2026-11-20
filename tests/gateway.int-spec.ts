@@ -90,7 +90,7 @@ describe('gateway start-up', () => {
     expect(response.headers['access-control-allow-credentials']).toBe('true');
     expect(response.headers['access-control-allow-methods']).toContain('PATCH');
     expect(response.headers['access-control-allow-headers']).toBe(
-      'Content-Type,If-Match,Idempotency-Key',
+      'Content-Type,If-Match,Idempotency-Key,Intake-Draft-Key',
     );
     expect(response.headers.vary).toContain('Origin');
   });

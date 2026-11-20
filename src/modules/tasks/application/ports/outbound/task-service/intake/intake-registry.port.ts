@@ -12,6 +12,11 @@ export interface IntakeRegistry {
   disable(listId: string, ifMatch: string | undefined): Promise<{ version: number }>;
   contact(taskKey: string): Promise<object>;
   getPublic(publicKey: string): Promise<object>;
-  submit(publicKey: string, body: object, key: string | undefined): Promise<object>;
+  submit(
+    publicKey: string,
+    body: object,
+    key: string | undefined,
+    draftKey?: string,
+  ): Promise<object>;
   // #endregion
 }

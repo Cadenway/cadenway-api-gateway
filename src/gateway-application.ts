@@ -53,8 +53,9 @@ export const CORS_ALLOWED_METHODS: readonly string[] = [
  *
  * @description
  * Request headers a browser may send beyond the CORS-safelisted ones: the JSON content type and the
- * concurrency and idempotency headers of the contracts. `Authorization` is absent on purpose: the
- * applications authenticate with the session cookie, and API tokens are not used from a browser.
+ * concurrency, idempotency and applicant draft headers of the contracts. `Authorization` is
+ * absent on purpose: the applications authenticate with the session cookie, and API tokens are
+ * not used from a browser.
  *
  * @type {readonly string[]}
  */
@@ -62,6 +63,7 @@ export const CORS_ALLOWED_HEADERS: readonly string[] = [
   'Content-Type',
   'If-Match',
   'Idempotency-Key',
+  'Intake-Draft-Key',
 ];
 
 /**

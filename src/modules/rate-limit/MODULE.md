@@ -9,6 +9,7 @@ rate-limiter-flexible, and `429 rate-limit.exceeded` with `Retry-After` beyond e
 | Per client address, without a credential | 60 per minute      | `rate-limit:anonymous:<pseudonym>`                                    |
 | Public intake form reads                 | 30 per minute      | `rate-limit:intake-read:<pseudonym>`                                  |
 | Public intake submissions                | 10 per minute      | `rate-limit:intake-submit:<pseudonym>`                                |
+| Public intake upload mutations           | 10 per minute      | `rate-limit:intake-attachment:<pseudonym>`                            |
 | Per client address, failed bearer tokens | 10 failures/minute | `rate-limit:bearer-failures:<pseudonym>`                              |
 
 The first is decision 8 of the integration plan; the two others are decision 2 of the P2b security
@@ -47,10 +48,11 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
   sign-out without an active session, whose contract
   declares the same `429`. Body validation runs after the guards, so a malformed body is counted
   too; a request `CsrfGuard` refuses before them is not, and costs no upstream call.
-- **Public intake.** `IntakeRateLimitGuard` counts form GETs and submissions separately by
-  pseudonymized address. It runs before validation and lookup, so malformed requests and unknown
-  keys count. No form key is part of a counter. A denied request returns the same anonymous
-  `429` problem and `Retry-After`.
+- **Public intake.** `IntakeRateLimitGuard` counts form reads, submissions, and upload mutations
+  separately by pseudonymized address. Reservation, completion, and release share one upload
+  quota. The guard runs before route validation and lookup, so unknown keys count. No public or
+  draft key is part of a counter. A denied request returns the anonymous `429` problem and
+  `Retry-After`.
 - **Failed bearer tokens.** The credential guard of `auth` reads the failures of the address
   (`CheckBearerFailures`, which counts nothing) before it looks at a bearer token, and answers
   `429` without an introspection once the address has 10 in the window, whatever the token: only
@@ -83,9 +85,8 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
   than 100 milliseconds, which a saturated event loop can cause too), the request is counted,
   or the counter read, in the memory of the instance with the same quota; once a second one
   request tries Redis again while the others keep counting in memory. A `warn` line names the
-  limit once per outage and a line says when Redis counts again. The same holds for the three
-  limits, including both intake limits: the routes stay available, and a credential or an address is still limited per
-  instance (at most the quota times the number of instances per minute) rather than not at all;
+  limit once per outage and a line says when Redis counts again. All rate limits, including the
+  intake limits, stay available per instance (at most the quota times the number of instances per minute);
   readiness reports the outage meanwhile. Each counter holds at most 50,000 keys in memory, about
   8 MB: past it, new keys share one overflow window with the same quota, so a flood of addresses
   cannot exhaust the heap.

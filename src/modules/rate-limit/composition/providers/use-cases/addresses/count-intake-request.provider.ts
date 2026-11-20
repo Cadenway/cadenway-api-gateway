@@ -6,24 +6,34 @@ import { CountIntakeRequest } from '../../../../application/use-cases/commands/a
 import { RedisRequestCounter } from '../../../../infrastructure/adapters/redis/redis-request-counter.adapter.js';
 import { ADDRESS_PSEUDONYMIZER } from '../../../tokens/addresses/address-pseudonymizer.token.js';
 
-/** Creates independent counters for anonymous form reads and submissions. */
+const WRITES_PER_MINUTE = 10;
+
+/** Creates independent counters for anonymous form reads, submissions, and upload mutations. */
 export const countIntakeRequestProvider: FactoryProvider<CountIntakeRequest> = {
   provide: CountIntakeRequest,
   inject: [ResilientRedisClient, ADDRESS_PSEUDONYMIZER],
   useFactory: (redis: ResilientRedisClient, pseudonymizer: AddressPseudonymizer) =>
     new CountIntakeRequest(
-      new RedisRequestCounter(redis, {
-        limit: 'intake-read',
-        requests: 30,
-        windowSeconds: 60,
-        storeTimeoutMs: 100,
-      }),
-      new RedisRequestCounter(redis, {
-        limit: 'intake-submit',
-        requests: 10,
-        windowSeconds: 60,
-        storeTimeoutMs: 100,
-      }),
+      {
+        read: new RedisRequestCounter(redis, {
+          limit: 'intake-read',
+          requests: 30,
+          windowSeconds: 60,
+          storeTimeoutMs: 100,
+        }),
+        submit: new RedisRequestCounter(redis, {
+          limit: 'intake-submit',
+          requests: WRITES_PER_MINUTE,
+          windowSeconds: 60,
+          storeTimeoutMs: 100,
+        }),
+        attachment: new RedisRequestCounter(redis, {
+          limit: 'intake-attachment',
+          requests: WRITES_PER_MINUTE,
+          windowSeconds: 60,
+          storeTimeoutMs: 100,
+        }),
+      },
       pseudonymizer,
     ),
 };

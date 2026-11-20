@@ -1,4 +1,6 @@
 import {
+  CompleteIntakeAttachmentUploadInternalParams,
+  CompleteIntakeAttachmentUploadInternalResponse,
   CompleteTaskAttachmentUploadInternalResponse,
   GetTaskAttachmentDownloadInternalResponse,
   GetTaskAttachmentInternalResponse,
@@ -6,11 +8,16 @@ import {
   ListLargestAttachmentsInternalResponse,
   ListTaskAttachmentsInternalQueryParams,
   ListTaskAttachmentsInternalResponse,
+  StartIntakeAttachmentUploadInternalBody,
+  StartIntakeAttachmentUploadInternalParams,
+  StartIntakeAttachmentUploadInternalResponse,
   StartTaskAttachmentUploadInternalBody,
   StartTaskAttachmentUploadInternalResponse,
 } from '@cadenway/contracts/validators/internal/storage-service';
+import type { ResolveIntakeAttachmentInternalResponse } from '@cadenway/contracts/validators/internal/task-service';
 import { ProblemException } from '@cadenway/nest-common';
 import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
+import { trace } from '@opentelemetry/api';
 import type { z } from 'zod';
 
 import {
@@ -27,6 +34,7 @@ export const STORAGE_SERVICE: string = 'storage-service';
 
 type StorageRoutes = ReturnType<typeof getStorageServiceInternalRoutes>;
 type StorageAnswer = GeneratedResponse & { readonly headers: Headers };
+type IntakeAllocation = z.output<typeof ResolveIntakeAttachmentInternalResponse>;
 const SEND_ONCE: InternalRequestInit = { idempotent: false };
 
 /** Maps body-read deadlines after headers to the same stable upstream timeout as the transport. */
@@ -70,6 +78,33 @@ function versioned(operation: string, answer: StorageAnswer, version: number): v
   }
 }
 
+/** Signs a single Storage call for the tenant proved by Task without applicant credentials. */
+function intakeStorageRequest(organizationId: string): InternalRequestInit {
+  const traceId = trace.getActiveSpan()?.spanContext().traceId;
+  return {
+    idempotent: false,
+    claims: {
+      actor: { type: 'system', id: null },
+      organizationId,
+      role: null,
+      scopes: [],
+      ...(traceId === undefined ? {} : { traceId }),
+    },
+  };
+}
+
+/** Allows only a browser form destination without user information or a fragment. */
+function isIntakeUploadUrl(value: string): boolean {
+  const url = URL.parse(value);
+  return (
+    url !== null &&
+    /^https?:\/\/[^/?#@]+(?:[/?]|$)/iu.test(value) &&
+    !/[\s\\#]/u.test(value) &&
+    url.username === '' &&
+    url.password === ''
+  );
+}
+
 /** Calls the generated Storage routes through the signed internal HTTP client. */
 export class StorageServiceClient {
   // #region Properties
@@ -91,6 +126,80 @@ export class StorageServiceClient {
   // #endregion
 
   // #region Methods
+  /** Signs an applicant upload using only the allocation received from Task. */
+  public async startIntakeAttachmentUpload(
+    proof: IntakeAllocation,
+    body: object,
+  ): Promise<z.output<typeof StartIntakeAttachmentUploadInternalResponse>> {
+    const operation = 'startIntakeAttachmentUploadInternal';
+    const { organizationId, publicationId, attachmentId, expiresAt } = proof;
+    request(operation, StartIntakeAttachmentUploadInternalParams, { publicationId });
+    const answer = await answered(
+      STORAGE_SERVICE,
+      operation,
+      this.routes.startIntakeAttachmentUploadInternal(
+        publicationId,
+        request(operation, StartIntakeAttachmentUploadInternalBody, {
+          ...body,
+          attachmentId,
+          expiresAt,
+        }),
+        intakeStorageRequest(organizationId),
+      ),
+    );
+    expectStatus(STORAGE_SERVICE, operation, answer, 201);
+    noStore(operation, answer);
+    // A validator issue can name an arbitrary member of the signed form, so use a static error.
+    const parsed = StartIntakeAttachmentUploadInternalResponse.safeParse(answer.data);
+    if (!parsed.success) {
+      throw outsideContract(STORAGE_SERVICE, operation, 'an invalid signed upload response');
+    }
+    const upload = parsed.data;
+    const location = `/internal/v1/intake-publications/${publicationId}/attachments/${attachmentId}`;
+    if (
+      upload.id.toLowerCase() !== attachmentId.toLowerCase() ||
+      answer.headers.get('Location')?.toLowerCase() !== location.toLowerCase() ||
+      !(Date.parse(upload.expiresAt) <= Date.parse(expiresAt)) ||
+      !isIntakeUploadUrl(upload.url)
+    ) {
+      throw outsideContract(STORAGE_SERVICE, operation, 'an inconsistent signed upload response');
+    }
+    return upload;
+  }
+
+  /** Verifies only the reservation and tenant authorized by the current Task lookup. */
+  public async completeIntakeAttachmentUpload(
+    proof: IntakeAllocation,
+  ): Promise<z.output<typeof CompleteIntakeAttachmentUploadInternalResponse>> {
+    const operation = 'completeIntakeAttachmentUploadInternal';
+    const { organizationId, publicationId, attachmentId } = proof;
+    request(operation, CompleteIntakeAttachmentUploadInternalParams, {
+      publicationId,
+      attachmentId,
+    });
+    const answer = await answered(
+      STORAGE_SERVICE,
+      operation,
+      this.routes.completeIntakeAttachmentUploadInternal(
+        publicationId,
+        attachmentId,
+        intakeStorageRequest(organizationId),
+      ),
+    );
+    const completion = expectBody(
+      STORAGE_SERVICE,
+      operation,
+      answer,
+      200,
+      CompleteIntakeAttachmentUploadInternalResponse,
+    );
+    noStore(operation, answer);
+    if (completion.id.toLowerCase() !== attachmentId.toLowerCase()) {
+      throw outsideContract(STORAGE_SERVICE, operation, 'an inconsistent completion identity');
+    }
+    return completion;
+  }
+
   /** Lists ready attachments for an already-authorized task. */
   public async listTaskAttachments(
     taskKey: string,
