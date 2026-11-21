@@ -1,4 +1,9 @@
-import { ProblemException, type ProblemInit, type ProblemStatus } from '@cadenway/nest-common';
+import {
+  ProblemException,
+  toProblem,
+  type ProblemInit,
+  type ProblemStatus,
+} from '@cadenway/nest-common';
 
 /**
  * Constant PROBLEM_TITLES
@@ -229,6 +234,14 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['reminder.date-not-in-future', 'Choisissez une date et une heure à venir.'],
 ]);
 
+const siteProblemTitles = new Map<string, string>([
+  ['request.invalid', 'Vérifiez les informations du formulaire.'],
+  ['request.body-too-large', 'Le formulaire est trop volumineux.'],
+  ['idempotency.request-in-progress', 'Votre demande est en cours de traitement.'],
+  ['idempotency.key-reused', 'Renouvelez l’envoi de ce formulaire.'],
+  ['upstream.unavailable', 'Le formulaire est temporairement indisponible.'],
+]);
+
 /**
  * Constant PROBLEM_STATUSES
  *
@@ -270,4 +283,14 @@ export function isProblemStatus(status: number): status is ProblemStatus {
 export function publicProblem(init: ProblemInit): ProblemException {
   // An undefined title makes `ProblemException` fall back to the reason phrase of the status.
   return new ProblemException({ ...init, title: PROBLEM_TITLES.get(init.code) });
+}
+
+/** Applies the published Site titles while leaving other Gateway routes on the common titles. */
+export function siteFormProblem(error: unknown): unknown {
+  const problem = toProblem(error);
+  const { status, code } = problem;
+  const title = siteProblemTitles.get(code);
+  return title === undefined || !isProblemStatus(status)
+    ? error
+    : new ProblemException({ ...problem, status, title });
 }
