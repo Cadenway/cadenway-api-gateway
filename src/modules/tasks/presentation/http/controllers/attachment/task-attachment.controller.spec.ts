@@ -14,6 +14,7 @@ import {
   type RouteApplication,
 } from '../../../../../../../tests/support/route-application.js';
 import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import type { AttachmentRegistry } from '../../../../application/ports/outbound/storage-service/attachment/attachment-registry.port.js';
 import { ListAttachments } from '../../../../application/use-cases/queries/attachment/list-attachments/list-attachments.use-case.js';
 import { StartAttachmentUpload } from '../../../../application/use-cases/commands/attachment/start-attachment-upload/start-attachment-upload.use-case.js';
@@ -223,6 +224,24 @@ describe('attachment HTTP guards', () => {
       .set('Origin', ALLOWED_ORIGIN)
       .set('If-Match', '"3"');
     expect(removed.status).toBe(204);
+  });
+
+  it('relays the storage quota refusal during authenticated completion', async () => {
+    storage.completeTaskAttachmentUpload.mockRejectedValueOnce(
+      new ProblemException({ status: 409, code: 'attachment.storage-quota-exceeded' }),
+    );
+    const response = await request(application.server)
+      .post(`${base}/${attachmentId}/completion`)
+      .set('Cookie', session)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('Content-Type', 'application/json');
+    expectPublicResponse(
+      'post',
+      '/v1/tasks/{taskKey}/attachments/{attachmentId}/completion',
+      response,
+    );
+    expect(response.status).toBe(409);
+    expect(response.body as unknown).toMatchObject({ code: 'attachment.storage-quota-exceeded' });
   });
 
   it('refuses a token without task scope before calling either upstream service', async () => {

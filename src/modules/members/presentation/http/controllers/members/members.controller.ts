@@ -73,6 +73,7 @@ const CHANGE_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   403: ['organization.role-forbidden'],
   404: ['member.not-found'],
+  409: ['organization.seat-quota-exceeded'],
   412: ['request.version-mismatch'],
   422: ['member.owner-protected'],
 };

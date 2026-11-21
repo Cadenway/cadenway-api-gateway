@@ -7,6 +7,57 @@
  */
 export type AttachmentId = string;
 
+export type BillingReadyAttachmentState = typeof BillingReadyAttachmentState[keyof typeof BillingReadyAttachmentState];
+
+
+export const BillingReadyAttachmentState = {
+  ready: 'ready',
+} as const;
+
+export interface BillingReadyAttachment {
+  fileId: AttachmentId;
+  state: BillingReadyAttachmentState;
+  /**
+     * Verified object size in bytes, up to 25 MiB.
+     * @minimum 1
+     * @maximum 26214400
+     */
+  sizeBytes: number;
+  /**
+     * Owner version of the ready attachment.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingDeletedAttachmentState = typeof BillingDeletedAttachmentState[keyof typeof BillingDeletedAttachmentState];
+
+
+export const BillingDeletedAttachmentState = {
+  deleted: 'deleted',
+} as const;
+
+export interface BillingDeletedAttachment {
+  fileId: AttachmentId;
+  state: BillingDeletedAttachmentState;
+  /**
+     * Terminal version of the previously ready attachment.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingAttachmentUsage = BillingReadyAttachment | BillingDeletedAttachment;
+
+export interface BillingAttachmentUsagePage {
+  /** @maxItems 100 */
+  items: BillingAttachmentUsage[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 /**
  * Key of a task, the only way a task is named outside task-service: the prefix of the space
  * it was created in, a dash and a number. A key never changes, also when the task moves to
@@ -303,6 +354,29 @@ export interface ProfileMediaPreparation {
   sizeBytes: ProfileMediaSizeBytes;
 }
 
+export type Schema = string;
+
+/**
+ * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
+ */
+export type BillingUsageBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type BillingUsageTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type BillingUsageAccessRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when Storage cannot complete the snapshot page.
+ */
+export type BillingUsageUnavailableResponse = Problem;
+
 /**
  * `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
  * `request.body-too-large` when the incoming request body exceeds the JSON body limit.
@@ -392,7 +466,10 @@ export type IntakeAttachmentNotFoundResponse = Problem;
 export type UploadReservationConflictResponse = Problem;
 
 /**
- * `attachment.upload-expired` for an expired pending reservation or `attachment.upload-not-ready` when the temporary object has not arrived.
+ * `attachment.upload-expired` for an expired pending reservation,
+ * `attachment.upload-not-ready` when the temporary object has not arrived, or
+ * `attachment.storage-quota-exceeded` when adding verified bytes would exceed the
+ * organization's plan limit.
  */
 export type UploadStateConflictResponse = Problem;
 
@@ -447,6 +524,11 @@ export type CursorParameter = string;
  */
 export type LimitParameter = number;
 
+/**
+ * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+ */
+export type BillingCursorParameter = Schema & string;
+
 export type ListTaskAttachmentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
@@ -466,6 +548,17 @@ export type GetAvatarImageInternalParams = {
 export type ListLargestAttachmentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListBillingAttachmentUsageInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: BillingCursorParameter;
   /**
    * Page size.
    * @minimum 1
@@ -572,11 +665,15 @@ const getCompleteIntakeAttachmentUploadInternalUrl = (publicationId: string,
  * with task-service for the current publication and draft.
  *
  * Verify the same immutable bytes that will be retained, and commit election of the
- * candidate together with the verification event. A successful retry returns the
+ * candidate and reservation of its verified bytes together with the verification event.
+ * Adding verified bytes beyond the organization's plan limit answers
+ * `409 attachment.storage-quota-exceeded` without committing the election or event.
+ * A successful retry returns the
  * same acknowledgement without another verification fact. No task attachment
  * metadata or ordinary file facts are published by this operation. Keep the elected
- * candidate until the Task claim or release is applied, including past the draft
- * expiry if event delivery is delayed.
+ * candidate and the storage reservation until the Task claim or release is applied,
+ * including past the draft expiry if event delivery is delayed. A claim transfers the
+ * reservation to the ready attachment without consuming additional quota.
  * @summary Verify the applicant object and pin its elected copy
  */
 const completeIntakeAttachmentUploadInternal = async (publicationId: string,
@@ -779,6 +876,10 @@ const getCompleteTaskAttachmentUploadInternalUrl = (taskKey: string,
  * and records `file.uploaded.v1` together. Repeating successful completion returns the same
  * metadata without a second fact. A staged object that is missing before expiry answers
  * `409 attachment.upload-not-ready`. Expired pending reservations cannot be completed.
+ *
+ * A first completion that would increase the organization's verified attachment storage
+ * beyond its plan limit answers `409 attachment.storage-quota-exceeded` without publishing
+ * the attachment or its event.
  * @summary Complete a task attachment upload
  */
 const completeTaskAttachmentUploadInternal = async (taskKey: string,
@@ -1051,6 +1152,72 @@ const listLargestAttachmentsInternal = async (params?: ListLargestAttachmentsInt
 
 
 
+const getListBillingAttachmentUsageInternalUrl = (params?: ListBillingAttachmentUsageInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/billing-attachment-usage?${stringifiedParams}` : `/internal/v1/billing-attachment-usage`
+}
+
+/**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`. Each ready task attachment,
+ * including a claimed public intake attachment, is exported with its ID, verified byte
+ * count and version. Each retained deletion of a previously ready attachment is exported
+ * with its ID and terminal version. The export must include a deletion whenever an older
+ * upload fact can still arrive, including from a delayed Storage outbox. Pending or
+ * discarded uploads that never reached the ready state, unclaimed intake candidates and
+ * profile media contribute no row. During a task purge, each attachment stops contributing
+ * when Storage commits its file tombstone and appends `file.deleted.v1`.
+ * Physical object erasure can follow later. No file names, task keys, object keys or author
+ * details are returned. A tenant with no eligible attachments receives an empty page.
+ *
+ * The first page fixes an inclusive upper file ID in its tenant snapshot. Each page reads
+ * its own tenant snapshot in ascending immutable UUID order above the last returned ID
+ * and at or below that upper bound. The opaque, authenticated cursor has 1 to 1,024
+ * characters and binds the operation, the tenant, the upper bound and the last returned ID.
+ * Only `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Billing reconciles `file.uploaded.v1` and `file.deleted.v1` by file ID and highest source
+ * version. A deletion takes precedence over a ready row of the same version. Once a file ID
+ * is terminal, Billing never restores its usage. A rebuild requires continuous durable delivery from a
+ * starting position recorded before the first page through a catch-up position recorded after
+ * the final page. Billing proves coverage and applies all relevant facts through that position
+ * before promotion. On a confirmed gap, Billing discards the candidate and restarts from a
+ * new starting position. A committed change still in the producer outbox at that position
+ * is reflected once it is delivered. Quota admission requires an additional guarantee
+ * at the source write boundary to account for those pending changes.
+ * @summary Export attachment states for Billing storage usage
+ */
+const listBillingAttachmentUsageInternal = async (params?: ListBillingAttachmentUsageInternalParams, options?: RequestInit): Promise<listBillingAttachmentUsageInternalResponse> => {
+
+  const res = await fetchFn(getListBillingAttachmentUsageInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listBillingAttachmentUsageInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listBillingAttachmentUsageInternalResponse
+}
+
+
+
 const getListAttachmentSearchProjectionsInternalUrl = (params?: ListAttachmentSearchProjectionsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -1149,7 +1316,7 @@ const resolveAttachmentSearchProjectionsInternal = async (resolveAttachmentSearc
 
 
 
-return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl, listAttachmentSearchProjectionsInternal, getListAttachmentSearchProjectionsInternalUrl, resolveAttachmentSearchProjectionsInternal, getResolveAttachmentSearchProjectionsInternalUrl };
+return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl, listBillingAttachmentUsageInternal, getListBillingAttachmentUsageInternalUrl, listAttachmentSearchProjectionsInternal, getListAttachmentSearchProjectionsInternalUrl, resolveAttachmentSearchProjectionsInternal, getResolveAttachmentSearchProjectionsInternalUrl };
 };
 
 export type startIntakeAttachmentUploadInternalResponse201 = {
@@ -1725,6 +1892,41 @@ export type listLargestAttachmentsInternalResponseError = (listLargestAttachment
 };
 
 export type listLargestAttachmentsInternalResponse = (listLargestAttachmentsInternalResponseSuccess | listLargestAttachmentsInternalResponseError)
+
+
+export type listBillingAttachmentUsageInternalResponse200 = {
+  data: BillingAttachmentUsagePage
+  status: 200
+}
+
+export type listBillingAttachmentUsageInternalResponse400 = {
+  data: BillingUsageBadRequestResponse
+  status: 400
+}
+
+export type listBillingAttachmentUsageInternalResponse401 = {
+  data: BillingUsageTokenRefusedResponse
+  status: 401
+}
+
+export type listBillingAttachmentUsageInternalResponse403 = {
+  data: BillingUsageAccessRefusedResponse
+  status: 403
+}
+
+export type listBillingAttachmentUsageInternalResponse503 = {
+  data: BillingUsageUnavailableResponse
+  status: 503
+}
+
+export type listBillingAttachmentUsageInternalResponseSuccess = (listBillingAttachmentUsageInternalResponse200) & {
+  headers: Headers;
+};
+export type listBillingAttachmentUsageInternalResponseError = (listBillingAttachmentUsageInternalResponse400 | listBillingAttachmentUsageInternalResponse401 | listBillingAttachmentUsageInternalResponse403 | listBillingAttachmentUsageInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listBillingAttachmentUsageInternalResponse = (listBillingAttachmentUsageInternalResponseSuccess | listBillingAttachmentUsageInternalResponseError)
 
 
 export type listAttachmentSearchProjectionsInternalResponse200 = {

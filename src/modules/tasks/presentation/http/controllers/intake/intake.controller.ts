@@ -114,7 +114,11 @@ const START_ATTACHMENT: AcceptedProblems = {
 };
 const COMPLETE_ATTACHMENT: AcceptedProblems = {
   ...RELEASE_ATTACHMENT,
-  409: ['attachment.upload-expired', 'attachment.upload-not-ready'],
+  409: [
+    'attachment.upload-expired',
+    'attachment.upload-not-ready',
+    'attachment.storage-quota-exceeded',
+  ],
   422: ['attachment.file-too-large', 'attachment.upload-metadata-mismatch'],
 };
 const STORAGE_ATTACHMENT_CODES: Readonly<Record<string, string>> = {
