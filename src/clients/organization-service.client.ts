@@ -24,6 +24,8 @@ import type {
 import {
   LookupMemberNamesInternalBody,
   LookupMemberNamesInternalResponse,
+  CheckAutomationRecipientInternalBody,
+  CheckAutomationRecipientInternalResponse,
   AcceptInvitationInternalResponse,
   ChangeMemberRoleInternalResponse,
   CreateOrganizationInternalResponse,
@@ -294,13 +296,37 @@ export class OrganizationServiceClient {
    *
    * @returns {Promise<Organization>} The organization, with the role of the user in it.
    */
-  public async getOrganization(): Promise<Organization> {
+  public async getOrganization(signal?: AbortSignal): Promise<Organization> {
     return expectBody(
       'getOrganizationInternal',
-      await answered('getOrganizationInternal', this.routes.getOrganizationInternal()),
+      await answered(
+        'getOrganizationInternal',
+        this.routes.getOrganizationInternal(signal ? { signal } : undefined),
+      ),
       200,
       GetOrganizationInternalResponse,
     );
+  }
+
+  /** Reads the live private recipient decision in the signed organization. */
+  public async checkAutomationRecipient(userId: string): Promise<boolean> {
+    const operation = 'checkAutomationRecipientInternal';
+    const body = CheckAutomationRecipientInternalBody.parse({ userId });
+    const options: InternalRequestInit = { idempotent: true };
+    const response = await answered(
+      operation,
+      this.routes.checkAutomationRecipientInternal(body, options),
+    );
+    const decision = expectBody(
+      operation,
+      response,
+      200,
+      CheckAutomationRecipientInternalResponse.strict(),
+    );
+    if (response.headers.get('Cache-Control')?.trim().toLowerCase() !== 'private, no-store') {
+      throw outsideContract(ORGANIZATION_SERVICE, operation, 'missing private no-store');
+    }
+    return decision.eligible;
   }
 
   /** Reserves a logo in the verified organization and relays the optional replay key. */

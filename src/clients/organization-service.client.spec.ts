@@ -99,6 +99,44 @@ describe('OrganizationServiceClient', () => {
   let answer: Mock<() => Response>;
   let client: OrganizationServiceClient;
 
+  it('uses the current actor and selected organization for the private automation recipient proof', async () => {
+    answer.mockReturnValue(
+      Response.json(
+        { eligible: true },
+        {
+          headers: { 'Cache-Control': 'private, no-store' },
+        },
+      ),
+    );
+    const userId = '019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03';
+    await expect(
+      runWithOrganizationContext(OWNER, () => client.checkAutomationRecipient(userId)),
+    ).resolves.toBe(true);
+    expect(calls).toMatchObject([
+      {
+        method: 'POST',
+        url: `${BASE_URL}/internal/v1/automation-recipients/check`,
+        body: { userId },
+        principal: {
+          actor: OWNER.actor,
+          organizationId: OWNER.organizationId,
+          audience: ORGANIZATION_SERVICE,
+        },
+      },
+    ]);
+  });
+
+  it('refuses an automation recipient decision without its private cache policy', async () => {
+    answer.mockReturnValue(Response.json({ eligible: true }));
+    await expect(
+      runWithOrganizationContext(OWNER, () =>
+        client.checkAutomationRecipient('019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e03'),
+      ),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed', details: { service: ORGANIZATION_SERVICE } },
+    });
+  });
+
   beforeAll(async () => {
     const keys: SigningKeys = generateSigningKeys();
     signer = await InternalTokenSigner.create({
