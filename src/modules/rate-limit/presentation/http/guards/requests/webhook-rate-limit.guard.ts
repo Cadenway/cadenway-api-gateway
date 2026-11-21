@@ -19,7 +19,7 @@ import {
 
 const WEBHOOK_PROVIDER = Symbol('webhook-provider');
 
-/** Enforces independent per-address quotas on public Git webhook routes. */
+/** Enforces independent per-address quotas on public webhook routes. */
 @Injectable()
 export class WebhookRateLimitGuard implements CanActivate {
   // #region Constructor

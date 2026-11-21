@@ -28,6 +28,12 @@ export const countWebhookRequestProvider: FactoryProvider<CountWebhookRequest> =
           windowSeconds: 60,
           storeTimeoutMs: 100,
         }),
+        stripe: new RedisRequestCounter(redis, {
+          limit: 'webhook-stripe',
+          requests: WEBHOOK_REQUESTS_PER_MINUTE,
+          windowSeconds: 60,
+          storeTimeoutMs: 100,
+        }),
       },
       pseudonymizer,
     ),

@@ -1,12 +1,29 @@
 import * as schemas from '@cadenway/contracts/validators/internal/billing-service';
-import type { InternalHttpClient } from '@cadenway/nest-common';
+import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
+import { trace } from '@opentelemetry/api';
 import type { z } from 'zod';
 
-import { answered, expectBody, outsideContract } from '../problems/upstream-answer.js';
+import {
+  answered,
+  expectBody,
+  expectStatus,
+  outsideContract,
+} from '../problems/upstream-answer.js';
 import { getBillingServiceInternalRoutes } from './generated/billing-service.js';
 
 /** Audience and upstream name of the signed Billing client. */
 export const BILLING_SERVICE: string = 'billing-service';
+
+/** Original Stripe delivery received by the public webhook. */
+export interface StripeWebhookDelivery {
+  // #region Properties
+  /** Exact bytes supplied by Stripe. */
+  readonly body: Buffer;
+
+  /** Stripe-Signature value to verify against the original body. */
+  readonly signature: string;
+  // #endregion
+}
 
 const operation = 'getBillingSubscriptionInternal';
 const MAX_SUBSCRIPTION_BYTES = 16 * 1024;
@@ -25,6 +42,20 @@ export class BillingServiceClient {
     this.routes = getBillingServiceInternalRoutes(async (input, init) => {
       if (typeof input !== 'string') throw new Error('The Billing client requires a path.');
       const response = await http.fetch(input, init);
+      if (init?.method === 'POST') {
+        if (
+          response.status !== 204 ||
+          response.headers.get('Cache-Control')?.trim().toLowerCase() !== 'private, no-store'
+        ) {
+          void response.body?.cancel().catch(() => undefined);
+          throw outsideContract(
+            BILLING_SERVICE,
+            'receiveStripeBillingWebhookInternal',
+            'invalid response headers',
+          );
+        }
+        return response;
+      }
       const body = response.body;
       const length = response.headers.get('Content-Length');
       const encoding = response.headers.get('Content-Encoding')?.trim().toLowerCase();
@@ -80,6 +111,35 @@ export class BillingServiceClient {
       200,
       schemas.GetBillingSubscriptionInternalResponse,
     );
+  }
+
+  /** Relays Stripe's original signed bytes once under the gateway system identity. */
+  public async receiveStripeWebhook(input: StripeWebhookDelivery): Promise<void> {
+    const operation = 'receiveStripeBillingWebhookInternal';
+    const traceId = trace.getActiveSpan()?.spanContext().traceId;
+    const options: InternalRequestInit = {
+      headers: { 'Stripe-Signature': input.signature },
+      idempotent: false,
+      claims: {
+        actor: { type: 'system', id: 'api-gateway' },
+        organizationId: null,
+        role: null,
+        scopes: [],
+        ...(traceId === undefined ? {} : { traceId }),
+      },
+    };
+    const response = await answered(
+      BILLING_SERVICE,
+      operation,
+      this.routes.receiveStripeBillingWebhookInternal(
+        new Blob([Uint8Array.from(input.body)], { type: 'application/json' }),
+        options,
+      ),
+    );
+    expectStatus(BILLING_SERVICE, operation, response, 204);
+    if (response.headers.get('Cache-Control')?.trim().toLowerCase() !== 'private, no-store') {
+      throw outsideContract(BILLING_SERVICE, operation, 'missing Cache-Control private, no-store');
+    }
   }
   // #endregion
 }

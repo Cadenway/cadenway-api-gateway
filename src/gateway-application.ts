@@ -114,7 +114,10 @@ const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
 const AUTOMATIONS_PATH = /^\/v1\/(?:automations(?:\/[^/]+)?|automation-runs)\/?$/iu;
-const GIT_WEBHOOK_PATH = /^\/v1\/webhooks\/(?:github|gitlab)\/?$/iu;
+const STRIPE_WEBHOOK_PATH = '/v1/billing/webhooks/stripe';
+const SIGNED_WEBHOOK_PATH =
+  /^\/v1\/(?:webhooks\/(?:github|gitlab)|billing\/webhooks\/stripe)\/?$/iu;
+const STRIPE_WEBHOOK_ERROR_PATH = /^\/v1\/billing\/webhooks\/stripe\/?$/iu;
 const SITE_SUBMISSION_PATH = /^\/v1\/(?:contact-submissions|newsletter-subscriptions)\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
@@ -196,7 +199,7 @@ export async function createGatewayApplication(
     service: SERVICE_NAME,
     config,
     provideConfig: true,
-    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab'],
+    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab', STRIPE_WEBHOOK_PATH],
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
@@ -242,12 +245,32 @@ export async function createGatewayApplication(
       next(siteFormProblem(error));
     },
   );
-  app.use(GIT_WEBHOOK_PATH, (_request: Request, response: Response, next: NextFunction): void => {
-    response.setHeader('Cache-Control', 'private, no-store');
-    next();
-  });
   app.use(
-    GIT_WEBHOOK_PATH,
+    SIGNED_WEBHOOK_PATH,
+    (_request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      next();
+    },
+  );
+  app.use(
+    STRIPE_WEBHOOK_ERROR_PATH,
+    (error: unknown, _request: Request, _response: Response, next: NextFunction): void => {
+      // The raw parser rejects encoded bodies before controller validation. The public
+      // webhook contract represents unsupported media as an opaque 400.
+      const problem = toProblem(error);
+      if (
+        !(error instanceof ProblemException) &&
+        (problem.status === 415 ||
+          (problem.status === 400 && problem.code !== 'request.body-too-large'))
+      ) {
+        next(new ProblemException({ status: 400, code: 'billing.invalid-webhook' }));
+        return;
+      }
+      next(error);
+    },
+  );
+  app.use(
+    SIGNED_WEBHOOK_PATH,
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       next(error);

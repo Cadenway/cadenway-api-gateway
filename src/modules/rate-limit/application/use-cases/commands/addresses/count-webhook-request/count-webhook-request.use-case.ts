@@ -6,7 +6,7 @@ import type { AddressPseudonymizer } from '../../../../ports/outbound/pseudonyms
 /** Maximum deliveries per provider and client network in one fixed minute. */
 export const WEBHOOK_REQUESTS_PER_MINUTE = 60;
 
-/** Counts public Git webhook deliveries by provider and client network. */
+/** Counts public webhook deliveries by provider and client network. */
 export class CountWebhookRequest {
   // #region Constructor
   /** Binds the dedicated counters and address pseudonymizer. */

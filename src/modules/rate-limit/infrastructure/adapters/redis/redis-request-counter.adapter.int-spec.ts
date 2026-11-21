@@ -87,13 +87,14 @@ describe('RedisRequestCounter on Redis', () => {
     expect(otherAllowance).toEqual({ allowed: true, retryAfterSeconds: 0 });
   });
 
-  it('isolates Git webhook providers and the anonymous quota on Redis', async () => {
+  it('isolates webhook providers and the anonymous quota on Redis', async () => {
     const pseudonym = randomUUID();
     const webhookQuota = { limit: 'webhook', requests: 60, windowSeconds: 60, storeTimeoutMs: 100 };
     const webhook = new CountWebhookRequest(
       {
         github: new RedisRequestCounter(client, webhookQuota),
         gitlab: new RedisRequestCounter(client, webhookQuota),
+        stripe: new RedisRequestCounter(client, webhookQuota),
       },
       { pseudonymize: () => pseudonym },
     );
@@ -106,11 +107,15 @@ describe('RedisRequestCounter on Redis', () => {
     await expect(webhook.execute('203.0.113.7', 'gitlab')).resolves.toMatchObject({
       allowed: true,
     });
+    await expect(webhook.execute('203.0.113.7', 'stripe')).resolves.toMatchObject({
+      allowed: true,
+    });
     await expect(counter.consume(`anonymous:${pseudonym}`)).resolves.toMatchObject({
       allowed: true,
     });
     await expect(client.get(`rate-limit:webhook-github:${pseudonym}`)).resolves.toBe('61');
     await expect(client.get(`rate-limit:webhook-gitlab:${pseudonym}`)).resolves.toBe('1');
+    await expect(client.get(`rate-limit:webhook-stripe:${pseudonym}`)).resolves.toBe('1');
   });
 
   it('keeps the counter in Redis under the id of the credential, expiring with its window', async () => {
