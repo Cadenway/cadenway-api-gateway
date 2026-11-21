@@ -48,6 +48,7 @@ const IF_MATCH: z.ZodOptional<z.ZodString> = z
  * @param {string} name - Name of the header, as the contract writes it.
  * @param {TSchema} schema - Validator of the header in the public contract.
  * @param {unknown} value - The header as Express read it, `undefined` when absent.
+ * @param {{ readonly singleIssue: boolean } | undefined} options - Emit only the first failure when the contract requires one issue per header.
  * @returns {z.output<TSchema>} The validated value.
  * @throws {ProblemException} 400 `request.invalid` when the value does not satisfy the schema.
  */
@@ -55,15 +56,18 @@ export function toRequestHeader<TSchema extends z.ZodType>(
   name: string,
   schema: TSchema,
   value: unknown,
+  options?: { readonly singleIssue: boolean },
 ): z.output<TSchema> {
   const parsed: z.ZodSafeParseResult<z.output<TSchema>> = schema.safeParse(value);
   if (!parsed.success) {
+    const issues =
+      options?.singleIssue === true ? parsed.error.issues.slice(0, 1) : parsed.error.issues;
     throw new ProblemException({
       status: 400,
       code: 'request.invalid',
       detail: 'The request does not match its contract.',
       details: {
-        issues: parsed.error.issues.map((issue: z.core.$ZodIssue) => ({
+        issues: issues.map((issue: z.core.$ZodIssue) => ({
           in: 'header',
           path: name,
           code: issue.code,
