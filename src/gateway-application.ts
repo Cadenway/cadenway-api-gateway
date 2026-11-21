@@ -109,6 +109,7 @@ const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
+const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
 function noStorePrivateResource(
@@ -202,16 +203,19 @@ export async function createGatewayApplication(
     }
     noStorePrivateResource(request, response, next, 'documentId');
   });
-  app.use(SEARCH_PATH, (request: Request, response: Response, next: NextFunction): void => {
-    response.setHeader('Cache-Control', 'private, no-store');
-    if (request.method === 'GET' || request.method === 'HEAD') {
-      delete request.headers['if-none-match'];
-      delete request.headers['if-modified-since'];
-    }
-    next();
-  });
   app.use(
-    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH],
+    [SEARCH_PATH, BILLING_SUBSCRIPTION_PATH],
+    (request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        delete request.headers['if-none-match'];
+        delete request.headers['if-modified-since'];
+      }
+      next();
+    },
+  );
+  app.use(
+    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       const problem = toProblem(error);

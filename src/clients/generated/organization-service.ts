@@ -3,16 +3,45 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
- * Cursor of the next page; `null` on the last page.
+ * @maxItems 100
+ */
+export type QuotaNotificationRecipientIds = string[];
+
+export interface QuotaNotificationRecipientPage {
+  items: QuotaNotificationRecipientIds;
+  /** @nullable */
+  nextCursor: string | null;
+}
+
+export interface QuotaNotificationRecipientLookup {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  userIds: string[];
+}
+
+export interface QuotaNotificationRecipientLookupResult {
+  items: QuotaNotificationRecipientIds;
+}
+
+/**
  * @nullable
  */
-export type NextCursor = string | null;
+export type BillingUsageNextCursor = string | null;
 
-export interface SearchOrganizationPage {
+export interface BillingOrganizationPage {
   /** @maxItems 100 */
   items: string[];
-  nextCursor: NextCursor | null;
+  nextCursor: BillingUsageNextCursor | null;
 }
+
+export type BillingActiveMembershipState = typeof BillingActiveMembershipState[keyof typeof BillingActiveMembershipState];
+
+
+export const BillingActiveMembershipState = {
+  active: 'active',
+} as const;
 
 /**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
@@ -27,6 +56,56 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface BillingActiveMembership {
+  memberId: string;
+  state: BillingActiveMembershipState;
+  role: Role;
+  /**
+     * Version of the membership, independent of the organization version.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingRemovedMembershipState = typeof BillingRemovedMembershipState[keyof typeof BillingRemovedMembershipState];
+
+
+export const BillingRemovedMembershipState = {
+  removed: 'removed',
+} as const;
+
+export interface BillingRemovedMembership {
+  memberId: string;
+  state: BillingRemovedMembershipState;
+  /**
+     * Terminal version of this membership.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export type BillingMembership = BillingActiveMembership | BillingRemovedMembership;
+
+export interface BillingMembershipPage {
+  /** @maxItems 100 */
+  items: BillingMembership[];
+  nextCursor: BillingUsageNextCursor | null;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface SearchOrganizationPage {
+  /** @maxItems 100 */
+  items: string[];
+  nextCursor: NextCursor | null;
+}
 
 export interface SearchMembership {
   memberId: string;
@@ -414,6 +493,67 @@ export interface SetProfileMedia {
   uploadId: ProfileMediaId;
 }
 
+export type Schema = string;
+
+/**
+ * `request.invalid` for malformed input, including a cursor issued for another tenant or
+ * operation. `request.body-too-large` when the body exceeds the service size limit.
+ */
+export type QuotaNotificationRecipientsBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type QuotaNotificationRecipientsTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type QuotaNotificationRecipientsAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the recipient read.
+ */
+export type QuotaNotificationRecipientsUnavailableResponse = Problem;
+
+/**
+ * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
+ */
+export type BillingUsageBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type BillingUsageTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor type
+ * or ID, or `auth.organization-not-allowed` for a verified token scoped to an organization.
+ */
+export type BillingOrganizationAccessRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type BillingMembershipAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the organization in the verified token does not exist.
+ */
+export type BillingOrganizationNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the snapshot page.
+ */
+export type BillingUsageUnavailableResponse = Problem;
+
 /**
  * `request.invalid` for invalid input, including an invalid organization export cursor.
  */
@@ -582,6 +722,18 @@ export type InvitationResendLimitedResponse = Problem;
 export type InvitationNotPendingResponse = Problem;
 
 /**
+ * `invitation.revoked`, `invitation.answered` (with `details.status`, `accepted` or
+ * `refused`), `invitation.expired` (with `details.expiresAt`), or
+ * `organization.seat-quota-exceeded` when acceptance would add a seat beyond the plan limit.
+ */
+export type InvitationAcceptanceConflictResponse = Problem;
+
+/**
+ * `organization.seat-quota-exceeded`: changing this guest to an admin or a member would add a seat beyond the plan limit.
+ */
+export type SeatQuotaExceededResponse = Problem;
+
+/**
  * `member.owner-protected`: the owner is neither removed nor given another role.
  */
 export type OwnerProtectedResponse = Problem;
@@ -615,6 +767,11 @@ export type CursorParameter = string;
  * Page size.
  */
 export type LimitParameter = number;
+
+/**
+ * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+ */
+export type BillingCursorParameter = Schema & string;
 
 export type ListMyOrganizationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -675,6 +832,39 @@ export type ListReceivedInvitationsInternalParams = {
 export type ListSearchOrganizationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListBillingOrganizationsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: BillingCursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListBillingMembershipsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: BillingCursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListQuotaNotificationRecipientsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: BillingCursorParameter;
   /**
    * Page size.
    * @minimum 1
@@ -1136,9 +1326,11 @@ const getChangeMemberRoleInternalUrl = (memberId: string,) => {
 
 /**
  * Gives a member another role. Owner and admins only; `422 member.owner-protected` for the
- * owner; `If-Match` optional (`412 request.version-mismatch`). Emits
- * `member.role-changed.v1` when the role changes. Internal token: actor `user`, organization
- * required.
+ * owner; `If-Match` optional (`412 request.version-mismatch`). Changing a guest to admin or
+ * member uses one seat. If that increase would exceed the organization's plan limit, this
+ * answers `409 organization.seat-quota-exceeded` without changing the role. Emits
+ * `member.role-changed.v1` when the role changes. Internal token: actor `user`,
+ * organization required.
  * @summary Change the role of a member
  */
 const changeMemberRoleInternal = async (memberId: string,
@@ -1425,8 +1617,11 @@ const getAcceptInvitationInternalUrl = (userId: string,
  * (`404 invitation.not-found`, also while the directory holds no verified address for the
  * actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
  * it is pending (`409 invitation.revoked`, `409 invitation.answered`,
- * `409 invitation.expired`). Emits `member.joined.v1`. A `userId` other than the actor
- * answers `404 user.not-found`. Internal token: actor `user`, no organization.
+ * `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+ * plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
+ * and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
+ * other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
+ * organization.
  * @summary Accept an invitation
  */
 const acceptInvitationInternal = async (userId: string,
@@ -1461,8 +1656,9 @@ const getRefuseInvitationInternalUrl = (userId: string,
 }
 
 /**
- * Refuses an invitation addressed to the actor, with the checks of the acceptance. Emits
- * nothing. Internal token: actor `user`, no organization.
+ * Refuses an invitation addressed to the actor. Checks that the invitation exists, is
+ * addressed to the actor's verified address and is still pending. Emits nothing. Internal
+ * token: actor `user`, no organization.
  * @summary Refuse an invitation
  */
 const refuseInvitationInternal = async (userId: string,
@@ -1538,6 +1734,224 @@ const listSearchOrganizationsInternal = async (params?: ListSearchOrganizationsI
 
 
 
+const getListBillingOrganizationsInternalUrl = (params?: ListBillingOrganizationsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/billing-organizations?${stringifiedParams}` : `/internal/v1/billing-organizations`
+}
+
+/**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and a null organization claim in the verified internal token. Every response carries
+ * `Cache-Control: private, no-store`. Only organization IDs are returned. IDs may use
+ * historical UUID versions. Billing signs a separate token for each tenant export.
+ *
+ * The first page fixes an inclusive upper organization ID in its read snapshot. Each page
+ * reads its own snapshot in ascending immutable UUID order above the last returned ID and
+ * at or below that upper bound. The opaque, authenticated cursor binds the operation, the
+ * upper bound and the last returned ID. The cursor has 1 to 1,024 characters. Only
+ * `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Before the first page, Billing records the starting positions for durable consumption of
+ * `organization.created.v1` and the membership and attachment facts used by the tenant
+ * exports. After the final snapshot page, it captures catch-up positions. Billing promotes
+ * a rebuilt projection only once it has proved continuous coverage and applied all relevant
+ * facts through those positions. If a gap in the event history is confirmed, Billing discards
+ * the candidate and restarts from new starting positions. Durable consumption continues after
+ * promotion. Changes committed at the source and still in its outbox at the catch-up position
+ * appear when delivered. The read projection is eventually consistent after promotion.
+ * Mutation admission requires a separate current usage proof. `organization.created.v1`
+ * covers a tenant created during the scan, including a tenant whose ID falls before the
+ * current cursor or above the upper bound.
+ * @summary List organization IDs for a Billing usage rebuild
+ */
+const listBillingOrganizationsInternal = async (params?: ListBillingOrganizationsInternalParams, options?: RequestInit): Promise<listBillingOrganizationsInternalResponse> => {
+
+  const res = await fetchFn(getListBillingOrganizationsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listBillingOrganizationsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listBillingOrganizationsInternalResponse
+}
+
+
+
+const getListBillingMembershipsInternalUrl = (params?: ListBillingMembershipsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/billing-memberships?${stringifiedParams}` : `/internal/v1/billing-memberships`
+}
+
+/**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`. Each active membership,
+ * including a guest, is exported with its ID, version and role. Each retained removal is
+ * exported with its ID and terminal version. The export must include a removal whenever
+ * an older membership fact can still arrive, including from a delayed Organization outbox.
+ * An invitation without a membership contributes no row. A person who rejoins after removal
+ * gets a new membership ID. The export includes no account IDs, names or email addresses.
+ *
+ * The first page fixes an inclusive upper membership ID in its tenant snapshot. Each page
+ * reads its own tenant snapshot in ascending immutable UUID order above the last returned
+ * ID and at or below that upper bound. The opaque, authenticated cursor has 1 to 1,024
+ * characters and binds the operation, the tenant, the upper bound and the last returned ID.
+ * Only `nextCursor: null` marks completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Billing reconciles by membership ID and its highest source version using `member.joined.v1`,
+ * `member.role-changed.v1` and `member.removed.v1`. A removal is terminal for the membership ID.
+ * A removal takes precedence over an active row of the same version. Once a membership ID
+ * is terminal, Billing never restores it. A rebuild requires continuous durable delivery
+ * from a starting position recorded before the first page through a catch-up position
+ * recorded after the final page. Billing proves coverage and applies all relevant facts
+ * through that position before promotion. On a confirmed gap, Billing discards the candidate
+ * and restarts from a new starting position. Changes committed by Organization and still in
+ * its outbox at the catch-up position appear when delivered. The read projection is
+ * eventually consistent after promotion. Mutation admission requires a separate current
+ * usage proof.
+ * @summary Export membership states for Billing seat usage
+ */
+const listBillingMembershipsInternal = async (params?: ListBillingMembershipsInternalParams, options?: RequestInit): Promise<listBillingMembershipsInternalResponse> => {
+
+  const res = await fetchFn(getListBillingMembershipsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listBillingMembershipsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listBillingMembershipsInternalResponse
+}
+
+
+
+const getListQuotaNotificationRecipientsInternalUrl = (params?: ListQuotaNotificationRecipientsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/quota-notification-recipients?${stringifiedParams}` : `/internal/v1/quota-notification-recipients`
+}
+
+/**
+ * Returns the user IDs of active owners and administrators of the organization of the
+ * `quota.threshold-reached.v1` event. Notification signs the event organization in the
+ * internal token. Organization takes the tenant from that verified claim and reads its
+ * own current membership state. The token requires issuer `notification-service`, actor
+ * `{ type: 'system', id: 'notification-service' }` and an organization claim.
+ *
+ * Each page returns up to `limit` eligible user IDs in ascending UUID order. Its opaque,
+ * authenticated cursor binds the tenant, operation and last returned user ID. Memberships
+ * are evaluated at the time of each page read, so eligibility may change during paging.
+ * Only `nextCursor: null` marks completion. Notification rechecks the IDs through the
+ * lookup before dispatch. Every response carries `Cache-Control: private, no-store`.
+ * This operation is read-only.
+ * @summary List current organization recipients for a quota alert
+ */
+const listQuotaNotificationRecipientsInternal = async (params?: ListQuotaNotificationRecipientsInternalParams, options?: RequestInit): Promise<listQuotaNotificationRecipientsInternalResponse> => {
+
+  const res = await fetchFn(getListQuotaNotificationRecipientsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listQuotaNotificationRecipientsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listQuotaNotificationRecipientsInternalResponse
+}
+
+
+
+const getLookupQuotaNotificationRecipientsInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/quota-notification-recipients/lookup`
+}
+
+/**
+ * In one tenant read, returns the requested user IDs that currently belong to an active
+ * owner or administrator of the organization in the verified token. All other IDs are
+ * omitted without distinguishing missing accounts, different organizations and ineligible
+ * memberships. Repeated or case-equivalent UUIDs produce at most one result per account.
+ * Result order is unspecified. The token requires issuer `notification-service`, actor
+ * `{ type: 'system', id: 'notification-service' }` and an organization claim.
+ *
+ * Notification calls this again before each delivery attempt, including a delayed send or
+ * retry. Notification delivers only to accounts in the current result. If the lookup is
+ * unavailable, Notification defers delivery until it obtains a fresh result. This authority checks
+ * membership at the time of the read. Notification still checks its delivery preferences
+ * and resolves the current email address through Identity. Every response carries
+ * `Cache-Control: private, no-store`. This operation is read-only.
+ * @summary Recheck quota alert recipients immediately before delivery
+ */
+const lookupQuotaNotificationRecipientsInternal = async (quotaNotificationRecipientLookup: QuotaNotificationRecipientLookup, options?: RequestInit): Promise<lookupQuotaNotificationRecipientsInternalResponse> => {
+
+  const res = await fetchFn(getLookupQuotaNotificationRecipientsInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(quotaNotificationRecipientLookup)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: lookupQuotaNotificationRecipientsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as lookupQuotaNotificationRecipientsInternalResponse
+}
+
+
+
 const getGetSearchMembershipInternalUrl = () => {
 
 
@@ -1580,7 +1994,7 @@ const getSearchMembershipInternal = async ( options?: RequestInit): Promise<getS
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -2033,6 +2447,11 @@ export type changeMemberRoleInternalResponse404 = {
   status: 404
 }
 
+export type changeMemberRoleInternalResponse409 = {
+  data: SeatQuotaExceededResponse
+  status: 409
+}
+
 export type changeMemberRoleInternalResponse412 = {
   data: VersionMismatchResponse
   status: 412
@@ -2046,7 +2465,7 @@ export type changeMemberRoleInternalResponse422 = {
 export type changeMemberRoleInternalResponseSuccess = (changeMemberRoleInternalResponse200) & {
   headers: Headers;
 };
-export type changeMemberRoleInternalResponseError = (changeMemberRoleInternalResponse400 | changeMemberRoleInternalResponse401 | changeMemberRoleInternalResponse403 | changeMemberRoleInternalResponse404 | changeMemberRoleInternalResponse412 | changeMemberRoleInternalResponse422) & {
+export type changeMemberRoleInternalResponseError = (changeMemberRoleInternalResponse400 | changeMemberRoleInternalResponse401 | changeMemberRoleInternalResponse403 | changeMemberRoleInternalResponse404 | changeMemberRoleInternalResponse409 | changeMemberRoleInternalResponse412 | changeMemberRoleInternalResponse422) & {
   headers: Headers;
 };
 
@@ -2314,7 +2733,7 @@ export type acceptInvitationInternalResponse404 = {
 }
 
 export type acceptInvitationInternalResponse409 = {
-  data: InvitationNotPendingResponse
+  data: InvitationAcceptanceConflictResponse
   status: 409
 }
 
@@ -2401,6 +2820,161 @@ export type listSearchOrganizationsInternalResponseError = (listSearchOrganizati
 };
 
 export type listSearchOrganizationsInternalResponse = (listSearchOrganizationsInternalResponseSuccess | listSearchOrganizationsInternalResponseError)
+
+
+export type listBillingOrganizationsInternalResponse200 = {
+  data: BillingOrganizationPage
+  status: 200
+}
+
+export type listBillingOrganizationsInternalResponse400 = {
+  data: BillingUsageBadRequestResponse
+  status: 400
+}
+
+export type listBillingOrganizationsInternalResponse401 = {
+  data: BillingUsageTokenRefusedResponse
+  status: 401
+}
+
+export type listBillingOrganizationsInternalResponse403 = {
+  data: BillingOrganizationAccessRefusedResponse
+  status: 403
+}
+
+export type listBillingOrganizationsInternalResponse503 = {
+  data: BillingUsageUnavailableResponse
+  status: 503
+}
+
+export type listBillingOrganizationsInternalResponseSuccess = (listBillingOrganizationsInternalResponse200) & {
+  headers: Headers;
+};
+export type listBillingOrganizationsInternalResponseError = (listBillingOrganizationsInternalResponse400 | listBillingOrganizationsInternalResponse401 | listBillingOrganizationsInternalResponse403 | listBillingOrganizationsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listBillingOrganizationsInternalResponse = (listBillingOrganizationsInternalResponseSuccess | listBillingOrganizationsInternalResponseError)
+
+
+export type listBillingMembershipsInternalResponse200 = {
+  data: BillingMembershipPage
+  status: 200
+}
+
+export type listBillingMembershipsInternalResponse400 = {
+  data: BillingUsageBadRequestResponse
+  status: 400
+}
+
+export type listBillingMembershipsInternalResponse401 = {
+  data: BillingUsageTokenRefusedResponse
+  status: 401
+}
+
+export type listBillingMembershipsInternalResponse403 = {
+  data: BillingMembershipAccessRefusedResponse
+  status: 403
+}
+
+export type listBillingMembershipsInternalResponse404 = {
+  data: BillingOrganizationNotFoundResponse
+  status: 404
+}
+
+export type listBillingMembershipsInternalResponse503 = {
+  data: BillingUsageUnavailableResponse
+  status: 503
+}
+
+export type listBillingMembershipsInternalResponseSuccess = (listBillingMembershipsInternalResponse200) & {
+  headers: Headers;
+};
+export type listBillingMembershipsInternalResponseError = (listBillingMembershipsInternalResponse400 | listBillingMembershipsInternalResponse401 | listBillingMembershipsInternalResponse403 | listBillingMembershipsInternalResponse404 | listBillingMembershipsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listBillingMembershipsInternalResponse = (listBillingMembershipsInternalResponseSuccess | listBillingMembershipsInternalResponseError)
+
+
+export type listQuotaNotificationRecipientsInternalResponse200 = {
+  data: QuotaNotificationRecipientPage
+  status: 200
+}
+
+export type listQuotaNotificationRecipientsInternalResponse400 = {
+  data: QuotaNotificationRecipientsBadRequestResponse
+  status: 400
+}
+
+export type listQuotaNotificationRecipientsInternalResponse401 = {
+  data: QuotaNotificationRecipientsTokenRefusedResponse
+  status: 401
+}
+
+export type listQuotaNotificationRecipientsInternalResponse403 = {
+  data: QuotaNotificationRecipientsAccessRefusedResponse
+  status: 403
+}
+
+export type listQuotaNotificationRecipientsInternalResponse404 = {
+  data: QuotaNotificationRecipientsOrganizationNotFoundResponse
+  status: 404
+}
+
+export type listQuotaNotificationRecipientsInternalResponse503 = {
+  data: QuotaNotificationRecipientsUnavailableResponse
+  status: 503
+}
+
+export type listQuotaNotificationRecipientsInternalResponseSuccess = (listQuotaNotificationRecipientsInternalResponse200) & {
+  headers: Headers;
+};
+export type listQuotaNotificationRecipientsInternalResponseError = (listQuotaNotificationRecipientsInternalResponse400 | listQuotaNotificationRecipientsInternalResponse401 | listQuotaNotificationRecipientsInternalResponse403 | listQuotaNotificationRecipientsInternalResponse404 | listQuotaNotificationRecipientsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listQuotaNotificationRecipientsInternalResponse = (listQuotaNotificationRecipientsInternalResponseSuccess | listQuotaNotificationRecipientsInternalResponseError)
+
+
+export type lookupQuotaNotificationRecipientsInternalResponse200 = {
+  data: QuotaNotificationRecipientLookupResult
+  status: 200
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponse400 = {
+  data: QuotaNotificationRecipientsBadRequestResponse
+  status: 400
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponse401 = {
+  data: QuotaNotificationRecipientsTokenRefusedResponse
+  status: 401
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponse403 = {
+  data: QuotaNotificationRecipientsAccessRefusedResponse
+  status: 403
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponse404 = {
+  data: QuotaNotificationRecipientsOrganizationNotFoundResponse
+  status: 404
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponse503 = {
+  data: QuotaNotificationRecipientsUnavailableResponse
+  status: 503
+}
+
+export type lookupQuotaNotificationRecipientsInternalResponseSuccess = (lookupQuotaNotificationRecipientsInternalResponse200) & {
+  headers: Headers;
+};
+export type lookupQuotaNotificationRecipientsInternalResponseError = (lookupQuotaNotificationRecipientsInternalResponse400 | lookupQuotaNotificationRecipientsInternalResponse401 | lookupQuotaNotificationRecipientsInternalResponse403 | lookupQuotaNotificationRecipientsInternalResponse404 | lookupQuotaNotificationRecipientsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type lookupQuotaNotificationRecipientsInternalResponse = (lookupQuotaNotificationRecipientsInternalResponseSuccess | lookupQuotaNotificationRecipientsInternalResponseError)
 
 
 export type getSearchMembershipInternalResponse200 = {

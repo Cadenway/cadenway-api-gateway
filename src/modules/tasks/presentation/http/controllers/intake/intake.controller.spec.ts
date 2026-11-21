@@ -22,6 +22,7 @@ import {
 import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
 import { CountIntakeRequest } from '../../../../../rate-limit/public/addresses/count-intake-request.js';
 import type { IntakeAttachments } from '../../../../application/ports/outbound/storage-service/intake/intake-attachments.port.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import type { IntakeRegistry } from '../../../../application/ports/outbound/task-service/intake/intake-registry.port.js';
 import { CompleteIntakeAttachment } from '../../../../application/use-cases/commands/intake/complete-intake-attachment/complete-intake-attachment.use-case.js';
 import { DisableIntake } from '../../../../application/use-cases/commands/intake/disable-intake/disable-intake.use-case.js';
@@ -373,6 +374,30 @@ describe('anonymous intake HTTP protections', () => {
     for (const secret of [key, draftKey, capability.fields.signature]) {
       expect(logs).not.toContain(secret);
     }
+  });
+
+  it('relays the storage quota refusal without exposing usage to the applicant', async () => {
+    completeStorage.mockRejectedValueOnce(
+      new ProblemException({
+        status: 409,
+        code: 'attachment.storage-quota-exceeded',
+        details: { used: 123, limit: 456, plan: 'free' },
+      }),
+    );
+    const response = await request(application.server)
+      .post(`/v1/intake-forms/${key}/attachments/${attachmentId}/completion`)
+      .set('Intake-Draft-Key', draftKey);
+    expectPublicResponse(
+      'post',
+      '/v1/intake-forms/{publicKey}/attachments/{attachmentId}/completion',
+      response,
+    );
+    expect(response.status).toBe(409);
+    expect(response.body as unknown).toMatchObject({ code: 'attachment.storage-quota-exceeded' });
+    expect(JSON.stringify(response.body)).not.toContain('used');
+    expect(JSON.stringify(response.body)).not.toContain('limit');
+    expect(JSON.stringify(response.body)).not.toContain('free');
+    expect(response.headers['cache-control']).toBe('no-store');
   });
 
   it('passes the applicant draft key and attachment IDs only to Task for submission', async () => {

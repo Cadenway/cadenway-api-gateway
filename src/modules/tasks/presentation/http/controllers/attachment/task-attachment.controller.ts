@@ -70,7 +70,12 @@ const START: AcceptedProblems = {
 const COMPLETE: AcceptedProblems = {
   ...READ,
   403: ['access.role-insufficient'],
-  409: ['task.archived', 'attachment.upload-expired', 'attachment.upload-not-ready'],
+  409: [
+    'task.archived',
+    'attachment.upload-expired',
+    'attachment.upload-not-ready',
+    'attachment.storage-quota-exceeded',
+  ],
   422: ['attachment.file-too-large', 'attachment.upload-metadata-mismatch'],
 };
 const REMOVE: AcceptedProblems = {

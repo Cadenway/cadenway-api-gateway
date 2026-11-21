@@ -69,6 +69,16 @@ const ANSWER_PROBLEMS: AcceptedProblems = {
   409: ['invitation.revoked', 'invitation.answered', 'invitation.expired'],
 };
 
+const ACCEPT_PROBLEMS: AcceptedProblems = {
+  ...ANSWER_PROBLEMS,
+  409: [
+    'invitation.revoked',
+    'invitation.answered',
+    'invitation.expired',
+    'organization.seat-quota-exceeded',
+  ],
+};
+
 /**
  * Constant LIST_QUERY
  *
@@ -245,7 +255,7 @@ export class ReceivedInvitationsController {
   ): Promise<JoinedOrganization> {
     const { userId }: RequestSession = sessionOf(request);
     return toJoinedOrganization(
-      await this.relay(ANSWER_PROBLEMS, () =>
+      await this.relay(ACCEPT_PROBLEMS, () =>
         this.acceptance.execute({ userId, invitationId: params.invitationId }),
       ),
     );

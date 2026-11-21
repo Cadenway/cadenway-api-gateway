@@ -268,6 +268,20 @@ const CASES: readonly RouteCase[] = [
   },
   ...answerCases('accept'),
   ...answerCases('refuse'),
+  {
+    name: 'POST /v1/me/invitations/{invitationId}/accept relays the seat quota conflict',
+    method: 'post',
+    path: '/v1/me/invitations/{invitationId}/accept',
+    url: `/v1/me/invitations/${LUMEN_INVITATION.id}/accept`,
+    credential: 'session-without-organization',
+    body: {},
+    arrange: ({ organization }) =>
+      organization.acceptInvitation.mockRejectedValue(
+        organizationProblem(409, 'organization.seat-quota-exceeded'),
+      ),
+    status: 409,
+    code: 'organization.seat-quota-exceeded',
+  },
 ];
 
 describe('routes of /v1/me/invitations', () => {

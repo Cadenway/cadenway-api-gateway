@@ -13,6 +13,7 @@ import { AccessModule } from './modules/access/access.module.js';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
 import { ArchivesModule } from './modules/archives/archives.module.js';
 import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
+import { BillingModule } from './modules/billing/billing.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { InvitationsModule } from './modules/invitations/invitations.module.js';
 import { InboxModule } from './modules/inbox/inbox.module.js';
@@ -46,6 +47,7 @@ export const ROUTE_MODULES: readonly Type[] = [
   MeRoutesModule,
   NotificationPreferencesModule,
   InboxModule,
+  BillingModule,
   DocumentsModule,
   SearchModule,
   RemindersModule,

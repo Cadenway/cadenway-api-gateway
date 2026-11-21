@@ -352,6 +352,19 @@ const CASES: readonly RouteCase[] = [
     code: 'member.not-found',
   },
   {
+    name: 'PATCH /v1/members/{memberId} relays the seat quota conflict',
+    method: 'patch',
+    path: '/v1/members/{memberId}',
+    url: MEMBER_URL,
+    body: { role: 'admin' },
+    arrange: ({ organization }) =>
+      organization.changeMemberRole.mockRejectedValue(
+        organizationProblem(409, 'organization.seat-quota-exceeded'),
+      ),
+    status: 409,
+    code: 'organization.seat-quota-exceeded',
+  },
+  {
     name: 'PATCH /v1/members/{memberId} relays 412 request.version-mismatch with the version',
     method: 'patch',
     path: '/v1/members/{memberId}',
