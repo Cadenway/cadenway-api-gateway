@@ -1,11 +1,16 @@
+import { ClientRequest } from 'node:http';
+
 import {
   GetTaskDetailInternalResponse,
   GetTaskInternalResponse,
 } from '@cadenway/contracts/validators/internal/task-service';
+import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  ATELIER_NORD_ID,
   CAMILLE,
+  CAMILLE_ORGANIZATION_TOKEN,
   createFakeIdentity,
   type FakeIdentity,
 } from '../../../../../../../tests/support/fake-identity.js';
@@ -16,6 +21,7 @@ import {
   taskProblem,
   UNASSIGNED_VERSION,
 } from '../../../../../../../tests/support/fake-task.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import {
   createRouteApplication,
   type RouteApplication,
@@ -29,6 +35,7 @@ import {
   taskRouteCases,
   type TaskRoute,
 } from '../../../../../../../tests/support/task-route-matrix.js';
+import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
 
 /**
  * Id of the list "Sprint 14" of the contract examples.
@@ -207,6 +214,7 @@ const ROUTES: readonly TaskRoute[] = [
         partial: [],
       });
       expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
+      expect(response.headers['cache-control']).toBe('private, no-store');
     },
   },
   {
@@ -362,6 +370,11 @@ const ROUTES: readonly TaskRoute[] = [
  */
 const CASES: readonly RouteCase[] = ROUTES.flatMap(taskRouteCases);
 
+/** The routes that accept an organization precondition. */
+const ORGANIZATION_PRECONDITION_ROUTES = ROUTES.filter(
+  (route) => route.call === 'getTaskDetail' || route.call === 'updateTask',
+);
+
 describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
   let identity: FakeIdentity;
   let application: RouteApplication;
@@ -389,6 +402,88 @@ describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
       await runRouteCase(application, identity, routeCase);
     },
   );
+
+  describe.each(ORGANIZATION_PRECONDITION_ROUTES)('$method $path', (route) => {
+    it('accepts a matching If-Organization-Match without changing the task version precondition', async () => {
+      await runRouteCase(application, identity, {
+        ...route,
+        name: 'matching organization precondition',
+        headers: {
+          ...route.headers,
+          'If-Organization-Match': ATELIER_NORD_ID.toUpperCase(),
+          ...(route.method === 'get'
+            ? { 'If-None-Match': `"${String(taskDetailCore().task.version)}"` }
+            : {}),
+        },
+        status: 200,
+      });
+
+      expect(application.task[route.call]).toHaveBeenCalledWith(...route.calledWith);
+    });
+
+    it.each(['', '019a5f3c-8d2e-4c4a-9b1f-3e5d7a9c1b2f'])(
+      'refuses a malformed If-Organization-Match (%j) before calling Task',
+      async (header) => {
+        const response = await runRouteCase(application, identity, {
+          name: 'malformed organization precondition',
+          method: route.method,
+          path: route.path,
+          url: route.url,
+          body: route.body,
+          headers: { ...route.headers, 'If-Organization-Match': header },
+          status: 400,
+          code: 'request.invalid',
+        });
+
+        expect(response.body).toMatchObject({
+          details: { issues: [{ in: 'header', path: 'If-Organization-Match' }] },
+        });
+        expect(application.task[route.call]).not.toHaveBeenCalled();
+      },
+    );
+
+    it('refuses two identical If-Organization-Match fields before calling Task', async () => {
+      const pending = request(application.server)
+        [route.method](route.url)
+        .set({
+          ...route.headers,
+          Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
+          Origin: ALLOWED_ORIGIN,
+        })
+        .on('request', (outgoing: request.Test) => {
+          if (!(outgoing.req instanceof ClientRequest)) {
+            throw new Error('Expected an HTTP/1.1 request.');
+          }
+          outgoing.req.setHeader('If-Organization-Match', [ATELIER_NORD_ID, ATELIER_NORD_ID]);
+        });
+      const response =
+        route.body === undefined ? await pending : await pending.send(route.body as object);
+
+      expectPublicResponse(route.method, route.path, response);
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        code: 'request.invalid',
+        details: { issues: [{ in: 'header', path: 'If-Organization-Match' }] },
+      });
+      expect(application.task[route.call]).not.toHaveBeenCalled();
+    });
+  });
+
+  it('returns a fresh task detail for a matching cache validator without an organization precondition', async () => {
+    const etag = `"${String(taskDetailCore().task.version)}"`;
+    const response = await runRouteCase(application, identity, {
+      name: 'task detail with a matching cache validator',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}/detail',
+      url: `/v1/tasks/${TASK_KEY}/detail`,
+      headers: { 'If-None-Match': etag },
+      status: 200,
+    });
+
+    expect(response.headers.etag).toBe(etag);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(application.task.getTaskDetail).toHaveBeenCalledWith(TASK_KEY);
+  });
 
   it('forwards the milestone filter to list and group queries', async () => {
     await runRouteCase(application, identity, {

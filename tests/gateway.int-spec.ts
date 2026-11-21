@@ -80,17 +80,17 @@ describe('gateway start-up', () => {
 
   it('accepts a preflight from an allowed origin, with credentials', async () => {
     const response: request.Response = await request(server)
-      .options('/v1/tasks')
+      .options('/v1/tasks/CAD-482')
       .set('Origin', ALLOWED_ORIGIN)
       .set('Access-Control-Request-Method', 'PATCH')
-      .set('Access-Control-Request-Headers', 'content-type,if-match');
+      .set('Access-Control-Request-Headers', 'content-type,if-match,if-organization-match');
 
     expect(response.status).toBe(204);
     expect(response.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN);
     expect(response.headers['access-control-allow-credentials']).toBe('true');
     expect(response.headers['access-control-allow-methods']).toContain('PATCH');
     expect(response.headers['access-control-allow-headers']).toBe(
-      'Content-Type,If-Match,Idempotency-Key,Intake-Draft-Key',
+      'Content-Type,If-Match,If-Organization-Match,Idempotency-Key,Intake-Draft-Key',
     );
     expect(response.headers.vary).toContain('Origin');
   });

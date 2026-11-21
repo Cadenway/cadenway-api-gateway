@@ -54,6 +54,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ],
   ['rate-limit.exceeded', 'Trop de requêtes : réessayez dans un instant.'],
   ['organization.not-selected', 'Choisissez une organisation pour continuer.'],
+  ['organization.context-changed', 'L’organisation active a changé.'],
   ['organization.role-forbidden', 'Votre rôle ne permet pas cette action.'],
   ['organization.seat-quota-exceeded', 'La limite de sièges du forfait est atteinte.'],
   ['organization.not-found', 'Organisation introuvable.'],

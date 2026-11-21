@@ -20,6 +20,7 @@ import {
   CreateTaskHeader,
   CreateTaskParams,
   CreateTaskResponse,
+  GetTaskDetailHeader,
   GetTaskDetailParams,
   GetTaskDetailResponse,
   GetTaskParams,
@@ -41,10 +42,11 @@ import {
   UpdateChecklistItemParams,
   UpdateChecklistItemResponse,
   UpdateTaskBody,
+  UpdateTaskHeader,
   UpdateTaskParams,
   UpdateTaskResponse,
 } from '@cadenway/contracts/validators/public/tasks';
-import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
+import { formatEtag, requireOrganizationId, ZodValidationPipe } from '@cadenway/nest-common';
 import {
   Controller,
   Delete,
@@ -63,6 +65,7 @@ import {
 import type { Response } from 'express';
 import { z } from 'zod';
 
+import { publicProblem } from '../../../../../../problems/public-problem.js';
 import { conformBody } from '../../../../../../problems/upstream-answer.js';
 import {
   relayProblems,
@@ -434,6 +437,27 @@ const LIST_TASK_ACTIVITY_QUERY = ListTaskActivityQueryParams.extend({
  * @type {z.ZodType<Record<string, never>>}
  */
 const ASSIGN_TASK_BODY: z.ZodType<Record<string, never>> = AssignTaskBody.strict();
+
+/**
+ * Validates the expected organization against the verified context used by the Task client.
+ * A repeated header is joined by Node with a comma, which cannot satisfy the UUIDv7 validator.
+ *
+ * @param header - The value of `If-Organization-Match`, when the caller supplied it.
+ * @param schema - The header validator from the public operation.
+ * @param response - The response whose mismatch problem must never be cached.
+ * @throws {ProblemException} 400 for an invalid header, or 412 when the organization changed.
+ */
+function checkTaskOrganization(
+  header: string | undefined,
+  schema: z.ZodType<string | undefined>,
+  response: Response,
+): void {
+  const expected = toRequestHeader('If-Organization-Match', schema, header, { singleIssue: true });
+  if (expected !== undefined && expected.toLowerCase() !== requireOrganizationId().toLowerCase()) {
+    response.setHeader('Cache-Control', 'private, no-store');
+    throw publicProblem({ status: 412, code: 'organization.context-changed' });
+  }
+}
 
 /**
  * Class TasksController
@@ -819,6 +843,8 @@ export class TasksController {
    * @param {z.output<typeof UpdateTaskParams>} params - The path parameters.
    * @param {z.output<typeof UpdateTaskBody>} body - The body, validated.
    * @param {string | undefined} ifMatch - `If-Match` of the request, relayed unchanged.
+   * @param {string | undefined} expectedOrganization - The optional organization precondition.
+   * @param {Response} response - Response, for its headers.
    * @returns {Promise<z.output<typeof UpdateTaskResponse>>} The answer, mapped to the public contract.
    */
   @Patch('tasks/:taskKey')
@@ -831,7 +857,14 @@ export class TasksController {
     @Param(new ZodValidationPipe(UpdateTaskParams)) params: z.output<typeof UpdateTaskParams>,
     @RequiredBody(UpdateTaskBody) body: z.output<typeof UpdateTaskBody>,
     @IfMatchHeader() ifMatch: string | undefined,
+    @Headers('if-organization-match') expectedOrganization: string | undefined,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof UpdateTaskResponse>> {
+    checkTaskOrganization(
+      expectedOrganization,
+      UpdateTaskHeader.shape['If-Organization-Match'],
+      response,
+    );
     return conformBody(
       TASK_SERVICE,
       'updateTask',
@@ -849,6 +882,7 @@ export class TasksController {
    * `GET /v1/tasks/{taskKey}/detail`: the detail of a task the gateway composes (see `GetTaskDetail`), with the `ETag` of the task. `partial` names secondary parts that could not be read.
    *
    * @param {z.output<typeof GetTaskDetailParams>} params - The path parameters.
+   * @param {string | undefined} expectedOrganization - The optional organization precondition.
    * @param {Response} response - Response, for its headers.
    * @returns {Promise<z.output<typeof GetTaskDetailResponse>>} The answer, mapped to the public contract.
    */
@@ -860,8 +894,14 @@ export class TasksController {
   })
   public async getTaskDetail(
     @Param(new ZodValidationPipe(GetTaskDetailParams)) params: z.output<typeof GetTaskDetailParams>,
+    @Headers('if-organization-match') expectedOrganization: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof GetTaskDetailResponse>> {
+    checkTaskOrganization(
+      expectedOrganization,
+      GetTaskDetailHeader.shape['If-Organization-Match'],
+      response,
+    );
     const detail: TaskDetail = await relayProblems(GET_TASK_DETAIL_PROBLEMS, () =>
       this.detailReading.execute(params.taskKey),
     );

@@ -2,7 +2,12 @@ import { ProblemException, type ProblemStatus } from '@cadenway/nest-common';
 import type request from 'supertest';
 import { expect } from 'vitest';
 
-import { TASKS_API_TOKEN, TASKS_TOKEN } from './fake-identity.js';
+import {
+  ATELIER_NORD_ID,
+  CAMILLE_ORGANIZATION_SESSION,
+  TASKS_API_TOKEN,
+  TASKS_TOKEN,
+} from './fake-identity.js';
 import { taskProblem, type TaskServiceMethod } from './fake-task.js';
 import {
   declaredProblemCodes,
@@ -325,6 +330,33 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
   }
   for (const status of RELAYED_STATUSES) {
     for (const code of declaredProblemCodes(route.method, route.path, status)) {
+      if (code === 'organization.context-changed') {
+        cases.push({
+          ...base,
+          name: `${label} rejects a stale organization for the same session before calling Task`,
+          headers: { ...route.headers, 'If-Organization-Match': ATELIER_NORD_ID },
+          arrange: ({ identity }) => {
+            identity.introspect.mockResolvedValueOnce({
+              ...CAMILLE_ORGANIZATION_SESSION,
+              organizationId: '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01',
+            });
+          },
+          status,
+          code,
+          check: (response, fakes) => {
+            expect(response.headers['cache-control']).toBe('private, no-store');
+            expect(response.body).toEqual({
+              type: 'about:blank',
+              status: 412,
+              code,
+              title: 'L’organisation active a changé.',
+            });
+            notCalled(response, fakes);
+            expect(fakes.task.listTaskComments).not.toHaveBeenCalled();
+          },
+        });
+        continue;
+      }
       if (GUARD_CODES.has(code)) {
         continue;
       }

@@ -70,6 +70,7 @@ export const CORS_ALLOWED_METHODS: readonly string[] = [
 export const CORS_ALLOWED_HEADERS: readonly string[] = [
   'Content-Type',
   'If-Match',
+  'If-Organization-Match',
   'Idempotency-Key',
   'Intake-Draft-Key',
 ];
@@ -111,6 +112,7 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
+const TASK_DETAIL_PATH = /^\/v1\/tasks\/[^/]+\/detail\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
 const AUTOMATIONS_PATH = /^\/v1\/(?:automations(?:\/[^/]+)?|automation-runs)\/?$/iu;
@@ -263,8 +265,9 @@ export async function createGatewayApplication(
     }
     noStorePrivateResource(request, response, next, 'documentId');
   });
+  // Numeric task ETags are version preconditions and may match across organizations.
   app.use(
-    [SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [TASK_DETAIL_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
