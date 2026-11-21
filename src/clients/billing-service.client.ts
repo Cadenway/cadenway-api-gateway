@@ -27,6 +27,7 @@ export interface StripeWebhookDelivery {
 
 const operation = 'getBillingSubscriptionInternal';
 const MAX_SUBSCRIPTION_BYTES = 16 * 1024;
+const MAX_INVOICES_BYTES = 256 * 1024;
 type Routes = ReturnType<typeof getBillingServiceInternalRoutes>;
 
 /** Calls Billing with the signed user and organization context. */
@@ -42,7 +43,7 @@ export class BillingServiceClient {
     this.routes = getBillingServiceInternalRoutes(async (input, init) => {
       if (typeof input !== 'string') throw new Error('The Billing client requires a path.');
       const response = await http.fetch(input, init);
-      if (init?.method === 'POST') {
+      if (init?.method === 'POST' && init.body instanceof Blob) {
         if (
           response.status !== 204 ||
           response.headers.get('Cache-Control')?.trim().toLowerCase() !== 'private, no-store'
@@ -56,6 +57,16 @@ export class BillingServiceClient {
         }
         return response;
       }
+      const operationName =
+        init?.method === 'POST'
+          ? 'startBillingCheckoutInternal'
+          : input.split('?', 1)[0] === this.routes.getListBillingInvoicesInternalUrl()
+            ? 'listBillingInvoicesInternal'
+            : operation;
+      const limit =
+        operationName === 'listBillingInvoicesInternal'
+          ? MAX_INVOICES_BYTES
+          : MAX_SUBSCRIPTION_BYTES;
       const body = response.body;
       const length = response.headers.get('Content-Length');
       const encoding = response.headers.get('Content-Encoding')?.trim().toLowerCase();
@@ -65,26 +76,32 @@ export class BillingServiceClient {
         body === null ||
         !/^application\/json(?:\s*;|$)/iu.test(response.headers.get('Content-Type') ?? '') ||
         response.headers.get('Cache-Control')?.trim().toLowerCase() !== 'private, no-store' ||
-        (identityEncoding &&
-          length !== null &&
-          (!/^\d+$/u.test(length) || Number(length) > MAX_SUBSCRIPTION_BYTES))
+        (identityEncoding && length !== null && (!/^\d+$/u.test(length) || Number(length) > limit))
       ) {
         void body?.cancel().catch(() => undefined);
-        throw outsideContract(BILLING_SERVICE, operation, 'invalid response headers');
+        throw outsideContract(BILLING_SERVICE, operationName, 'invalid response headers');
       }
       let received = 0;
       const bounded = body.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
           transform(chunk, controller) {
             received += chunk.byteLength;
-            if (received > MAX_SUBSCRIPTION_BYTES) {
-              throw outsideContract(BILLING_SERVICE, operation, 'response exceeds its byte limit');
+            if (received > limit) {
+              throw outsideContract(
+                BILLING_SERVICE,
+                operationName,
+                'response exceeds its byte limit',
+              );
             }
             controller.enqueue(chunk);
           },
           flush() {
             if (identityEncoding && length !== null && received !== Number(length)) {
-              throw outsideContract(BILLING_SERVICE, operation, 'response length did not match');
+              throw outsideContract(
+                BILLING_SERVICE,
+                operationName,
+                'response length did not match',
+              );
             }
           },
         }),
@@ -110,6 +127,57 @@ export class BillingServiceClient {
       response,
       200,
       schemas.GetBillingSubscriptionInternalResponse,
+    );
+  }
+
+  /** Starts one hosted Checkout with the current signed user and organization. */
+  public async startCheckout(
+    body: z.input<typeof schemas.StartBillingCheckoutInternalBody>,
+    idempotencyKey: string,
+  ): Promise<z.output<typeof schemas.StartBillingCheckoutInternalResponse>> {
+    const operationName = 'startBillingCheckoutInternal';
+    const options: InternalRequestInit = {
+      headers: schemas.StartBillingCheckoutInternalHeader.parse({
+        'Idempotency-Key': idempotencyKey,
+      }),
+      idempotent: false,
+    };
+    const response = await answered(
+      BILLING_SERVICE,
+      operationName,
+      this.routes.startBillingCheckoutInternal(
+        schemas.StartBillingCheckoutInternalBody.parse(body),
+        options,
+      ),
+    );
+    return expectBody(
+      BILLING_SERVICE,
+      operationName,
+      response,
+      200,
+      schemas.StartBillingCheckoutInternalResponse,
+    );
+  }
+
+  /** Reads an invoice page for the current signed user and organization. */
+  public async listInvoices(params: {
+    readonly cursor?: string;
+    readonly limit?: number;
+  }): Promise<z.output<typeof schemas.ListBillingInvoicesInternalResponse>> {
+    const operationName = 'listBillingInvoicesInternal';
+    const response = await answered(
+      BILLING_SERVICE,
+      operationName,
+      this.routes.listBillingInvoicesInternal(
+        schemas.ListBillingInvoicesInternalQueryParams.parse(params),
+      ),
+    );
+    return expectBody(
+      BILLING_SERVICE,
+      operationName,
+      response,
+      200,
+      schemas.ListBillingInvoicesInternalResponse,
     );
   }
 

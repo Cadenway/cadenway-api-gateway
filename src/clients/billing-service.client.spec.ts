@@ -73,6 +73,88 @@ describe('BillingServiceClient', () => {
     expect(new Headers(calls[0]?.init?.headers).get('Authorization')).toMatch(/^Bearer /u);
   });
 
+  it('forwards Checkout once with the same key and the signed user context', async () => {
+    answer = Response.json({ url: 'https://checkout.stripe.com/session/test' }, { headers });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.startCheckout({ plan: 'team' }, 'checkout-key'),
+      ),
+    ).resolves.toEqual({ url: 'https://checkout.stripe.com/session/test' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('http://billing-service.test/internal/v1/billing/checkout');
+    expect(calls[0]?.init?.method).toBe('POST');
+    expect(calls[0]?.init?.body).toBe('{"plan":"team"}');
+    const sent = new Headers(calls[0]?.init?.headers);
+    expect(sent.get('Idempotency-Key')).toBe('checkout-key');
+    const principal = await verifier.verify(
+      (sent.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(principal).toMatchObject({
+      actor: context.actor,
+      organizationId: context.organizationId,
+    });
+  });
+
+  it('does not retry a failed Checkout request even with an idempotency key', async () => {
+    answer = Response.json(
+      { type: 'about:blank', title: 'Unavailable', status: 503, code: 'billing.unavailable' },
+      { status: 503, headers: { ...headers, 'Content-Type': 'application/problem+json' } },
+    );
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.startCheckout({ plan: 'team' }, 'checkout-key'),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'billing.unavailable' } });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('preserves a Checkout conflict without retrying the request', async () => {
+    answer = Response.json(
+      { type: 'about:blank', title: 'Conflict', status: 409, code: 'billing.checkout-in-progress' },
+      { status: 409, headers: { ...headers, 'Content-Type': 'application/problem+json' } },
+    );
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.startCheckout({ plan: 'team' }, 'checkout-key'),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 409, code: 'billing.checkout-in-progress' } });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('validates and forwards bounded invoice pagination for the current tenant', async () => {
+    const page = { items: [], nextCursor: 'next-page' };
+    answer = Response.json({ ...page, internalOnly: 'hidden' }, { headers });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.listInvoices({ cursor: 'previous', limit: 10 }),
+      ),
+    ).resolves.toEqual(page);
+    expect(calls[0]?.url).toBe(
+      'http://billing-service.test/internal/v1/billing/invoices?cursor=previous&limit=10',
+    );
+    const sent = new Headers(calls[0]?.init?.headers);
+    const principal = await verifier.verify(
+      (sent.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(principal).toMatchObject({
+      actor: context.actor,
+      organizationId: context.organizationId,
+    });
+  });
+
+  it('rejects invoice pages with invalid fields or an excessive decoded body', async () => {
+    answer = Response.json({ items: [{ number: 'FAC-1' }], nextCursor: null }, { headers });
+    await expect(
+      runWithOrganizationContext(context, () => client.listInvoices({})),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    answer = new Response('x'.repeat(256 * 1024 + 1), {
+      headers: { ...headers, 'Content-Type': 'application/json' },
+    });
+    await expect(
+      runWithOrganizationContext(context, () => client.listInvoices({})),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
   it('rejects malformed bodies and a missing private cache policy', async () => {
     answer = Response.json({ ...subscription, seats: { used: -1, limit: 5 } }, { headers });
     await expect(

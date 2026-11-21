@@ -92,6 +92,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['auth.reset-link-expired', 'Ce lien a expiré'],
   ['auth.password-incorrect', 'Mot de passe incorrect.'],
   ['auth.reauthentication-required', 'Confirmez votre identité pour continuer.'],
+  ['auth.federated-sign-in-refused', 'La connexion via ce fournisseur a échoué.'],
   ['auth.email-unchanged', 'C’est déjà votre adresse actuelle : saisissez la nouvelle.'],
   [
     'account.organization-owner',

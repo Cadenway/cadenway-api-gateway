@@ -1,7 +1,5 @@
-import type {
-  StripeWebhookDelivery,
-  StripeWebhookPort,
-} from '../../../../ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
+import type { StripeWebhookDelivery } from '../../../../models/billing/stripe-webhook-delivery.model.js';
+import type { StripeWebhookPort } from '../../../../ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
 
 /** Forwards a Stripe delivery to its Billing owner. */
 export class ReceiveStripeWebhook {

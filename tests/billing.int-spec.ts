@@ -19,12 +19,19 @@ import { ATELIER_NORD_ID, CAMILLE } from './support/fake-identity.js';
 import { ATELIER_NORD } from './support/fake-organization.js';
 import { expectPublicResponse } from './support/public-contract.js';
 import { createFakeCounter } from './support/route-application.js';
-import { GATEWAY_ISSUER, generateSigningKeys, testConfig } from './support/test-environment.js';
+import {
+  ALLOWED_ORIGIN,
+  GATEWAY_ISSUER,
+  generateSigningKeys,
+  testConfig,
+} from './support/test-environment.js';
 
 const IDENTITY_URL = 'http://identity-service.test';
 const ORGANIZATION_URL = 'http://organization-service.test';
 const BILLING_URL = 'http://billing-service.test';
 const PATH = '/v1/billing/subscription';
+const CHECKOUT_PATH = '/v1/billing/checkout';
+const INVOICES_PATH = '/v1/billing/invoices';
 const STRIPE_PATH = '/v1/billing/webhooks/stripe';
 const STRIPE_SIGNATURE = 't=1795279200,v1=fixture-signature';
 const SESSION = 'billing-session';
@@ -44,6 +51,12 @@ describe('Billing subscription through the public gateway', () => {
   const calls: { service: string; principal: InternalPrincipal }[] = [];
   const webhookCalls: { body: Buffer; signature: string | null; principal: InternalPrincipal }[] =
     [];
+  const paymentCalls: {
+    service: string;
+    principal: InternalPrincipal;
+    key: string | null;
+    body: unknown;
+  }[] = [];
   let app: NestExpressApplication;
   let server: App;
   let organizationAnswer: () => Response | Promise<Response>;
@@ -99,6 +112,30 @@ describe('Billing subscription through the public gateway', () => {
         });
         return billingAnswer();
       }),
+      http.post(`${BILLING_URL}/internal/v1/billing/checkout`, async ({ request: call }) => {
+        paymentCalls.push({
+          service: 'checkout',
+          principal: await verifier('billing-service', call.headers.get('Authorization') ?? ''),
+          key: call.headers.get('Idempotency-Key'),
+          body: await call.json(),
+        });
+        return HttpResponse.json(
+          { url: 'https://checkout.example.test/session' },
+          { headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }),
+      http.get(`${BILLING_URL}/internal/v1/billing/invoices`, async ({ request: call }) => {
+        paymentCalls.push({
+          service: 'invoices',
+          principal: await verifier('billing-service', call.headers.get('Authorization') ?? ''),
+          key: null,
+          body: null,
+        });
+        return HttpResponse.json(
+          { items: [], nextCursor: null },
+          { headers: { 'Cache-Control': 'private, no-store' } },
+        );
+      }),
       http.post(`${BILLING_URL}/internal/v1/billing/webhooks/stripe`, async ({ request: call }) => {
         webhookCalls.push({
           body: Buffer.from(await call.arrayBuffer()),
@@ -135,6 +172,7 @@ describe('Billing subscription through the public gateway', () => {
 
   beforeEach(() => {
     calls.length = 0;
+    paymentCalls.length = 0;
     webhookCalls.length = 0;
     webhookAllowance.mockReset().mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
     webhookAnswer = () =>
@@ -314,5 +352,73 @@ describe('Billing subscription through the public gateway', () => {
     expect(response.status).toBe(503);
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(calls.map(({ service }) => service)).toEqual(['organization']);
+  });
+  it('checks ownership for each checkout replay and invoice request and forwards the signed tenant', async () => {
+    const checkout = async () =>
+      request(server)
+        .post(CHECKOUT_PATH)
+        .set('Cookie', `__Host-cw_session=${SESSION}`)
+        .set('Origin', ALLOWED_ORIGIN)
+        .set('Idempotency-Key', 'checkout-fixture-123')
+        .send({ plan: 'team' });
+    const first = await checkout();
+    const replay = await checkout();
+    const invoices = await request(server)
+      .get(INVOICES_PATH)
+      .set('Cookie', `__Host-cw_session=${SESSION}`);
+    expectPublicResponse('post', CHECKOUT_PATH, first);
+    expectPublicResponse('post', CHECKOUT_PATH, replay);
+    expectPublicResponse('get', INVOICES_PATH, invoices);
+    for (const response of [first, replay, invoices]) {
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+    }
+    expect(first.body).toEqual({ url: 'https://checkout.example.test/session' });
+    expect(invoices.body).toEqual({ items: [], nextCursor: null });
+    expect(calls.map(({ service }) => service)).toEqual([
+      'organization',
+      'organization',
+      'organization',
+    ]);
+    expect(paymentCalls.map(({ service }) => service)).toEqual([
+      'checkout',
+      'checkout',
+      'invoices',
+    ]);
+    expect(paymentCalls.slice(0, 2)).toMatchObject([
+      { key: 'checkout-fixture-123', body: { plan: 'team' } },
+      { key: 'checkout-fixture-123', body: { plan: 'team' } },
+    ]);
+    for (const { principal } of [...calls, ...paymentCalls]) {
+      expect(principal).toMatchObject({
+        actor: { type: 'user', id: CAMILLE.id },
+        organizationId: ATELIER_NORD_ID,
+      });
+    }
+  });
+
+  it('rejects revoked owners and malformed checkout without reaching Billing and keeps errors private', async () => {
+    organizationAnswer = () => HttpResponse.json({ ...ATELIER_NORD, role: 'member' });
+    const checkout = await request(server)
+      .post(CHECKOUT_PATH)
+      .set('Cookie', `__Host-cw_session=${SESSION}`)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('Idempotency-Key', 'checkout-fixture-123')
+      .send({ plan: 'team' });
+    const invoices = await request(server)
+      .get(INVOICES_PATH)
+      .set('Cookie', `__Host-cw_session=${SESSION}`);
+    const malformed = await request(server)
+      .post(CHECKOUT_PATH)
+      .set('Cookie', `__Host-cw_session=${SESSION}`)
+      .set('Origin', ALLOWED_ORIGIN)
+      .send({ plan: 'team' });
+    expectPublicResponse('post', CHECKOUT_PATH, checkout);
+    expectPublicResponse('get', INVOICES_PATH, invoices);
+    expectPublicResponse('post', CHECKOUT_PATH, malformed);
+    expect([checkout.status, invoices.status, malformed.status]).toEqual([403, 403, 400]);
+    for (const response of [checkout, invoices, malformed])
+      expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(paymentCalls).toHaveLength(0);
   });
 });

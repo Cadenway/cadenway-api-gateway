@@ -1,9 +1,7 @@
 import { ProblemException } from '@cadenway/nest-common';
 
-import type {
-  StripeWebhookDelivery,
-  StripeWebhookPort,
-} from '../../../application/ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
+import type { StripeWebhookDelivery } from '../../../application/models/billing/stripe-webhook-delivery.model.js';
+import type { StripeWebhookPort } from '../../../application/ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
 
 /** The technical client's generated Stripe operation. */
 interface BillingWebhookClient {

@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { StripeWebhookDelivery } from '../../../../application/ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
+import type { StripeWebhookDelivery } from '../../../../application/models/billing/stripe-webhook-delivery.model.js';
 import { ReceiveStripeWebhook } from '../../../../application/use-cases/commands/billing/receive-stripe-webhook/receive-stripe-webhook.use-case.js';
 import { StripeWebhookController } from './stripe-webhook.controller.js';
 

@@ -1,7 +1,7 @@
 import { ProblemException } from '@cadenway/nest-common';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { StripeWebhookDelivery } from '../../../application/ports/outbound/billing/stripe-webhook/stripe-webhook.port.js';
+import type { StripeWebhookDelivery } from '../../../application/models/billing/stripe-webhook-delivery.model.js';
 import { createStripeWebhookAdapter } from './stripe-webhook.adapter.js';
 
 const input = { body: Buffer.from('\n{ "event": "synthetic" }\n'), signature: 't=1,v1=fixture' };

@@ -13,6 +13,7 @@ import { AccessModule } from './modules/access/access.module.js';
 import { ApiTokensModule } from './modules/api-tokens/api-tokens.module.js';
 import { ArchivesModule } from './modules/archives/archives.module.js';
 import { AuthRoutesModule } from './modules/auth-routes/auth-routes.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { AutomationsModule } from './modules/automations/automations.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
@@ -46,6 +47,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
  * @type {readonly Type[]}
  */
 export const ROUTE_MODULES: readonly Type[] = [
+  AuthModule,
   AuthRoutesModule,
   MeRoutesModule,
   NotificationPreferencesModule,

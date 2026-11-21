@@ -112,7 +112,11 @@ const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
-const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
+const BILLING_PRIVATE_PATH = /^\/v1\/billing\/(?:subscription|checkout|invoices)\/?$/iu;
+const FEDERATED_AUTH_PATH =
+  /^\/v1\/auth\/sign-in\/federated\/(?:start|finish|saml\/callback|providers\/[^/]+\/callback)\/?$/iu;
+const SAML_CALLBACK_PATH = /^\/v1\/auth\/sign-in\/federated\/saml\/callback\/?$/iu;
+const FEDERATED_CALLBACK_PATH = /\/callback\/?$/iu;
 const AUTOMATIONS_PATH = /^\/v1\/(?:automations(?:\/[^/]+)?|automation-runs)\/?$/iu;
 const STRIPE_WEBHOOK_PATH = '/v1/billing/webhooks/stripe';
 const SIGNED_WEBHOOK_PATH =
@@ -287,7 +291,7 @@ export async function createGatewayApplication(
     noStorePrivateResource(request, response, next, 'documentId');
   });
   app.use(
-    [SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -298,7 +302,7 @@ export async function createGatewayApplication(
     },
   );
   app.use(
-    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       const problem = toProblem(error);
@@ -346,5 +350,40 @@ export async function createGatewayApplication(
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors(cors);
+  app.use(FEDERATED_AUTH_PATH, (request: Request, response: Response, next: NextFunction): void => {
+    response.setHeader('Cache-Control', 'private, no-store');
+    if (FEDERATED_CALLBACK_PATH.test(request.originalUrl.split('?', 1)[0] ?? '')) {
+      response.setHeader('Referrer-Policy', 'no-referrer');
+    }
+    next();
+  });
+  app.useBodyParser('text', {
+    type: (request) =>
+      request.method === 'POST' &&
+      SAML_CALLBACK_PATH.test(request.url?.split('?', 1)[0] ?? '') &&
+      /^application\/x-www-form-urlencoded(?:\s*;|$)/iu.test(request.headers['content-type'] ?? ''),
+    limit: 790 * 1024,
+    inflate: false,
+  });
+  app.use(
+    FEDERATED_AUTH_PATH,
+    (error: unknown, request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (FEDERATED_CALLBACK_PATH.test(request.originalUrl.split('?', 1)[0] ?? '')) {
+        response.setHeader('Referrer-Policy', 'no-referrer');
+      }
+      if (error instanceof ProblemException) {
+        next(error);
+        return;
+      }
+      next(
+        new ProblemException({
+          status: 400,
+          code: 'request.invalid',
+          details: { issues: [{ in: 'body', path: '', code: 'invalid_format' }] },
+        }),
+      );
+    },
+  );
   return app;
 }
