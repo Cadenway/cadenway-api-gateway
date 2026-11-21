@@ -128,6 +128,11 @@ export interface Organization {
      * @nullable
      */
   website: string | null;
+  /**
+     * Current opaque logo reference or null.
+     * @nullable
+     */
+  logoId?: string | null;
   defaultLanguage: string;
   /** Always `free` until billing exists. */
   plan: string;
@@ -199,6 +204,11 @@ export interface MemberNameLookupResult {
 export interface Member {
   id: string;
   userId: string;
+  /**
+     * Last observed directory avatar reference or null. It does not grant image access.
+     * @nullable
+     */
+  avatarId?: string | null;
   /** Full name, from the user directory. */
   name: string;
   email: Email;
@@ -328,6 +338,92 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * A logo source is a square PNG or SVG image. A 512-pixel image is recommended.
+ */
+export type OrganizationLogoUploadContentType = typeof OrganizationLogoUploadContentType[keyof typeof OrganizationLogoUploadContentType];
+
+
+export const OrganizationLogoUploadContentType = {
+  'image/png': 'image/png',
+  'image/svg+xml': 'image/svg+xml',
+} as const;
+
+/**
+ * Image size in bytes, up to 5 MiB.
+ * @minimum 1
+ * @maximum 5242880
+ */
+export type ProfileMediaSizeBytes = number;
+
+export interface StartOrganizationLogoUpload {
+  contentType: OrganizationLogoUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * Opaque reservation identifier, reused for the verified immutable asset.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type ProfileMediaId = string;
+
+export interface ProfileMediaReservation {
+  uploadId: ProfileMediaId;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+/**
+ * Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.
+ */
+export type ProfileMediaReservationStateState = typeof ProfileMediaReservationStateState[keyof typeof ProfileMediaReservationStateState];
+
+
+export const ProfileMediaReservationStateState = {
+  pending: 'pending',
+  committed: 'committed',
+} as const;
+
+export interface ProfileMediaReservationState {
+  uploadId: ProfileMediaId;
+  /** Pending permits preparation within the lease. Committed identifies the same owner receipt on replay. */
+  state: ProfileMediaReservationStateState;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+export interface SetProfileMedia {
+  uploadId: ProfileMediaId;
+}
+
+/**
+ * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
+ */
+export type ProfileMediaReservationConflictResponse = Problem;
+
+/**
+ * `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+ * disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+ */
+export type ProfileMediaReservationRefusedResponse = Problem;
+
+/**
+ * `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+ * arrived, or `media.upload-superseded` for an invalidated prior generation.
+ */
+export type ProfileMediaUploadStateConflictResponse = Problem;
+
+/**
+ * `organization.not-found` for a missing or inactive membership, or `media.not-found` for an absent or unrelated upload.
+ */
+export type OrganizationLogoOwnerOrUploadNotFoundResponse = Problem;
+
+/**
+ * `organization.role-forbidden` for roles other than owner or admin, or `auth.issuer-not-allowed`,
+ * `auth.actor-not-allowed` or `auth.organization-required` for an invalid caller.
+ */
+export type OrganizationLogoWriteForbiddenResponse = Problem;
 
 /**
  * `request.invalid`: the request does not match the schema; one `details.issues` entry per issue.
@@ -698,6 +794,151 @@ const updateOrganizationInternal = async (organizationPatch: OrganizationPatch, 
 
   const data: updateOrganizationInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateOrganizationInternalResponse
+}
+
+
+
+const getReserveOrganizationLogoUploadInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/organization/logo/uploads`
+}
+
+/**
+ * Allocates a pending reservation for the actor and the current logo generation before the
+ * gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+ * authorization still holds, an equivalent Idempotency-Key replays the original reservation
+ * and expiry. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Reserve an organization logo upload
+ */
+const reserveOrganizationLogoUploadInternal = async (startOrganizationLogoUpload: StartOrganizationLogoUpload, options?: RequestInit): Promise<reserveOrganizationLogoUploadInternalResponse> => {
+
+  const res = await fetchFn(getReserveOrganizationLogoUploadInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(startOrganizationLogoUpload)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reserveOrganizationLogoUploadInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reserveOrganizationLogoUploadInternalResponse
+}
+
+
+
+const getGetOrganizationLogoUploadStateInternalUrl = (uploadId: ProfileMediaId,) => {
+
+
+
+
+  return `/internal/v1/organization/logo/uploads/${uploadId}`
+}
+
+/**
+ * Verifies the uploader and organization of the reservation, then reports whether it is pending
+ * or committed. An expired or superseded pending upload is refused. The gateway checks this
+ * before asking Storage to prepare a pending upload. A committed replay skips preparation.
+ * Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Read organization logo upload state
+ */
+const getOrganizationLogoUploadStateInternal = async (uploadId: ProfileMediaId, options?: RequestInit): Promise<getOrganizationLogoUploadStateInternalResponse> => {
+
+  const res = await fetchFn(getGetOrganizationLogoUploadStateInternalUrl(uploadId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getOrganizationLogoUploadStateInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getOrganizationLogoUploadStateInternalResponse
+}
+
+
+
+const getSetOrganizationLogoInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/organization/logo`
+}
+
+/**
+ * The gateway calls for a pending reservation only after Storage confirms preparation for the
+ * same id, organization and actor. Organization locks the relevant membership, organization and
+ * reservation, rechecks current role, generation and expiry, and persists the reference and
+ * `organization.logo-changed.v1` in the same transaction. An authorized committed retry returns
+ * the current ETag without changing the image. A stale optional If-Match on first publication
+ * is refused. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Publish the prepared logo
+ */
+const setOrganizationLogoInternal = async (setProfileMedia: SetProfileMedia, options?: RequestInit): Promise<setOrganizationLogoInternalResponse> => {
+
+  const res = await fetchFn(getSetOrganizationLogoInternalUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(setProfileMedia)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setOrganizationLogoInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setOrganizationLogoInternalResponse
+}
+
+
+
+const getDeleteOrganizationLogoInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/organization/logo`
+}
+
+/**
+ * Clears the reference and invalidates older pending uploads under the same lock as
+ * publication. An actual logo change commits with `organization.logo-changed.v1`. An absent
+ * image leaves the organization version unchanged and emits no logo change. Internal token issuer api-gateway, actor user with an organization. Organization requires
+ * the current owner or admin role from its own membership state.
+ * @summary Clear the organization logo
+ */
+const deleteOrganizationLogoInternal = async ( options?: RequestInit): Promise<deleteOrganizationLogoInternalResponse> => {
+
+  const res = await fetchFn(getDeleteOrganizationLogoInternalUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteOrganizationLogoInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteOrganizationLogoInternalResponse
 }
 
 
@@ -1183,7 +1424,7 @@ const refuseInvitationInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -1334,6 +1575,176 @@ export type updateOrganizationInternalResponseError = (updateOrganizationInterna
 };
 
 export type updateOrganizationInternalResponse = (updateOrganizationInternalResponseSuccess | updateOrganizationInternalResponseError)
+
+
+export type reserveOrganizationLogoUploadInternalResponse201 = {
+  data: ProfileMediaReservation
+  status: 201
+}
+
+export type reserveOrganizationLogoUploadInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type reserveOrganizationLogoUploadInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type reserveOrganizationLogoUploadInternalResponse403 = {
+  data: OrganizationLogoWriteForbiddenResponse
+  status: 403
+}
+
+export type reserveOrganizationLogoUploadInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type reserveOrganizationLogoUploadInternalResponse409 = {
+  data: ProfileMediaReservationConflictResponse
+  status: 409
+}
+
+export type reserveOrganizationLogoUploadInternalResponse422 = {
+  data: ProfileMediaReservationRefusedResponse
+  status: 422
+}
+
+export type reserveOrganizationLogoUploadInternalResponseSuccess = (reserveOrganizationLogoUploadInternalResponse201) & {
+  headers: Headers;
+};
+export type reserveOrganizationLogoUploadInternalResponseError = (reserveOrganizationLogoUploadInternalResponse400 | reserveOrganizationLogoUploadInternalResponse401 | reserveOrganizationLogoUploadInternalResponse403 | reserveOrganizationLogoUploadInternalResponse404 | reserveOrganizationLogoUploadInternalResponse409 | reserveOrganizationLogoUploadInternalResponse422) & {
+  headers: Headers;
+};
+
+export type reserveOrganizationLogoUploadInternalResponse = (reserveOrganizationLogoUploadInternalResponseSuccess | reserveOrganizationLogoUploadInternalResponseError)
+
+
+export type getOrganizationLogoUploadStateInternalResponse200 = {
+  data: ProfileMediaReservationState
+  status: 200
+}
+
+export type getOrganizationLogoUploadStateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getOrganizationLogoUploadStateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getOrganizationLogoUploadStateInternalResponse403 = {
+  data: OrganizationLogoWriteForbiddenResponse
+  status: 403
+}
+
+export type getOrganizationLogoUploadStateInternalResponse404 = {
+  data: OrganizationLogoOwnerOrUploadNotFoundResponse
+  status: 404
+}
+
+export type getOrganizationLogoUploadStateInternalResponse409 = {
+  data: ProfileMediaUploadStateConflictResponse
+  status: 409
+}
+
+export type getOrganizationLogoUploadStateInternalResponseSuccess = (getOrganizationLogoUploadStateInternalResponse200) & {
+  headers: Headers;
+};
+export type getOrganizationLogoUploadStateInternalResponseError = (getOrganizationLogoUploadStateInternalResponse400 | getOrganizationLogoUploadStateInternalResponse401 | getOrganizationLogoUploadStateInternalResponse403 | getOrganizationLogoUploadStateInternalResponse404 | getOrganizationLogoUploadStateInternalResponse409) & {
+  headers: Headers;
+};
+
+export type getOrganizationLogoUploadStateInternalResponse = (getOrganizationLogoUploadStateInternalResponseSuccess | getOrganizationLogoUploadStateInternalResponseError)
+
+
+export type setOrganizationLogoInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setOrganizationLogoInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type setOrganizationLogoInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type setOrganizationLogoInternalResponse403 = {
+  data: OrganizationLogoWriteForbiddenResponse
+  status: 403
+}
+
+export type setOrganizationLogoInternalResponse404 = {
+  data: OrganizationLogoOwnerOrUploadNotFoundResponse
+  status: 404
+}
+
+export type setOrganizationLogoInternalResponse409 = {
+  data: ProfileMediaUploadStateConflictResponse
+  status: 409
+}
+
+export type setOrganizationLogoInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type setOrganizationLogoInternalResponseSuccess = (setOrganizationLogoInternalResponse204) & {
+  headers: Headers;
+};
+export type setOrganizationLogoInternalResponseError = (setOrganizationLogoInternalResponse400 | setOrganizationLogoInternalResponse401 | setOrganizationLogoInternalResponse403 | setOrganizationLogoInternalResponse404 | setOrganizationLogoInternalResponse409 | setOrganizationLogoInternalResponse412) & {
+  headers: Headers;
+};
+
+export type setOrganizationLogoInternalResponse = (setOrganizationLogoInternalResponseSuccess | setOrganizationLogoInternalResponseError)
+
+
+export type deleteOrganizationLogoInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteOrganizationLogoInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteOrganizationLogoInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteOrganizationLogoInternalResponse403 = {
+  data: OrganizationLogoWriteForbiddenResponse
+  status: 403
+}
+
+export type deleteOrganizationLogoInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type deleteOrganizationLogoInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteOrganizationLogoInternalResponseSuccess = (deleteOrganizationLogoInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteOrganizationLogoInternalResponseError = (deleteOrganizationLogoInternalResponse400 | deleteOrganizationLogoInternalResponse401 | deleteOrganizationLogoInternalResponse403 | deleteOrganizationLogoInternalResponse404 | deleteOrganizationLogoInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteOrganizationLogoInternalResponse = (deleteOrganizationLogoInternalResponseSuccess | deleteOrganizationLogoInternalResponseError)
 
 
 export type listMembersInternalResponse200 = {

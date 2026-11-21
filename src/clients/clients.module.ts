@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import type { AppConfig } from '../config/app-config.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
+import { STORAGE_SERVICE, StorageServiceClient } from './storage-service.client.js';
 import { NOTIFICATION_SERVICE, NotificationServiceClient } from './notification-service.client.js';
 import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
 
@@ -16,6 +17,19 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
  */
 @Module({
   providers: [
+    {
+      provide: StorageServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): StorageServiceClient =>
+        new StorageServiceClient(
+          new InternalHttpClient({
+            service: STORAGE_SERVICE,
+            baseUrl: config.STORAGE_SERVICE_URL,
+            signer,
+            allowedUnavailableProblemCodes: ['storage.unavailable'],
+          }),
+        ),
+    },
     {
       provide: NotificationServiceClient,
       inject: [CONFIG, InternalTokenSigner],
@@ -68,6 +82,7 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
   exports: [
     IdentityServiceClient,
     OrganizationServiceClient,
+    StorageServiceClient,
     TaskServiceClient,
     NotificationServiceClient,
   ],

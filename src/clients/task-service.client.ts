@@ -1,4 +1,5 @@
 import {
+  CheckTaskAttachmentAccessInternalQueryParams,
   ResolveNotificationSubjectsInternalBody,
   ResolveNotificationSubjectsInternalResponse,
   AddChecklistItemInternalBody,
@@ -595,6 +596,23 @@ export class TaskServiceClient {
   // #endregion
 
   // #region Methods
+  /** Checks the current Task authorization before a Storage attachment operation. */
+  public async checkTaskAttachmentAccess(taskKey: string, mode: 'read' | 'write'): Promise<void> {
+    const operation = 'checkTaskAttachmentAccessInternal';
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.checkTaskAttachmentAccessInternal(
+        taskKey,
+        toRequest(operation, CheckTaskAttachmentAccessInternalQueryParams, { mode }),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    if (answer.headers.get('Cache-Control')?.toLowerCase() !== 'no-store') {
+      throw outsideContract(TASK_SERVICE, operation, 'missing Cache-Control no-store');
+    }
+  }
+
   /** Resolves current subject visibility in one Task snapshot. */
   public async resolveNotificationSubjects(
     input: z.input<typeof ResolveNotificationSubjectsInternalBody>,

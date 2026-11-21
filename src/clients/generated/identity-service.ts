@@ -84,6 +84,22 @@ export type Email = string;
  */
 export type Language = string;
 
+export interface NotificationRecipient {
+  email: Email;
+  language: Language;
+  /**
+     * The account's IANA time zone name.
+     * @minLength 1
+     * @maxLength 64
+     */
+  timeZone: string;
+  /**
+     * Monotone account version as returned by the account route.
+     * @minimum 1
+     */
+  version: number;
+}
+
 /**
  * The browser a request came from, as the gateway saw it. Stored with the session it opens,
  * to show its device and address; shown in the security email of the request. No place is
@@ -236,6 +252,11 @@ export interface User {
      * @nullable
      */
   jobTitle?: string | null;
+  /**
+     * Current opaque avatar reference or null. The account owns it independently of any organization.
+     * @nullable
+     */
+  avatarId?: string | null;
   /** IANA time zone name; `Europe/Paris` until the person chooses another. */
   timeZone?: string;
   /**
@@ -246,8 +267,8 @@ export interface User {
      */
   passwordChangedAt?: string;
   /**
-     * Version of the account. A change of the profile, of the password, of the address, of
-     * the two-step verification or of the scheduled deletion makes it the next one.
+     * Version of the account. A change of the profile, avatar, password, address,
+     * two-step verification or scheduled deletion makes it the next one.
      * @minimum 1
      */
   version: number;
@@ -1191,6 +1212,92 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
+
+/**
+ * An avatar source is a square PNG, JPEG or WebP image at least 256 pixels on each side.
+ */
+export type AvatarUploadContentType = typeof AvatarUploadContentType[keyof typeof AvatarUploadContentType];
+
+
+export const AvatarUploadContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/webp': 'image/webp',
+} as const;
+
+/**
+ * Image size in bytes, up to 5 MiB.
+ * @minimum 1
+ * @maximum 5242880
+ */
+export type ProfileMediaSizeBytes = number;
+
+export interface StartAvatarUpload {
+  contentType: AvatarUploadContentType;
+  sizeBytes: ProfileMediaSizeBytes;
+}
+
+/**
+ * Opaque reservation identifier, reused for the verified immutable asset.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type ProfileMediaId = string;
+
+export interface ProfileMediaReservation {
+  uploadId: ProfileMediaId;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+/**
+ * Pending permits preparation within the lease. Committed identifies the same owner receipt on replay.
+ */
+export type ProfileMediaReservationStateState = typeof ProfileMediaReservationStateState[keyof typeof ProfileMediaReservationStateState];
+
+
+export const ProfileMediaReservationStateState = {
+  pending: 'pending',
+  committed: 'committed',
+} as const;
+
+export interface ProfileMediaReservationState {
+  uploadId: ProfileMediaId;
+  /** Pending permits preparation within the lease. Committed identifies the same owner receipt on replay. */
+  state: ProfileMediaReservationStateState;
+  /** Exclusive owner reservation expiry. Replays preserve this instant. */
+  expiresAt: string;
+}
+
+export interface SetProfileMedia {
+  uploadId: ProfileMediaId;
+}
+
+export interface CurrentAvatarReference {
+  /** The current avatar, or null when the account has no avatar. */
+  assetId: ProfileMediaId | null;
+}
+
+/**
+ * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
+ */
+export type ProfileMediaReservationConflictResponse = Problem;
+
+/**
+ * `media.file-too-large` above 5,242,880 declared bytes, `media.unsupported-type` for a
+ * disallowed image encoding, or `idempotency.key-reused` for a conflicting reservation.
+ */
+export type ProfileMediaReservationRefusedResponse = Problem;
+
+/**
+ * `media.upload-expired` for expiration, `media.upload-not-ready` for an upload that has not
+ * arrived, or `media.upload-superseded` for an invalidated prior generation.
+ */
+export type ProfileMediaUploadStateConflictResponse = Problem;
+
+/**
+ * `user.not-found` for a different or unavailable account, or `media.not-found` for an absent or unrelated upload.
+ */
+export type AvatarOwnerOrUploadNotFoundResponse = Problem;
 
 /**
  * The account has two-step verification: no session, no token. The body is the challenge, the
@@ -2137,6 +2244,191 @@ const revokeSession = async (sessionId: string, options?: RequestInit): Promise<
 
 
 
+const getReserveAvatarUploadInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/avatar/uploads`
+}
+
+/**
+ * Allocates one pending reservation for the actor and the current avatar generation before the
+ * gateway obtains a signed Storage transfer. Stores the bound declaration and expiry. While
+ * authorization still holds, replaying an equivalent Idempotency-Key returns the original
+ * reservation and expiry. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Reserve an account avatar upload
+ */
+const reserveAvatarUploadInternal = async (userId: string,
+    startAvatarUpload: StartAvatarUpload, options?: RequestInit): Promise<reserveAvatarUploadInternalResponse> => {
+
+  const res = await fetchFn(getReserveAvatarUploadInternalUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(startAvatarUpload)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reserveAvatarUploadInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reserveAvatarUploadInternalResponse
+}
+
+
+
+const getGetAvatarUploadStateInternalUrl = (userId: string,
+    uploadId: ProfileMediaId,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/avatar/uploads/${uploadId}`
+}
+
+/**
+ * Checks that the caller owns the reservation and returns whether it is pending or already
+ * committed. An expired or superseded pending upload is refused. The gateway checks this before
+ * asking Storage to prepare the pending upload. A committed replay skips preparation and cannot
+ * reactivate a prior image. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Read account avatar upload state
+ */
+const getAvatarUploadStateInternal = async (userId: string,
+    uploadId: ProfileMediaId, options?: RequestInit): Promise<getAvatarUploadStateInternalResponse> => {
+
+  const res = await fetchFn(getGetAvatarUploadStateInternalUrl(userId,uploadId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAvatarUploadStateInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAvatarUploadStateInternalResponse
+}
+
+
+
+const getSetAvatarInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/avatar`
+}
+
+/**
+ * The gateway calls this operation for a pending reservation only after Storage confirms
+ * preparation for the same id and actor. Identity locks the account and reservation, checks the
+ * scope, generation and expiry again, and changes the reference and appends
+ * `user.avatar-changed.v1` in the same transaction. A committed replay is a no-op and returns
+ * the current ETag. A stale optional If-Match on first publication is refused.
+ * Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Publish the prepared avatar
+ */
+const setAvatarInternal = async (userId: string,
+    setProfileMedia: SetProfileMedia, options?: RequestInit): Promise<setAvatarInternalResponse> => {
+
+  const res = await fetchFn(getSetAvatarInternalUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(setProfileMedia)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAvatarInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAvatarInternalResponse
+}
+
+
+
+const getDeleteAvatarInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/avatar`
+}
+
+/**
+ * Clears the reference and invalidates older pending uploads under the same lock as publication.
+ * An actual reference change commits with `user.avatar-changed.v1`. An absent image leaves the
+ * account version unchanged and emits no avatar change. Internal token issuer api-gateway, actor user with userId matching the actor. Any organization
+ * claim is ignored for this account-scoped operation.
+ * @summary Clear the account avatar
+ */
+const deleteAvatarInternal = async (userId: string, options?: RequestInit): Promise<deleteAvatarInternalResponse> => {
+
+  const res = await fetchFn(getDeleteAvatarInternalUrl(userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteAvatarInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteAvatarInternalResponse
+}
+
+
+
+const getGetAvatarReferenceInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/avatar-reference`
+}
+
+/**
+ * Returns only the current opaque image id or null, never a profile or storage capability.
+ * For a self read, the verified actor matches userId, with any organization ignored. For a
+ * different userId an organization is mandatory, and the API gateway must have just confirmed
+ * both caller and target access through the current member lookup in the token organization.
+ * The requested userId is the one returned by that lookup. Issuer api-gateway and actor user only.
+ * @summary Read the active avatar reference
+ */
+const getAvatarReferenceInternal = async (userId: string, options?: RequestInit): Promise<getAvatarReferenceInternalResponse> => {
+
+  const res = await fetchFn(getGetAvatarReferenceInternalUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAvatarReferenceInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAvatarReferenceInternalResponse
+}
+
+
+
 const getGetUserUrl = (userId: string,) => {
 
 
@@ -2458,6 +2750,53 @@ const revokeOtherSessionsInternal = async (sessionId: string, options?: RequestI
 
   const data: revokeOtherSessionsInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as revokeOtherSessionsInternalResponse
+}
+
+
+
+const getGetNotificationRecipientInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/notification-recipient`
+}
+
+/**
+ * Returns one account's current verified email address, language, IANA time zone and version
+ * from the same account read. A missing account, an unverified current address or an account
+ * scheduled for deletion has the same `404 user.not-found` response as a deleted account.
+ * The address of a pending email change becomes eligible only after its confirmation.
+ *
+ * Only a Notification delivery job calls this operation. The internal token has issuer
+ * `notification-service`, audience `identity-service` and actor `system`, with no
+ * organization, role or scopes. The path uses the user ID from the job's authorized
+ * recipient and takes no query parameters or body. The lookup does not authorize access
+ * to organization content. Notification applies its own preferences and verifies current
+ * access before sending content from an organization.
+ *
+ * Resolve the profile when deciding the schedule and before attempting delivery. A
+ * response is current at the time of the read. Do not cache the response or persist its
+ * address in a job payload. Keep the address out of application logs, telemetry, problems
+ * and events. This operation emits no event and has no public route.
+ * @summary Read the current recipient of a notification email
+ */
+const getNotificationRecipientInternal = async (userId: string, options?: RequestInit): Promise<getNotificationRecipientInternalResponse> => {
+
+  const res = await fetchFn(getGetNotificationRecipientInternalUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNotificationRecipientInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNotificationRecipientInternalResponse
 }
 
 
@@ -3353,7 +3692,7 @@ const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospe
 
 
 
-return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, inspectSignInChallengeInternal, getInspectSignInChallengeInternalUrl, answerSignInChallengeWithAuthenticatorAppInternal, getAnswerSignInChallengeWithAuthenticatorAppInternalUrl, answerSignInChallengeWithBackupCodeInternal, getAnswerSignInChallengeWithBackupCodeInternalUrl, getSignInChallengeSecurityKeyOptionsInternal, getGetSignInChallengeSecurityKeyOptionsInternalUrl, answerSignInChallengeWithSecurityKeyInternal, getAnswerSignInChallengeWithSecurityKeyInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, getTwoStepVerificationInternal, getGetTwoStepVerificationInternalUrl, disableTwoStepVerificationInternal, getDisableTwoStepVerificationInternalUrl, startAuthenticatorAppSetupInternal, getStartAuthenticatorAppSetupInternalUrl, confirmAuthenticatorAppSetupInternal, getConfirmAuthenticatorAppSetupInternalUrl, regenerateBackupCodesInternal, getRegenerateBackupCodesInternalUrl, startSecurityKeyRegistrationInternal, getStartSecurityKeyRegistrationInternalUrl, addSecurityKeyInternal, getAddSecurityKeyInternalUrl, removeSecurityKeyInternal, getRemoveSecurityKeyInternalUrl, getAuthenticationPolicyInternal, getGetAuthenticationPolicyInternalUrl, updateAuthenticationPolicyInternal, getUpdateAuthenticationPolicyInternalUrl, issueRealtimeTicketInternal, getIssueRealtimeTicketInternalUrl, redeemRealtimeTicketInternal, getRedeemRealtimeTicketInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
+return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, inspectSignInChallengeInternal, getInspectSignInChallengeInternalUrl, answerSignInChallengeWithAuthenticatorAppInternal, getAnswerSignInChallengeWithAuthenticatorAppInternalUrl, answerSignInChallengeWithBackupCodeInternal, getAnswerSignInChallengeWithBackupCodeInternalUrl, getSignInChallengeSecurityKeyOptionsInternal, getGetSignInChallengeSecurityKeyOptionsInternalUrl, answerSignInChallengeWithSecurityKeyInternal, getAnswerSignInChallengeWithSecurityKeyInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, reserveAvatarUploadInternal, getReserveAvatarUploadInternalUrl, getAvatarUploadStateInternal, getGetAvatarUploadStateInternalUrl, setAvatarInternal, getSetAvatarInternalUrl, deleteAvatarInternal, getDeleteAvatarInternalUrl, getAvatarReferenceInternal, getGetAvatarReferenceInternalUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, getNotificationRecipientInternal, getGetNotificationRecipientInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, getTwoStepVerificationInternal, getGetTwoStepVerificationInternalUrl, disableTwoStepVerificationInternal, getDisableTwoStepVerificationInternalUrl, startAuthenticatorAppSetupInternal, getStartAuthenticatorAppSetupInternalUrl, confirmAuthenticatorAppSetupInternal, getConfirmAuthenticatorAppSetupInternalUrl, regenerateBackupCodesInternal, getRegenerateBackupCodesInternalUrl, startSecurityKeyRegistrationInternal, getStartSecurityKeyRegistrationInternalUrl, addSecurityKeyInternal, getAddSecurityKeyInternalUrl, removeSecurityKeyInternal, getRemoveSecurityKeyInternalUrl, getAuthenticationPolicyInternal, getGetAuthenticationPolicyInternalUrl, updateAuthenticationPolicyInternal, getUpdateAuthenticationPolicyInternalUrl, issueRealtimeTicketInternal, getIssueRealtimeTicketInternalUrl, redeemRealtimeTicketInternal, getRedeemRealtimeTicketInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
 };
 
 export type discoverSignInMethodsInternalResponse200 = {
@@ -3881,6 +4220,211 @@ export type revokeSessionResponseError = (revokeSessionResponse400 | revokeSessi
 export type revokeSessionResponse = (revokeSessionResponseSuccess | revokeSessionResponseError)
 
 
+export type reserveAvatarUploadInternalResponse201 = {
+  data: ProfileMediaReservation
+  status: 201
+}
+
+export type reserveAvatarUploadInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type reserveAvatarUploadInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type reserveAvatarUploadInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type reserveAvatarUploadInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type reserveAvatarUploadInternalResponse409 = {
+  data: ProfileMediaReservationConflictResponse
+  status: 409
+}
+
+export type reserveAvatarUploadInternalResponse422 = {
+  data: ProfileMediaReservationRefusedResponse
+  status: 422
+}
+
+export type reserveAvatarUploadInternalResponseSuccess = (reserveAvatarUploadInternalResponse201) & {
+  headers: Headers;
+};
+export type reserveAvatarUploadInternalResponseError = (reserveAvatarUploadInternalResponse400 | reserveAvatarUploadInternalResponse401 | reserveAvatarUploadInternalResponse403 | reserveAvatarUploadInternalResponse404 | reserveAvatarUploadInternalResponse409 | reserveAvatarUploadInternalResponse422) & {
+  headers: Headers;
+};
+
+export type reserveAvatarUploadInternalResponse = (reserveAvatarUploadInternalResponseSuccess | reserveAvatarUploadInternalResponseError)
+
+
+export type getAvatarUploadStateInternalResponse200 = {
+  data: ProfileMediaReservationState
+  status: 200
+}
+
+export type getAvatarUploadStateInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getAvatarUploadStateInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getAvatarUploadStateInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getAvatarUploadStateInternalResponse404 = {
+  data: AvatarOwnerOrUploadNotFoundResponse
+  status: 404
+}
+
+export type getAvatarUploadStateInternalResponse409 = {
+  data: ProfileMediaUploadStateConflictResponse
+  status: 409
+}
+
+export type getAvatarUploadStateInternalResponseSuccess = (getAvatarUploadStateInternalResponse200) & {
+  headers: Headers;
+};
+export type getAvatarUploadStateInternalResponseError = (getAvatarUploadStateInternalResponse400 | getAvatarUploadStateInternalResponse401 | getAvatarUploadStateInternalResponse403 | getAvatarUploadStateInternalResponse404 | getAvatarUploadStateInternalResponse409) & {
+  headers: Headers;
+};
+
+export type getAvatarUploadStateInternalResponse = (getAvatarUploadStateInternalResponseSuccess | getAvatarUploadStateInternalResponseError)
+
+
+export type setAvatarInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAvatarInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type setAvatarInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type setAvatarInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type setAvatarInternalResponse404 = {
+  data: AvatarOwnerOrUploadNotFoundResponse
+  status: 404
+}
+
+export type setAvatarInternalResponse409 = {
+  data: ProfileMediaUploadStateConflictResponse
+  status: 409
+}
+
+export type setAvatarInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type setAvatarInternalResponseSuccess = (setAvatarInternalResponse204) & {
+  headers: Headers;
+};
+export type setAvatarInternalResponseError = (setAvatarInternalResponse400 | setAvatarInternalResponse401 | setAvatarInternalResponse403 | setAvatarInternalResponse404 | setAvatarInternalResponse409 | setAvatarInternalResponse412) & {
+  headers: Headers;
+};
+
+export type setAvatarInternalResponse = (setAvatarInternalResponseSuccess | setAvatarInternalResponseError)
+
+
+export type deleteAvatarInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteAvatarInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type deleteAvatarInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type deleteAvatarInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type deleteAvatarInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type deleteAvatarInternalResponse412 = {
+  data: VersionMismatchResponse
+  status: 412
+}
+
+export type deleteAvatarInternalResponseSuccess = (deleteAvatarInternalResponse204) & {
+  headers: Headers;
+};
+export type deleteAvatarInternalResponseError = (deleteAvatarInternalResponse400 | deleteAvatarInternalResponse401 | deleteAvatarInternalResponse403 | deleteAvatarInternalResponse404 | deleteAvatarInternalResponse412) & {
+  headers: Headers;
+};
+
+export type deleteAvatarInternalResponse = (deleteAvatarInternalResponseSuccess | deleteAvatarInternalResponseError)
+
+
+export type getAvatarReferenceInternalResponse200 = {
+  data: CurrentAvatarReference
+  status: 200
+}
+
+export type getAvatarReferenceInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getAvatarReferenceInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getAvatarReferenceInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getAvatarReferenceInternalResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type getAvatarReferenceInternalResponseSuccess = (getAvatarReferenceInternalResponse200) & {
+  headers: Headers;
+};
+export type getAvatarReferenceInternalResponseError = (getAvatarReferenceInternalResponse400 | getAvatarReferenceInternalResponse401 | getAvatarReferenceInternalResponse403 | getAvatarReferenceInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getAvatarReferenceInternalResponse = (getAvatarReferenceInternalResponseSuccess | getAvatarReferenceInternalResponseError)
+
+
 export type getUserResponse200 = {
   data: User
   status: 200
@@ -4179,6 +4723,46 @@ export type revokeOtherSessionsInternalResponseError = (revokeOtherSessionsInter
 };
 
 export type revokeOtherSessionsInternalResponse = (revokeOtherSessionsInternalResponseSuccess | revokeOtherSessionsInternalResponseError)
+
+
+export type getNotificationRecipientInternalResponse200 = {
+  data: NotificationRecipient
+  status: 200
+}
+
+export type getNotificationRecipientInternalResponse400 = {
+  data: Problem
+  status: 400
+}
+
+export type getNotificationRecipientInternalResponse401 = {
+  data: Problem
+  status: 401
+}
+
+export type getNotificationRecipientInternalResponse403 = {
+  data: Problem
+  status: 403
+}
+
+export type getNotificationRecipientInternalResponse404 = {
+  data: Problem
+  status: 404
+}
+
+export type getNotificationRecipientInternalResponse503 = {
+  data: Problem
+  status: 503
+}
+
+export type getNotificationRecipientInternalResponseSuccess = (getNotificationRecipientInternalResponse200) & {
+  headers: Headers;
+};
+export type getNotificationRecipientInternalResponseError = (getNotificationRecipientInternalResponse400 | getNotificationRecipientInternalResponse401 | getNotificationRecipientInternalResponse403 | getNotificationRecipientInternalResponse404 | getNotificationRecipientInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getNotificationRecipientInternalResponse = (getNotificationRecipientInternalResponseSuccess | getNotificationRecipientInternalResponseError)
 
 
 export type listUserSessionsInternalResponse200 = {

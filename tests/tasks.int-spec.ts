@@ -36,6 +36,9 @@ const IDENTITY_URL = 'http://identity-service.test';
  */
 const TASK_URL = 'http://task-service.test';
 
+/** Base URL of the faked storage-service. */
+const STORAGE_URL = 'http://storage-service.test';
+
 /**
  * Session cookie of Camille in Atelier Nord.
  */
@@ -203,6 +206,7 @@ describe('the task core routes against task-service over HTTP', () => {
           REDIS_URL: redis.getConnectionUrl(),
           IDENTITY_SERVICE_URL: IDENTITY_URL,
           TASK_SERVICE_URL: TASK_URL,
+          STORAGE_SERVICE_URL: STORAGE_URL,
         },
         keys,
       ),
@@ -220,6 +224,71 @@ describe('the task core routes against task-service over HTTP', () => {
     await app.close();
     network.close();
     await redis.stop();
+  });
+
+  it('reads a nullable attachment author through authenticated Storage list and detail calls', async () => {
+    const taskKey = 'CAD-482';
+    const id = '019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15';
+    const path = `/internal/v1/tasks/${taskKey}/attachments`;
+    const attachment = {
+      id,
+      taskKey,
+      fileName: 'capture.png',
+      contentType: 'image/png',
+      sizeBytes: 100,
+      authorUserId: null,
+      uploadedAt: '2026-11-20T10:00:00Z',
+      version: 3,
+    };
+    const storageVerifier = await InternalTokenVerifier.create({
+      audience: 'storage-service',
+      trustedIssuers: { [GATEWAY_ISSUER]: [keys.publicJwk] },
+    });
+    const callers: InternalPrincipal[] = [];
+    taskService(
+      'get',
+      `/internal/v1/tasks/${taskKey}/attachment-access`,
+      () => new HttpResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }),
+    );
+    network.use(
+      http.get(`${STORAGE_URL}${path}/:attachmentId?`, async ({ request: call, params }) => {
+        callers.push(
+          await storageVerifier.verify(
+            (call.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+          ),
+        );
+        return params.attachmentId === undefined
+          ? HttpResponse.json({ items: [attachment], nextCursor: null })
+          : HttpResponse.json(attachment, { headers: { ETag: '"3"' } });
+      }),
+    );
+
+    const list = await send(
+      'get',
+      '/v1/tasks/{taskKey}/attachments',
+      `/v1/tasks/${taskKey}/attachments`,
+    );
+    const detail = await send(
+      'get',
+      '/v1/tasks/{taskKey}/attachments/{attachmentId}',
+      `/v1/tasks/${taskKey}/attachments/${id}`,
+    );
+    expect(list.status).toBe(200);
+    expect(list.body).toEqual({ items: [attachment], nextCursor: null });
+    expect(detail.status).toBe(200);
+    expect(detail.headers.etag).toBe('"3"');
+    expect(detail.body).toEqual(attachment);
+    expect(taskCalls.map((call) => call.route)).toEqual([
+      `GET /internal/v1/tasks/${taskKey}/attachment-access?mode=read`,
+      `GET /internal/v1/tasks/${taskKey}/attachment-access?mode=read`,
+    ]);
+    expect(callers).toHaveLength(2);
+    for (const caller of callers) {
+      expect(caller).toMatchObject({
+        actor: { type: 'user', id: CAMILLE.id },
+        organizationId: ATELIER_NORD_ID,
+      });
+    }
   });
 
   it('creates a task with its Idempotency-Key relayed, answering its Location and ETag', async () => {

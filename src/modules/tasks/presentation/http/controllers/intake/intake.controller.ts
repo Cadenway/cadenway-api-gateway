@@ -34,7 +34,7 @@ import {
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { conformBody, outsideContract } from '../../../../../../problems/upstream-answer.js';
 import { publicProblem } from '../../../../../../problems/public-problem.js';
@@ -85,6 +85,15 @@ const PUBLIC_SUBMIT: AcceptedProblems = {
   409: ['idempotency.request-in-progress'],
   422: ['idempotency.key-reused'],
 };
+
+// Keep existing request shapes until Gateway serves anonymous attachment uploads.
+const TEXT_ONLY_SUBMISSION = SubmitPublicIntakeFormBody.omit({ attachmentIds: true });
+const TEXT_ONLY_CONFIGURATION = UpdateIntakeFormConfigurationBody.extend({
+  fields: UpdateIntakeFormConfigurationBody.shape.fields
+    .unwrap()
+    .omit({ attachments: true })
+    .optional(),
+});
 
 /** Rejects malformed publication keys after the anonymous address has been counted. */
 @Injectable()
@@ -157,8 +166,8 @@ export class IntakeController {
   public async updateConfiguration(
     @Param(new ZodValidationPipe(UpdateIntakeFormConfigurationParams))
     params: z.output<typeof UpdateIntakeFormConfigurationParams>,
-    @RequiredBody(UpdateIntakeFormConfigurationBody)
-    body: z.output<typeof UpdateIntakeFormConfigurationBody>,
+    @RequiredBody(TEXT_ONLY_CONFIGURATION)
+    body: z.output<typeof TEXT_ONLY_CONFIGURATION>,
     @Headers('if-match') header: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof UpdateIntakeFormConfigurationResponse>> {
@@ -305,11 +314,13 @@ export class PublicIntakeController {
   public async submit(
     @Param(new ZodValidationPipe(SubmitPublicIntakeFormParams))
     params: z.output<typeof SubmitPublicIntakeFormParams>,
-    @RequiredBody(SubmitPublicIntakeFormBody) body: z.output<typeof SubmitPublicIntakeFormBody>,
+    @RequiredBody(TEXT_ONLY_SUBMISSION) body: z.output<typeof TEXT_ONLY_SUBMISSION>,
     @Headers('idempotency-key') header: string | undefined,
     @Res({ passthrough: true }) response: Response,
+    @Headers('intake-draft-key') draftKey?: string,
   ): Promise<z.output<typeof SubmitPublicIntakeFormResponse>> {
     response.setHeader('Cache-Control', 'no-store');
+    toRequestHeader('Intake-Draft-Key', z.undefined(), draftKey);
     const key = toRequestHeader(
       'Idempotency-Key',
       SubmitPublicIntakeFormHeader.shape['Idempotency-Key'],

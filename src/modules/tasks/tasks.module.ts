@@ -56,6 +56,8 @@ import {
 import { TaskReportingController } from './presentation/http/controllers/reporting/task-reporting.controller.js';
 import { TaskApprovalController } from './presentation/http/controllers/approval/task-approval.controller.js';
 import { OnboardingController } from './presentation/http/controllers/onboarding/onboarding.controller.js';
+import { TaskAttachmentController } from './presentation/http/controllers/attachment/task-attachment.controller.js';
+import { attachmentProviders } from './composition/providers/use-cases/attachment/attachment.provider.js';
 
 /**
  * Constant TASK_REGISTRY
@@ -211,6 +213,7 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     ...intakeProviders,
     ...taskReportingProviders,
     ...taskCollaborationProviders,
+    ...attachmentProviders,
   ],
   controllers: [
     ExecuteBulkTaskActionController,
@@ -225,6 +228,7 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     PublicIntakeController,
     TaskApprovalController,
     OnboardingController,
+    TaskAttachmentController,
   ],
 })
 export class TasksModule implements NestModule {

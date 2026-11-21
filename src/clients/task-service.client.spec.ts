@@ -2000,14 +2000,47 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     expect(sent.filter((line: string) => line.endsWith('/access'))).toEqual([]);
   });
 
-  it('exposes no access check of a list or a task, which task-service reserves to the realtime gateway', () => {
+  it('checks attachment permissions with the current user and requested mode', async () => {
+    answer(
+      'get',
+      '/internal/v1/tasks/CAD-482/attachment-access',
+      () => new HttpResponse(null, { status: 204, headers: { 'Cache-Control': 'no-store' } }),
+    );
+
+    await expect(
+      asCamille(() => client.checkTaskAttachmentAccess('CAD-482', 'write')),
+    ).resolves.toBeUndefined();
+    expect(calls[0]?.url).toBe('/internal/v1/tasks/CAD-482/attachment-access?mode=write');
+    expect(calls[0]?.principal).toMatchObject({
+      issuer: GATEWAY_ISSUER,
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('refuses an attachment access decision without the required no-store header', async () => {
+    answer(
+      'get',
+      '/internal/v1/tasks/CAD-482/attachment-access',
+      () => new HttpResponse(null, { status: 204 }),
+    );
+
+    await expect(
+      asCamille(() => client.checkTaskAttachmentAccess('CAD-482', 'read')),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('exposes the gateway attachment check while keeping realtime-only access checks private', () => {
     const methods: readonly string[] = Object.getOwnPropertyNames(TaskServiceClient.prototype);
     const source: string = readFileSync(
       new URL('./task-service.client.ts', import.meta.url),
       'utf8',
     );
 
-    expect(methods.filter((name: string) => /^check|Access$/u.test(name))).toEqual([]);
+    expect(methods.filter((name: string) => /^check|Access$/u.test(name))).toEqual([
+      'checkTaskAttachmentAccess',
+    ]);
     expect(source).not.toContain('checkListAccessInternal');
     expect(source).not.toContain('checkTaskAccessInternal');
   });
