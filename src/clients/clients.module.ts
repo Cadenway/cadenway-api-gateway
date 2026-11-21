@@ -2,6 +2,7 @@ import { CONFIG, InternalHttpClient, InternalTokenSigner } from '@cadenway/nest-
 import { Module } from '@nestjs/common';
 
 import type { AppConfig } from '../config/app-config.js';
+import { DOCUMENT_SERVICE, DocumentServiceClient } from './document-service.client.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
 import { STORAGE_SERVICE, StorageServiceClient } from './storage-service.client.js';
@@ -17,6 +18,19 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
  */
 @Module({
   providers: [
+    {
+      provide: DocumentServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): DocumentServiceClient =>
+        new DocumentServiceClient(
+          new InternalHttpClient({
+            service: DOCUMENT_SERVICE,
+            baseUrl: config.DOCUMENT_SERVICE_URL,
+            signer,
+            allowedUnavailableProblemCodes: ['document.unavailable'],
+          }),
+        ),
+    },
     {
       provide: StorageServiceClient,
       inject: [CONFIG, InternalTokenSigner],
@@ -80,6 +94,7 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
     },
   ],
   exports: [
+    DocumentServiceClient,
     IdentityServiceClient,
     OrganizationServiceClient,
     StorageServiceClient,

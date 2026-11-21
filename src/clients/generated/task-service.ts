@@ -2808,6 +2808,32 @@ export interface AccessCheck {
   taskId?: string;
 }
 
+/**
+ * Stable UUID of a space, as accepted by the other Task space routes.
+ */
+export type DocumentSpaceAccessSpaceId = string;
+
+export interface DocumentSpaceAccessLookup {
+  /**
+     * Candidate spaces for a document query or mutation. An empty array requests only the current membership check. Repeated IDs share one result.
+     * @maxItems 100
+     */
+  spaceIds: DocumentSpaceAccessSpaceId[];
+}
+
+export type DocumentSpaceAccessResultResultsItem = {
+  spaceId: DocumentSpaceAccessSpaceId;
+  role: AccessRole;
+};
+
+export interface DocumentSpaceAccessResult {
+  /**
+     * One entry per accessible space. An empty response grants no access.
+     * @maxItems 100
+     */
+  results: DocumentSpaceAccessResultResultsItem[];
+}
+
 export interface NotificationTaskIdSubjectRef {
   kind: 'task-id';
   taskId: string;
@@ -4146,6 +4172,11 @@ export type AttachmentTaskArchivedResponse = Problem;
  * organization of the token, removed or not yet learnt.
  */
 export type OrganizationNotFoundResponse = Problem;
+
+/**
+ * `task.document-space-access-unavailable`: Task could not establish a current space access snapshot.
+ */
+export type DocumentSpaceAccessUnavailableResponse = Problem;
 
 /**
  * `task.notification-visibility-unavailable`: Task could not establish a current visibility snapshot.
@@ -8800,6 +8831,57 @@ const emptyTrashInternal = async (emptyRequest: EmptyRequest, options?: RequestI
 
 
 
+const getResolveDocumentSpaceAccessInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/spaces/access/resolve`
+}
+
+/**
+ * Checks the requested space IDs in a single read-only tenant snapshot. The lookup reads
+ * the actor's active membership and role from the Organization projection together with
+ * live spaces and their grants, applying Task's canonical effective space role. Access to
+ * a list alone does not count as a role on its parent space. Unknown, deleted, hidden and
+ * cross-organization spaces are all omitted, as are spaces where the actor has no role.
+ * An absent active membership answers `404 organization.not-found` for the whole lookup.
+ * An empty request checks the same active membership and returns an empty result on success.
+ *
+ * IDs are compared case-insensitively. Each authorized space appears once with its
+ * canonical lowercase ID, in the order of its first occurrence in the request.
+ * The caller uses this decision for one authorization check for the same actor and
+ * organization. An omitted requested ID conveys no access. The caller rejects the whole
+ * proof if an entry has no role or a role other than `view`, `comment` or `edit`, a
+ * malformed ID, a duplicate ID after normalization or an ID outside the request. An
+ * error never supplies a partial decision.
+ * The lookup writes nothing and emits no events.
+ *
+ * Internal token: issuer `document-service` only, actor `user`, organization required.
+ * Document-service forwards the verified account and selected organization from its
+ * incoming call. The body cannot override the actor, organization or role.
+ * @summary Resolve current space access for documents
+ */
+const resolveDocumentSpaceAccessInternal = async (documentSpaceAccessLookup: DocumentSpaceAccessLookup, options?: RequestInit): Promise<resolveDocumentSpaceAccessInternalResponse> => {
+
+  const res = await fetchFn(getResolveDocumentSpaceAccessInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(documentSpaceAccessLookup)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resolveDocumentSpaceAccessInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resolveDocumentSpaceAccessInternalResponse
+}
+
+
+
 const getCheckListAccessInternalUrl = (listId: string,) => {
 
 
@@ -10605,7 +10687,7 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
 
 export type createSpaceInternalResponse201 = {
@@ -14176,6 +14258,46 @@ export type emptyTrashInternalResponseError = (emptyTrashInternalResponse400 | e
 };
 
 export type emptyTrashInternalResponse = (emptyTrashInternalResponseSuccess | emptyTrashInternalResponseError)
+
+
+export type resolveDocumentSpaceAccessInternalResponse200 = {
+  data: DocumentSpaceAccessResult
+  status: 200
+}
+
+export type resolveDocumentSpaceAccessInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type resolveDocumentSpaceAccessInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type resolveDocumentSpaceAccessInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type resolveDocumentSpaceAccessInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type resolveDocumentSpaceAccessInternalResponse503 = {
+  data: DocumentSpaceAccessUnavailableResponse
+  status: 503
+}
+
+export type resolveDocumentSpaceAccessInternalResponseSuccess = (resolveDocumentSpaceAccessInternalResponse200) & {
+  headers: Headers;
+};
+export type resolveDocumentSpaceAccessInternalResponseError = (resolveDocumentSpaceAccessInternalResponse400 | resolveDocumentSpaceAccessInternalResponse401 | resolveDocumentSpaceAccessInternalResponse403 | resolveDocumentSpaceAccessInternalResponse404 | resolveDocumentSpaceAccessInternalResponse503) & {
+  headers: Headers;
+};
+
+export type resolveDocumentSpaceAccessInternalResponse = (resolveDocumentSpaceAccessInternalResponseSuccess | resolveDocumentSpaceAccessInternalResponseError)
 
 
 export type checkListAccessInternalResponse200 = {
