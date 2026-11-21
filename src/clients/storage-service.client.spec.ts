@@ -30,6 +30,22 @@ const attachment = {
   uploadedAt: '2026-11-08T08:05:00.000Z',
   version: 1,
 };
+const intakeProof = {
+  organizationId: '019a7005-3b2c-7d4e-8f5a-6b7c8d9e0f18',
+  publicationId: '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12',
+  attachmentId: id,
+  expiresAt: '2026-11-20T14:30:00Z',
+};
+const intakeDeclaration = { fileName: 'image.png', contentType: 'image/png', sizeBytes: 120 };
+const intakePath = `/internal/v1/intake-publications/${intakeProof.publicationId}/attachments`;
+const intakeHeaders = { Location: `${intakePath}/${id}`, 'Cache-Control': 'no-store' };
+const intakeUpload = {
+  id,
+  method: 'POST',
+  url: 'http://files.example.test:8080/upload',
+  fields: { key: 'intake/opaque', 'Content-Type': 'image/png' },
+  expiresAt: '2026-11-20T14:05:00Z',
+};
 
 describe('StorageServiceClient', () => {
   let signer: InternalTokenSigner;
@@ -67,6 +83,85 @@ describe('StorageServiceClient', () => {
     );
   });
 
+  it('strips selected-organization claims from a personal signed transfer', async () => {
+    const transfer = {
+      uploadId: id,
+      method: 'POST',
+      url: 'https://files.example.test/uploads',
+      fields: { key: 'profile-media/staging/opaque' },
+      expiresAt: '2026-11-20T14:05:00Z',
+    };
+    answer = Response.json(transfer, { headers: { 'Cache-Control': 'no-store' } });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.signProfileMediaTransfer(
+          id,
+          {
+            kind: 'avatar',
+            expiresAt: transfer.expiresAt,
+            contentType: 'image/png',
+            sizeBytes: 50,
+          },
+          'account',
+        ),
+      ),
+    ).resolves.toEqual(transfer);
+    const headers = new Headers(calls[0]?.init?.headers);
+    const token = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(token).toMatchObject({
+      actor: context.actor,
+      organizationId: null,
+      role: null,
+      scopes: [],
+    });
+  });
+
+  it('keeps verified tenant claims for a member read and validates returned PNG bytes', async () => {
+    const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 11]);
+    answer = new Response(png, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Content-Length': '9',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.getAvatarImage(id, CAMILLE.id, 'organization'),
+      ),
+    ).resolves.toEqual(Buffer.from(png));
+    expect(calls[0]?.url).toContain(`ownerUserId=${CAMILLE.id}`);
+    const headers = new Headers(calls[0]?.init?.headers);
+    const token = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(token.organizationId).toBe(ATELIER_NORD_ID);
+  });
+
+  it('fails a chunked derivative as soon as the byte limit is exceeded', async () => {
+    const chunks = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(5 * 1024 * 1024));
+        controller.enqueue(Uint8Array.of(0));
+        controller.close();
+      },
+    });
+    answer = new Response(chunks, {
+      headers: {
+        'Content-Type': 'image/png',
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+    await expect(
+      runWithOrganizationContext(context, () => client.getOrganizationLogoImage(id)),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+    expect(calls).toHaveLength(1);
+  });
+
   it('signs a scoped list request and validates the returned page', async () => {
     answer = Response.json({ items: [attachment], nextCursor: null, unexpected: 'discarded' });
     const page = await runWithOrganizationContext(context, () =>
@@ -78,6 +173,118 @@ describe('StorageServiceClient', () => {
     const principal = await verifier.verify(authorization.replace(/^Bearer /u, ''));
     expect(principal.organizationId).toBe(ATELIER_NORD_ID);
     expect(principal.actor.id).toBe(CAMILLE.id);
+  });
+
+  it('signs an intake upload as a system actor in the tenant proved by Task', async () => {
+    answer = Response.json(intakeUpload, { status: 201, headers: intakeHeaders });
+
+    await expect(
+      runWithOrganizationContext(context, () =>
+        client.startIntakeAttachmentUpload(intakeProof, intakeDeclaration),
+      ),
+    ).resolves.toEqual(intakeUpload);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe(`http://storage-service.test${intakePath}`);
+    const headers = new Headers(calls[0]?.init?.headers);
+    const principal = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(principal).toMatchObject({
+      actor: { type: 'system', id: null },
+      organizationId: intakeProof.organizationId,
+      role: null,
+      scopes: [],
+    });
+    expect(headers.has('Intake-Draft-Key')).toBe(false);
+    expect(headers.has('Idempotency-Key')).toBe(false);
+    expect(calls[0]?.init?.body).toBe(
+      JSON.stringify({
+        attachmentId: intakeProof.attachmentId,
+        expiresAt: intakeProof.expiresAt,
+        ...intakeDeclaration,
+      }),
+    );
+  });
+
+  it.each([
+    { url: 'data:text/plain,example' },
+    { url: 'https://user:pass@files.example.test/upload' },
+    { url: 'https://files.example.test/upload#fragment' },
+    { expiresAt: '2026-11-20T14:31:00Z' },
+    { id: '019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f16' },
+  ])('rejects an unbound or unsafe intake upload response (%j)', async (override) => {
+    answer = Response.json(
+      { ...intakeUpload, ...override },
+      { status: 201, headers: intakeHeaders },
+    );
+
+    await expect(
+      client.startIntakeAttachmentUpload(intakeProof, intakeDeclaration),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('redacts arbitrary signed field names and values in upstream validation errors', async () => {
+    answer = Response.json(
+      { ...intakeUpload, fields: { 'example-opaque-field': { value: 'example-opaque-value' } } },
+      { status: 201, headers: intakeHeaders },
+    );
+
+    await expect(
+      client.startIntakeAttachmentUpload(intakeProof, intakeDeclaration),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+      cause: {
+        message:
+          'storage-service answered startIntakeAttachmentUploadInternal outside its contract: an invalid signed upload response.',
+      },
+    });
+  });
+
+  it('verifies only the scoped intake reservation and refuses an acknowledgement for another file', async () => {
+    answer = Response.json({ id: id.toUpperCase() }, { headers: { 'Cache-Control': 'no-store' } });
+
+    await expect(client.completeIntakeAttachmentUpload(intakeProof)).resolves.toEqual({
+      id: id.toUpperCase(),
+    });
+    expect(calls[0]?.url).toBe(`http://storage-service.test${intakePath}/${id}/completion`);
+    expect(calls[0]?.init?.method).toBe('POST');
+    const headers = new Headers(calls[0]?.init?.headers);
+    const principal = await verifier.verify(
+      (headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+    );
+    expect(principal).toMatchObject({
+      actor: { type: 'system', id: null },
+      organizationId: intakeProof.organizationId,
+    });
+
+    answer = Response.json(
+      { id: '019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f16' },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
+    await expect(client.completeIntakeAttachmentUpload(intakeProof)).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+  });
+
+  it('does not retry intake completion and exposes only the Storage unavailable code', async () => {
+    answer = Response.json(
+      {
+        type: 'about:blank',
+        title: 'Unavailable',
+        status: 503,
+        code: 'storage.unavailable',
+        details: { provider: 'internal-test' },
+      },
+      { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+    );
+
+    await expect(client.completeIntakeAttachmentUpload(intakeProof)).rejects.toMatchObject({
+      problem: { status: 503, code: 'storage.unavailable', details: { service: STORAGE_SERVICE } },
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it.each([

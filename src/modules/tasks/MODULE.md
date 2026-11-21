@@ -102,8 +102,11 @@ Comments and participants, watchers and dependencies are served by their respect
   The gateway uses one export slot per process and up to 1 GiB of writable disk for that slot.
   Preparation has a 120-second budget. Download closes after 30 seconds without progress.
 - The five authenticated intake operations in `openapi/public/intake.yaml` relay the verified
-  organization and actor. The two anonymous routes send a system token without an organization
-  and rate-limit each address to 30 form reads and 10 submissions per minute independently.
-  Task-service owns publication, submission, private contact and idempotency decisions.
+  organization and actor. Anonymous operations use independent per-address windows for form reads,
+  submissions, and attachment mutations. They call Task as the unscoped Gateway system actor.
+  Reservation and completion use Task's current binding to call Storage with the verified tenant;
+  Storage does not receive the applicant's draft key. Release goes to Task, which schedules cleanup
+  through its outbox. The Gateway returns only the signed capability or the verification ID and
+  answers errors for unknown publications, drafts and reservations without internal details.
 
 `POST /v1/tasks/{taskKey}/duplicate` relays a duplication once with `tasks:write`, source `If-Match` and `Idempotency-Key`; it returns the new task location and version.

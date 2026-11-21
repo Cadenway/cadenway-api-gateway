@@ -1,4 +1,9 @@
 import {
+  AbandonPublicIntakeAttachmentUploadHeader,
+  AbandonPublicIntakeAttachmentUploadParams,
+  CompletePublicIntakeAttachmentUploadHeader,
+  CompletePublicIntakeAttachmentUploadParams,
+  CompletePublicIntakeAttachmentUploadResponse,
   DisableIntakeFormParams,
   GetIntakeFormConfigurationParams,
   GetIntakeFormConfigurationResponse,
@@ -8,6 +13,10 @@ import {
   GetTaskIntakeContactResponse,
   PublishIntakeFormParams,
   PublishIntakeFormResponse,
+  StartPublicIntakeAttachmentUploadBody,
+  StartPublicIntakeAttachmentUploadHeader,
+  StartPublicIntakeAttachmentUploadParams,
+  StartPublicIntakeAttachmentUploadResponse,
   SubmitPublicIntakeFormBody,
   SubmitPublicIntakeFormHeader,
   SubmitPublicIntakeFormParams,
@@ -20,6 +29,7 @@ import {
 import { formatEtag, ZodValidationPipe } from '@cadenway/nest-common';
 import {
   Controller,
+  createParamDecorator,
   Delete,
   Get,
   Headers,
@@ -29,17 +39,19 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { z } from 'zod';
+import type { z } from 'zod';
 
 import { conformBody, outsideContract } from '../../../../../../problems/upstream-answer.js';
 import { publicProblem } from '../../../../../../problems/public-problem.js';
 import {
   relayProblems,
+  toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
 import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
@@ -57,6 +69,9 @@ import { DisableIntake } from '../../../../application/use-cases/commands/intake
 import { GetIntakeContact } from '../../../../application/use-cases/queries/intake/get-intake-contact/get-intake-contact.use-case.js';
 import { GetPublicIntake } from '../../../../application/use-cases/queries/intake/get-public-intake/get-public-intake.use-case.js';
 import { SubmitPublicIntake } from '../../../../application/use-cases/commands/intake/submit-public-intake/submit-public-intake.use-case.js';
+import { StartIntakeAttachment } from '../../../../application/use-cases/commands/intake/start-intake-attachment/start-intake-attachment.use-case.js';
+import { CompleteIntakeAttachment } from '../../../../application/use-cases/commands/intake/complete-intake-attachment/complete-intake-attachment.use-case.js';
+import { ReleaseIntakeAttachment } from '../../../../application/use-cases/commands/intake/release-intake-attachment/release-intake-attachment.use-case.js';
 
 const READ: AcceptedProblems = {
   400: ['request.invalid'],
@@ -82,18 +97,45 @@ const PUBLIC_READ: AcceptedProblems = { 404: ['intake-form.not-found'] };
 const PUBLIC_SUBMIT: AcceptedProblems = {
   ...PUBLIC_READ,
   400: ['request.invalid'],
-  409: ['idempotency.request-in-progress'],
+  409: ['idempotency.request-in-progress', 'attachment.upload-not-ready'],
   422: ['idempotency.key-reused'],
 };
+const RELEASE_ATTACHMENT: AcceptedProblems = { ...PUBLIC_READ, 400: ['request.invalid'] };
+const START_ATTACHMENT: AcceptedProblems = {
+  ...RELEASE_ATTACHMENT,
+  409: ['idempotency.request-in-progress'],
+  422: [
+    'attachment.file-too-large',
+    'attachment.upload-metadata-mismatch',
+    'intake-form.attachments-disabled',
+    'intake-form.attachment-limit-exceeded',
+    'idempotency.key-reused',
+  ],
+};
+const COMPLETE_ATTACHMENT: AcceptedProblems = {
+  ...RELEASE_ATTACHMENT,
+  409: ['attachment.upload-expired', 'attachment.upload-not-ready'],
+  422: ['attachment.file-too-large', 'attachment.upload-metadata-mismatch'],
+};
+const STORAGE_ATTACHMENT_CODES: Readonly<Record<string, string>> = {
+  'attachment.not-found': 'intake-form.not-found',
+};
 
-// Keep existing request shapes until Gateway serves anonymous attachment uploads.
-const TEXT_ONLY_SUBMISSION = SubmitPublicIntakeFormBody.omit({ attachmentIds: true });
-const TEXT_ONLY_CONFIGURATION = UpdateIntakeFormConfigurationBody.extend({
-  fields: UpdateIntakeFormConfigurationBody.shape.fields
-    .unwrap()
-    .omit({ attachments: true })
-    .optional(),
-});
+const IntakeHeader = createParamDecorator(
+  (name: 'idempotency-key' | 'intake-draft-key', context: ExecutionContext): unknown => {
+    // IncomingMessage retains repeated header lines here instead of joining them with commas.
+    const values = context.switchToHttp().getRequest<Request>().headersDistinct[name];
+    return values?.length === 1 ? values[0] : values;
+  },
+);
+
+async function relayAttachment<T>(accepted: AcceptedProblems, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    throw toPublicProblem(error, accepted, STORAGE_ATTACHMENT_CODES, [404, 409, 422]);
+  }
+}
 
 /** Rejects malformed publication keys after the anonymous address has been counted. */
 @Injectable()
@@ -104,6 +146,7 @@ export class IntakePublicationKeyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     if (
       typeof request.params.publicKey === 'string' &&
+      request.params.publicKey.length === 43 &&
       /^[A-Za-z0-9_-]{43}$/.test(request.params.publicKey)
     ) {
       return true;
@@ -166,8 +209,8 @@ export class IntakeController {
   public async updateConfiguration(
     @Param(new ZodValidationPipe(UpdateIntakeFormConfigurationParams))
     params: z.output<typeof UpdateIntakeFormConfigurationParams>,
-    @RequiredBody(TEXT_ONLY_CONFIGURATION)
-    body: z.output<typeof TEXT_ONLY_CONFIGURATION>,
+    @RequiredBody(UpdateIntakeFormConfigurationBody)
+    body: z.output<typeof UpdateIntakeFormConfigurationBody>,
     @Headers('if-match') header: string | undefined,
     @Res({ passthrough: true }) response: Response,
   ): Promise<z.output<typeof UpdateIntakeFormConfigurationResponse>> {
@@ -278,6 +321,10 @@ export class PublicIntakeController {
   public constructor(
     @Inject(GetPublicIntake) private readonly reading: GetPublicIntake,
     @Inject(SubmitPublicIntake) private readonly submitting: SubmitPublicIntake,
+    @Inject(StartIntakeAttachment) private readonly startingAttachment: StartIntakeAttachment,
+    @Inject(CompleteIntakeAttachment)
+    private readonly completingAttachment: CompleteIntakeAttachment,
+    @Inject(ReleaseIntakeAttachment) private readonly releasingAttachment: ReleaseIntakeAttachment,
   ) {}
   // #endregion
 
@@ -314,16 +361,24 @@ export class PublicIntakeController {
   public async submit(
     @Param(new ZodValidationPipe(SubmitPublicIntakeFormParams))
     params: z.output<typeof SubmitPublicIntakeFormParams>,
-    @RequiredBody(TEXT_ONLY_SUBMISSION) body: z.output<typeof TEXT_ONLY_SUBMISSION>,
-    @Headers('idempotency-key') header: string | undefined,
+    @RequiredBody(SubmitPublicIntakeFormBody) body: z.output<typeof SubmitPublicIntakeFormBody>,
+    @IntakeHeader('idempotency-key') header: unknown,
+    @IntakeHeader('intake-draft-key') draftHeader: unknown,
     @Res({ passthrough: true }) response: Response,
-    @Headers('intake-draft-key') draftKey?: string,
   ): Promise<z.output<typeof SubmitPublicIntakeFormResponse>> {
     response.setHeader('Cache-Control', 'no-store');
-    toRequestHeader('Intake-Draft-Key', z.undefined(), draftKey);
+    const draftKey = toRequestHeader(
+      'Intake-Draft-Key',
+      body.attachmentIds === undefined
+        ? SubmitPublicIntakeFormHeader.shape['Intake-Draft-Key']
+        : SubmitPublicIntakeFormHeader.shape['Intake-Draft-Key'].unwrap(),
+      draftHeader,
+    );
     const key = toRequestHeader(
       'Idempotency-Key',
-      SubmitPublicIntakeFormHeader.shape['Idempotency-Key'],
+      draftKey === undefined
+        ? SubmitPublicIntakeFormHeader.shape['Idempotency-Key']
+        : SubmitPublicIntakeFormHeader.shape['Idempotency-Key'].unwrap(),
       header,
     );
     return conformBody(
@@ -332,9 +387,108 @@ export class PublicIntakeController {
       SubmitPublicIntakeFormResponse,
       await relayProblems(
         PUBLIC_SUBMIT,
-        () => this.submitting.execute(params.publicKey, body, key),
+        () => this.submitting.execute(params.publicKey, body, key, draftKey),
         [404],
       ),
+    );
+  }
+
+  /** Allocates a reservation and returns only the signed upload capability. */
+  @Post(':publicKey/attachments')
+  @IntakeRateLimitGuard.attachments()
+  @CredentialGuard.requires({
+    operationId: 'startPublicIntakeAttachmentUpload',
+    security: [],
+    organization: false,
+  })
+  public async startAttachment(
+    @Param(new ZodValidationPipe(StartPublicIntakeAttachmentUploadParams))
+    params: z.output<typeof StartPublicIntakeAttachmentUploadParams>,
+    @RequiredBody(StartPublicIntakeAttachmentUploadBody)
+    body: z.output<typeof StartPublicIntakeAttachmentUploadBody>,
+    @IntakeHeader('intake-draft-key') draftHeader: unknown,
+    @IntakeHeader('idempotency-key') idempotencyHeader: unknown,
+    @Res({ passthrough: true }) response: Response,
+    @Req() request: Request,
+  ): Promise<z.output<typeof StartPublicIntakeAttachmentUploadResponse>> {
+    response.setHeader('Cache-Control', 'no-store');
+    const draftKey = toRequestHeader(
+      'Intake-Draft-Key',
+      StartPublicIntakeAttachmentUploadHeader.shape['Intake-Draft-Key'],
+      draftHeader,
+    );
+    const key = toRequestHeader(
+      'Idempotency-Key',
+      StartPublicIntakeAttachmentUploadHeader.shape['Idempotency-Key'],
+      idempotencyHeader,
+    );
+    const result = conformBody(
+      'storage-service',
+      'startPublicIntakeAttachmentUpload',
+      StartPublicIntakeAttachmentUploadResponse,
+      await relayAttachment(START_ATTACHMENT, () =>
+        this.startingAttachment.execute(params.publicKey, body, draftKey, key),
+      ),
+    );
+    const relativePrefix = request.path.endsWith('/') ? '' : 'attachments/';
+    response.setHeader('Location', `${relativePrefix}${result.id}`);
+    return result;
+  }
+
+  /** Verifies the current draft's reservation, returning only its identifier. */
+  @Post(':publicKey/attachments/:attachmentId/completion')
+  @HttpCode(200)
+  @IntakeRateLimitGuard.attachments()
+  @CredentialGuard.requires({
+    operationId: 'completePublicIntakeAttachmentUpload',
+    security: [],
+    organization: false,
+  })
+  public async completeAttachment(
+    @Param(new ZodValidationPipe(CompletePublicIntakeAttachmentUploadParams))
+    params: z.output<typeof CompletePublicIntakeAttachmentUploadParams>,
+    @IntakeHeader('intake-draft-key') draftHeader: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<z.output<typeof CompletePublicIntakeAttachmentUploadResponse>> {
+    response.setHeader('Cache-Control', 'no-store');
+    const draftKey = toRequestHeader(
+      'Intake-Draft-Key',
+      CompletePublicIntakeAttachmentUploadHeader.shape['Intake-Draft-Key'],
+      draftHeader,
+    );
+    return conformBody(
+      'storage-service',
+      'completePublicIntakeAttachmentUpload',
+      CompletePublicIntakeAttachmentUploadResponse,
+      await relayAttachment(COMPLETE_ATTACHMENT, () =>
+        this.completingAttachment.execute(params.publicKey, params.attachmentId, draftKey),
+      ),
+    );
+  }
+
+  /** Releases the applicant's unused reservation in Task. */
+  @Delete(':publicKey/attachments/:attachmentId')
+  @HttpCode(204)
+  @IntakeRateLimitGuard.attachments()
+  @CredentialGuard.requires({
+    operationId: 'abandonPublicIntakeAttachmentUpload',
+    security: [],
+    organization: false,
+  })
+  public async releaseAttachment(
+    @Param(new ZodValidationPipe(AbandonPublicIntakeAttachmentUploadParams))
+    params: z.output<typeof AbandonPublicIntakeAttachmentUploadParams>,
+    @IntakeHeader('intake-draft-key') draftHeader: unknown,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    response.setHeader('Cache-Control', 'no-store');
+    const draftKey = toRequestHeader(
+      'Intake-Draft-Key',
+      AbandonPublicIntakeAttachmentUploadHeader.shape['Intake-Draft-Key'],
+      draftHeader,
+    );
+    await relayAttachment(RELEASE_ATTACHMENT, () =>
+      this.releasingAttachment.execute(params.publicKey, params.attachmentId, draftKey),
     );
   }
   // #endregion

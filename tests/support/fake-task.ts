@@ -553,6 +553,9 @@ export function createFakeTask(): FakeTask {
     getTaskIntakeContact: vi.fn(),
     getPublicIntakeForm: vi.fn(),
     submitPublicIntakeForm: vi.fn(),
+    allocateIntakeAttachment: vi.fn(),
+    resolveIntakeAttachment: vi.fn(),
+    releaseIntakeAttachment: vi.fn(),
     listSpaceGrants: vi.fn(
       task(ListSpaceGrantsInternalResponse, 'get', '/v1/spaces/{spaceId}/grants'),
     ),

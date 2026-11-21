@@ -9,8 +9,13 @@ export class SubmitPublicIntake {
 
   // #region Methods
   /** Executes the operation. */
-  public execute(publicKey: string, body: object, key: string | undefined): Promise<object> {
-    return this.registry.submit(publicKey, body, key);
+  public execute(
+    publicKey: string,
+    body: object,
+    key: string | undefined,
+    draftKey?: string,
+  ): Promise<object> {
+    return this.registry.submit(publicKey, body, key, draftKey);
   }
   // #endregion
 }

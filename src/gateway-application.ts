@@ -1,4 +1,9 @@
-import { createApplication, type CreateApplicationOptions } from '@cadenway/nest-common';
+import {
+  createApplication,
+  type CreateApplicationOptions,
+  ProblemException,
+  toProblem,
+} from '@cadenway/nest-common';
 import type { DynamicModule, Type } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
@@ -53,8 +58,9 @@ export const CORS_ALLOWED_METHODS: readonly string[] = [
  *
  * @description
  * Request headers a browser may send beyond the CORS-safelisted ones: the JSON content type and the
- * concurrency and idempotency headers of the contracts. `Authorization` is absent on purpose: the
- * applications authenticate with the session cookie, and API tokens are not used from a browser.
+ * concurrency, idempotency and applicant draft headers of the contracts. `Authorization` is
+ * absent on purpose: the applications authenticate with the session cookie, and API tokens are
+ * not used from a browser.
  *
  * @type {readonly string[]}
  */
@@ -62,6 +68,7 @@ export const CORS_ALLOWED_HEADERS: readonly string[] = [
   'Content-Type',
   'If-Match',
   'Idempotency-Key',
+  'Intake-Draft-Key',
 ];
 
 /**
@@ -96,6 +103,37 @@ export const CORS_EXPOSED_HEADERS: readonly string[] = [
  * @type {number}
  */
 export const CORS_MAX_AGE_SECONDS: number = 600;
+
+// A capture-free path prevents Express decoding an invalid member ID before setting the header.
+const PROFILE_MEDIA_PATH =
+  /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
+
+/** Sets the private cache policy before guards, parsing errors and the route response. */
+function noStoreProfileMedia(request: Request, response: Response, next: NextFunction): void {
+  response.setHeader('Cache-Control', 'private, no-store');
+  try {
+    decodeURI(request.originalUrl.split('?', 1)[0] ?? '');
+  } catch {
+    next(
+      new ProblemException({
+        status: 400,
+        code: 'request.invalid',
+        details: {
+          issues: [
+            {
+              in: 'path',
+              path: 'memberId',
+              code: 'invalid_format',
+              message: 'Invalid path encoding.',
+            },
+          ],
+        },
+      }),
+    );
+    return;
+  }
+  next();
+}
 
 /**
  * Function createGatewayApplication
@@ -147,6 +185,28 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
+  app.use(PROFILE_MEDIA_PATH, noStoreProfileMedia);
+  app.use(
+    PROFILE_MEDIA_PATH,
+    (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (error instanceof ProblemException || toProblem(error).status !== 400) {
+        next(error);
+        return;
+      }
+      next(
+        new ProblemException({
+          status: 400,
+          code: 'request.invalid',
+          details: {
+            issues: [
+              { in: 'body', path: '', code: 'invalid_format', message: 'Invalid JSON body.' },
+            ],
+          },
+        }),
+      );
+    },
+  );
   // Nest route middleware is skipped when the shared parser reports a malformed body.
   app.use(
     [

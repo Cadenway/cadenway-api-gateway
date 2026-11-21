@@ -57,6 +57,15 @@ const LIST_ID = '019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12';
 const ACCESS_REQUEST_ID = '019a7e00-1a2b-7c3d-8e4f-5a6b7c8d9e21';
 const ENTRY_ID = '019a7f00-1a2b-7c3d-8e4f-5a6b7c8d9e31';
 const ITEM_ID = '019a7c00-1a2b-7c3d-8e4f-5a6b7c8d9e10';
+const INTAKE_KEY = 'A'.repeat(43);
+const INTAKE_DRAFT = 'D'.repeat(43);
+const INTAKE_ATTACHMENT = {
+  organizationId: ATELIER_NORD_ID,
+  publicationId: LIST_ID,
+  attachmentId: ITEM_ID,
+  expiresAt: '2026-11-20T14:30:00Z',
+};
+const INTAKE_DECLARATION = { fileName: 'maquette.png', contentType: 'image/png', sizeBytes: 120 };
 const NATIVE_EXPORT_ROWS = 256;
 const NATIVE_EXPORT_HEADER_TIMEOUT = 1000;
 
@@ -271,6 +280,9 @@ interface ReceivedCall {
 
   /** `Idempotency-Key`, or `null`. */
   readonly idempotencyKey: string | null;
+
+  /** `Intake-Draft-Key`, or `null`. */
+  readonly intakeDraftKey: string | null;
 
   /** The verified internal token. */
   readonly principal: InternalPrincipal;
@@ -715,6 +727,7 @@ describe('TaskServiceClient against task-service over HTTP', () => {
           body: text === '' ? undefined : (JSON.parse(text) as unknown),
           ifMatch: request.headers.get('If-Match'),
           idempotencyKey: request.headers.get('Idempotency-Key'),
+          intakeDraftKey: request.headers.get('Intake-Draft-Key'),
           principal: await verifier.verify(
             (request.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
           ),
@@ -867,10 +880,111 @@ describe('TaskServiceClient against task-service over HTTP', () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.idempotencyKey).toBe('request-1');
+    expect(calls[0]?.intakeDraftKey).toBeNull();
     expect(calls[0]?.principal).toMatchObject({
       actor: { type: 'system', id: null },
       organizationId: null,
     });
+  });
+
+  it('forwards the draft key and attachment IDs on an intake submission', async () => {
+    answer('post', '/internal/v1/intake-forms/:publicKey/submissions', () =>
+      json({ receipt: 'B'.repeat(43) }),
+    );
+    const submission = { title: 'Aide', attachmentIds: [ITEM_ID] };
+
+    await client.submitPublicIntakeForm(INTAKE_KEY, submission, 'submission-key', INTAKE_DRAFT);
+
+    expect(calls[0]).toMatchObject({
+      body: submission,
+      idempotencyKey: 'submission-key',
+      intakeDraftKey: INTAKE_DRAFT,
+    });
+  });
+
+  it('obtains a Task allocation for an unscoped applicant and validates the relative location', async () => {
+    answer('post', '/internal/v1/intake-forms/:publicKey/attachments', () =>
+      json(INTAKE_ATTACHMENT, 201, {
+        'Cache-Control': 'no-store',
+        Location: `attachments/${ITEM_ID}`,
+      }),
+    );
+
+    await expect(
+      asCamille(() =>
+        client.allocateIntakeAttachment(INTAKE_KEY, INTAKE_DECLARATION, INTAKE_DRAFT, 'upload-key'),
+      ),
+    ).resolves.toEqual(INTAKE_ATTACHMENT);
+    expect(calls[0]).toMatchObject({
+      url: `/internal/v1/intake-forms/${INTAKE_KEY}/attachments`,
+      body: INTAKE_DECLARATION,
+      idempotencyKey: 'upload-key',
+      intakeDraftKey: INTAKE_DRAFT,
+      principal: {
+        actor: { type: 'system', id: null },
+        organizationId: null,
+        role: null,
+        scopes: [],
+      },
+    });
+  });
+
+  it('rejects a Task allocation with a Location on another origin', async () => {
+    answer('post', '/internal/v1/intake-forms/:publicKey/attachments', () =>
+      json(INTAKE_ATTACHMENT, 201, {
+        'Cache-Control': 'no-store',
+        Location: `https://other.test/internal/v1/intake-forms/${INTAKE_KEY}/attachments/${ITEM_ID}`,
+      }),
+    );
+
+    await expect(
+      client.allocateIntakeAttachment(INTAKE_KEY, INTAKE_DECLARATION, INTAKE_DRAFT, 'upload-key'),
+    ).rejects.toMatchObject({ problem: { status: 503, code: 'upstream.failed' } });
+  });
+
+  it('checks the reservation ID and cache policy of a Task ownership proof', async () => {
+    let proof = INTAKE_ATTACHMENT;
+    let cacheControl = 'no-store';
+    answer('get', '/internal/v1/intake-forms/:publicKey/attachments/:attachmentId', () =>
+      json(proof, 200, { 'Cache-Control': cacheControl }),
+    );
+    const resolve = () =>
+      client.resolveIntakeAttachment(INTAKE_KEY, ITEM_ID.toUpperCase(), INTAKE_DRAFT);
+
+    await expect(resolve()).resolves.toEqual(INTAKE_ATTACHMENT);
+    expect(calls[0]).toMatchObject({
+      intakeDraftKey: INTAKE_DRAFT,
+      principal: { actor: { type: 'system', id: null }, organizationId: null },
+    });
+
+    proof = { ...INTAKE_ATTACHMENT, attachmentId: ENTRY_ID };
+    await expect(resolve()).rejects.toMatchObject({ problem: { code: 'upstream.failed' } });
+
+    proof = INTAKE_ATTACHMENT;
+    cacheControl = 'public';
+    await expect(resolve()).rejects.toMatchObject({ problem: { code: 'upstream.failed' } });
+  });
+
+  it('releases only through Task with the private draft key and does not retry a transient failure', async () => {
+    let status = 204;
+    answer('delete', '/internal/v1/intake-forms/:publicKey/attachments/:attachmentId', () =>
+      status === 204
+        ? new HttpResponse(null, { status, headers: { 'Cache-Control': 'no-store' } })
+        : json({ type: 'about:blank', status, code: 'service.unavailable' }, status),
+    );
+
+    await expect(
+      client.releaseIntakeAttachment(INTAKE_KEY, ITEM_ID, INTAKE_DRAFT),
+    ).resolves.toBeUndefined();
+    expect(calls[0]).toMatchObject({
+      intakeDraftKey: INTAKE_DRAFT,
+      principal: { actor: { type: 'system', id: null }, organizationId: null },
+    });
+    status = 503;
+    await expect(
+      client.releaseIntakeAttachment(INTAKE_KEY, ITEM_ID, INTAKE_DRAFT),
+    ).rejects.toBeInstanceOf(ProblemException);
+    expect(calls).toHaveLength(2);
   });
 
   it('does not retry a public intake submission even when it has a replay key', async () => {

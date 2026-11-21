@@ -43,13 +43,6 @@ const BODYLESS_POSTS = new Set([
   'completeReminder',
 ]);
 
-// The nullable reader lands before the three public upload operations.
-const UNSERVED_INTAKE_ATTACHMENT_OPERATIONS = new Set([
-  'startPublicIntakeAttachmentUpload',
-  'abandonPublicIntakeAttachmentUpload',
-  'completePublicIntakeAttachmentUpload',
-]);
-
 /**
  * Interface ServedRoute
  *
@@ -267,9 +260,6 @@ function contractOperations(): readonly ContractOperation[] {
           continue;
         }
         const operationId = String(operation.operationId);
-        if (UNSERVED_INTAKE_ATTACHMENT_OPERATIONS.has(operationId)) {
-          continue;
-        }
         const security: unknown = operation.security ?? spec.document.security;
         const responses: unknown = operation.responses;
         const escaped: string = path.replaceAll('~', '~0').replaceAll('/', '~1');
@@ -301,11 +291,11 @@ describe('the security of every route against the public contracts', () => {
   const served: readonly ServedRoute[] = servedRoutes();
   const operations: readonly ContractOperation[] = contractOperations();
 
-  it('serves the public operation set for this rollout stage', () => {
+  it('matches the complete public operation set of the registered specs', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(202);
+    expect(operations).toHaveLength(214);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -341,7 +331,7 @@ describe('the security of every route against the public contracts', () => {
     },
   );
 
-  it('derives a token scope only for the two member reads and the task operations', () => {
+  it('derives a token scope only for member reads and the task operations', () => {
     const withToken: string[] = operations
       .filter((operation: ContractOperation) => apiTokenScopesOf(operation.security) !== undefined)
       .map((operation: ContractOperation) => operation.security.operationId)
@@ -350,6 +340,7 @@ describe('the security of every route against the public contracts', () => {
     expect(withToken).toEqual(
       [
         'getMember',
+        'getMemberAvatar',
         'listMembers',
         'listSpaces',
         'createSpace',
@@ -484,15 +475,18 @@ describe('the security of every route against the public contracts', () => {
     );
   });
 
-  it.each(['getPublicIntakeForm', 'submitPublicIntakeForm'])(
-    '%s accepts anonymous requests without an organization',
-    (operationId) => {
-      const route = served.find(
-        (candidate: ServedRoute) => candidate.security?.operationId === operationId,
-      );
-      expect(route?.security).toEqual({ operationId, security: [], organization: false });
-    },
-  );
+  it.each([
+    'getPublicIntakeForm',
+    'submitPublicIntakeForm',
+    'startPublicIntakeAttachmentUpload',
+    'completePublicIntakeAttachmentUpload',
+    'abandonPublicIntakeAttachmentUpload',
+  ])('%s accepts anonymous requests without an organization', (operationId) => {
+    const route = served.find(
+      (candidate: ServedRoute) => candidate.security?.operationId === operationId,
+    );
+    expect(route?.security).toEqual({ operationId, security: [], organization: false });
+  });
 });
 
 describe('reading an operation security', () => {

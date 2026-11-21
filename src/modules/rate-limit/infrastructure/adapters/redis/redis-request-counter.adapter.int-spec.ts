@@ -97,7 +97,7 @@ describe('RedisRequestCounter on Redis', () => {
     expect(ttl).toBeLessThanOrEqual(60_000);
   });
 
-  it('keeps public intake reads and submissions in independent per-address windows', async () => {
+  it('keeps public intake reads, submissions, and upload mutations in independent address windows', async () => {
     const pseudonym = randomUUID();
     const reads = new RedisRequestCounter(client, {
       limit: 'intake-read',
@@ -111,16 +111,27 @@ describe('RedisRequestCounter on Redis', () => {
       windowSeconds: 60,
       storeTimeoutMs: 100,
     });
+    const attachments = new RedisRequestCounter(client, {
+      limit: 'intake-attachment',
+      requests: 10,
+      windowSeconds: 60,
+      storeTimeoutMs: 100,
+    });
     const readKey = `intake-read:${pseudonym}`;
     const submitKey = `intake-submit:${pseudonym}`;
+    const attachmentKey = `intake-attachment:${pseudonym}`;
     const readResults = await consumeTimes(reads, readKey, 31);
     const submissionResults = await consumeTimes(submissions, submitKey, 11);
+    const attachmentResults = await consumeTimes(attachments, attachmentKey, 11);
 
     expect(readResults.slice(0, 30).every((result) => result.allowed)).toBe(true);
     expect(readResults[30]).toMatchObject({ allowed: false });
     expect(submissionResults.slice(0, 10).every((result) => result.allowed)).toBe(true);
     expect(submissionResults[10]).toMatchObject({ allowed: false });
     expect(submissionResults[10]?.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect(attachmentResults.slice(0, 10).every((result) => result.allowed)).toBe(true);
+    expect(attachmentResults[10]).toMatchObject({ allowed: false });
+    expect(attachmentResults[10]?.retryAfterSeconds).toBeGreaterThanOrEqual(1);
     await expect(reads.consume(`intake-read:${randomUUID()}`)).resolves.toEqual({
       allowed: true,
       retryAfterSeconds: 0,

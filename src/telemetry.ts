@@ -17,5 +17,9 @@ startTelemetry({
     '/internal/v1/intake-forms/',
     '/v1/inbox/',
     '/internal/v1/inbox/',
+    '/v1/members/',
+    '/internal/v1/avatars/',
+    '/internal/v1/organization/logo-assets/',
+    '/internal/v1/profile-media-uploads/',
   ],
 });

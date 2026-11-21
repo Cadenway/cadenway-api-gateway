@@ -203,7 +203,17 @@ import {
   PublishIntakeFormInternalResponse,
   GetTaskIntakeContactInternalResponse,
   GetPublicIntakeFormInternalResponse,
+  AllocateIntakeAttachmentInternalBody,
+  AllocateIntakeAttachmentInternalHeader,
+  AllocateIntakeAttachmentInternalParams,
+  AllocateIntakeAttachmentInternalResponse,
+  ResolveIntakeAttachmentInternalHeader,
+  ResolveIntakeAttachmentInternalParams,
+  ResolveIntakeAttachmentInternalResponse,
+  ReleaseIntakeAttachmentInternalHeader,
+  ReleaseIntakeAttachmentInternalParams,
   SubmitPublicIntakeFormInternalBody,
+  SubmitPublicIntakeFormInternalHeader,
   SubmitPublicIntakeFormInternalResponse,
 } from '@cadenway/contracts/validators/internal/task-service';
 import type { z } from 'zod';
@@ -513,8 +523,8 @@ function sentOnce(init: InternalRequestInit = {}): InternalRequestInit {
   return { ...init, idempotent: false };
 }
 
-/** Signs anonymous intake calls for the gateway itself without an organization. */
-function intakeSystemClaims(): InternalRequestInit {
+/** Signs anonymous intake calls without an organization and includes only their private headers. */
+function intakeSystemClaims(draftKey?: string, key?: string): InternalRequestInit {
   const traceId = trace.getActiveSpan()?.spanContext().traceId;
   const claims: InternalTokenClaims = {
     actor: { type: 'system', id: null },
@@ -523,7 +533,20 @@ function intakeSystemClaims(): InternalRequestInit {
     scopes: [],
     ...(traceId === undefined ? {} : { traceId }),
   };
-  return { claims };
+  return {
+    claims,
+    headers: {
+      ...(draftKey === undefined ? {} : { 'Intake-Draft-Key': draftKey }),
+      ...(key === undefined ? {} : { 'Idempotency-Key': key }),
+    },
+  };
+}
+
+/** Rejects an applicant response that could be kept by a cache. */
+function requireIntakeNoStore(operation: string, headers: Headers): void {
+  if (headers.get('Cache-Control')?.toLowerCase() !== 'no-store') {
+    throw outsideContract(TASK_SERVICE, operation, 'missing Cache-Control no-store');
+  }
 }
 
 /**
@@ -1010,13 +1033,117 @@ export class TaskServiceClient {
     );
   }
 
+  /** Obtains a trusted Task allocation for a private applicant draft. */
+  public async allocateIntakeAttachment(
+    publicKey: string,
+    body: unknown,
+    draftKey: string,
+    key: string,
+  ): Promise<z.output<typeof AllocateIntakeAttachmentInternalResponse>> {
+    const operation = 'allocateIntakeAttachmentInternal';
+    toRequest(operation, AllocateIntakeAttachmentInternalParams, { publicKey });
+    toRequest(operation, AllocateIntakeAttachmentInternalHeader, {
+      'Intake-Draft-Key': draftKey,
+      'Idempotency-Key': key,
+    });
+    const pathKey = encodeURIComponent(publicKey);
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.allocateIntakeAttachmentInternal(
+        pathKey,
+        toRequest(operation, AllocateIntakeAttachmentInternalBody, body),
+        sentOnce(intakeSystemClaims(draftKey, key)),
+      ),
+    );
+    const proof = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      201,
+      AllocateIntakeAttachmentInternalResponse,
+    );
+    requireIntakeNoStore(operation, answer.headers);
+    const location = answer.headers.get('Location');
+    const requestPath = `/internal/v1/intake-forms/${pathKey}/attachments`;
+    const prefix = `${requestPath}/`;
+    const parsed =
+      location === null ? null : URL.parse(location, `https://task.invalid${requestPath}`);
+    if (
+      location === null ||
+      /^(?:[a-z][a-z\d+.-]*:|\/\/)|[\s\\?#]/iu.test(location) ||
+      !parsed?.pathname.startsWith(prefix) ||
+      parsed.pathname.slice(prefix.length).toLowerCase() !== proof.attachmentId.toLowerCase()
+    ) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent allocation Location');
+    }
+    return proof;
+  }
+
+  /** Obtains current completion authorization for the requested reservation. */
+  public async resolveIntakeAttachment(
+    publicKey: string,
+    attachmentId: string,
+    draftKey: string,
+  ): Promise<z.output<typeof ResolveIntakeAttachmentInternalResponse>> {
+    const operation = 'resolveIntakeAttachmentInternal';
+    toRequest(operation, ResolveIntakeAttachmentInternalParams, { publicKey, attachmentId });
+    toRequest(operation, ResolveIntakeAttachmentInternalHeader, { 'Intake-Draft-Key': draftKey });
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.resolveIntakeAttachmentInternal(
+        encodeURIComponent(publicKey),
+        attachmentId,
+        intakeSystemClaims(draftKey),
+      ),
+    );
+    const proof = expectBody(
+      TASK_SERVICE,
+      operation,
+      answer,
+      200,
+      ResolveIntakeAttachmentInternalResponse,
+    );
+    requireIntakeNoStore(operation, answer.headers);
+    if (proof.attachmentId.toLowerCase() !== attachmentId.toLowerCase()) {
+      throw outsideContract(TASK_SERVICE, operation, 'an inconsistent allocation identity');
+    }
+    return proof;
+  }
+
+  /** Requests the authoritative release once on behalf of the applicant. */
+  public async releaseIntakeAttachment(
+    publicKey: string,
+    attachmentId: string,
+    draftKey: string,
+  ): Promise<void> {
+    const operation = 'releaseIntakeAttachmentInternal';
+    toRequest(operation, ReleaseIntakeAttachmentInternalParams, { publicKey, attachmentId });
+    toRequest(operation, ReleaseIntakeAttachmentInternalHeader, { 'Intake-Draft-Key': draftKey });
+    const answer = await answered(
+      TASK_SERVICE,
+      operation,
+      this.routes.releaseIntakeAttachmentInternal(
+        encodeURIComponent(publicKey),
+        attachmentId,
+        sentOnce(intakeSystemClaims(draftKey)),
+      ),
+    );
+    expectStatus(TASK_SERVICE, operation, answer, 204);
+    requireIntakeNoStore(operation, answer.headers);
+  }
+
   /** Submits to a public intake form once with the supplied replay key. */
   public submitPublicIntakeForm(
     publicKey: string,
     body: unknown,
     key?: string,
+    draftKey?: string,
   ): Promise<z.output<typeof SubmitPublicIntakeFormInternalResponse>> {
     const operation = 'submitPublicIntakeFormInternal';
+    const options = intakeSystemClaims(draftKey, key);
+    toRequest(operation, SubmitPublicIntakeFormInternalHeader, options.headers);
     return call(
       operation,
       200,
@@ -1024,7 +1151,7 @@ export class TaskServiceClient {
       this.routes.submitPublicIntakeFormInternal(
         publicKey,
         toRequest(operation, SubmitPublicIntakeFormInternalBody, body),
-        sentOnce({ ...intakeSystemClaims(), ...withHeaders('Idempotency-Key', key) }),
+        sentOnce(options),
       ),
     );
   }
