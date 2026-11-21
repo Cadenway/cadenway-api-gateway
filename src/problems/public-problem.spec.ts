@@ -2,7 +2,12 @@ import { ProblemException, type Problem } from '@cadenway/nest-common';
 import { describe, expect, it } from 'vitest';
 
 import { problemExamples } from '../../tests/support/public-contract.js';
-import { PROBLEM_TITLES, isProblemStatus, publicProblem } from './public-problem.js';
+import {
+  PROBLEM_TITLES,
+  isProblemStatus,
+  publicProblem,
+  siteFormProblem,
+} from './public-problem.js';
 
 /**
  * Function reasonPhrase
@@ -30,14 +35,17 @@ describe('PROBLEM_TITLES', () => {
 
   it.each(examples.map((example) => [example.pointer, example.value] as const))(
     'gives %s the title of the contract',
-    (_pointer, example) => {
-      const problem: Problem = publicProblem({
+    (pointer, example) => {
+      const standard = publicProblem({
         status: example.status as 400,
         code: String(example.code),
-      }).problem;
+      });
+      const error = pointer.startsWith('site.yaml#') ? siteFormProblem(standard) : standard;
+      if (!(error instanceof ProblemException)) throw new Error('The example is not a problem.');
+      const problem: Problem = error.problem;
 
       expect(problem.title).toBe(example.title);
-      expect(problem.title).toBe(
+      expect(standard.problem.title).toBe(
         PROBLEM_TITLES.get(String(example.code)) ?? reasonPhrase(Number(example.status)),
       );
     },

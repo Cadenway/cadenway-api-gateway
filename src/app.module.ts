@@ -27,10 +27,12 @@ import { RealtimeTicketsModule } from './modules/realtime-tickets/realtime-ticke
 import { RemindersModule } from './modules/reminders/reminders.module.js';
 import { SearchModule } from './modules/search/search.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
+import { SiteModule } from './modules/site/site.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
 import { TrashModule } from './modules/trash/trash.module.js';
 import { TwoStepVerificationModule } from './modules/two-step-verification/two-step-verification.module.js';
+import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
 
 /**
  * Constant ROUTE_MODULES
@@ -50,6 +52,8 @@ export const ROUTE_MODULES: readonly Type[] = [
   BillingModule,
   DocumentsModule,
   SearchModule,
+  WebhooksModule,
+  SiteModule,
   RemindersModule,
   RealtimeTicketsModule,
   SessionsModule,

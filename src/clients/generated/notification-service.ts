@@ -332,6 +332,57 @@ export interface Problem {
 }
 
 /**
+ * A single reply or subscription address without surrounding whitespace.
+ * @maxLength 254
+ */
+export type PublicSiteEmail = string;
+
+/**
+ * Topic chosen in the support form.
+ */
+export type PublicContactSubmissionSubject = typeof PublicContactSubmissionSubject[keyof typeof PublicContactSubmissionSubject];
+
+
+export const PublicContactSubmissionSubject = {
+  login: 'login',
+  mfa: 'mfa',
+  org: 'org',
+  data: 'data',
+  other: 'other',
+} as const;
+
+export interface PublicContactSubmission {
+  email: PublicSiteEmail;
+  /** Topic chosen in the support form. */
+  subject: PublicContactSubmissionSubject;
+  /**
+     * Plain text. Count Unicode code points. The minimum applies after trimming surrounding whitespace.
+     * @minLength 20
+     * @maxLength 2000
+     */
+  message: string;
+}
+
+export interface NewsletterSubscription {
+  email: PublicSiteEmail;
+}
+
+/**
+ * The public-site submission is recorded. The response has no body.
+ */
+export type SiteFormAcceptedResponse = void;
+
+/**
+ * `idempotency.request-in-progress`: a request using this key is still running.
+ */
+export type ContactSubmissionInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the key already represents a different contact submission.
+ */
+export type ContactSubmissionKeyReusedResponse = Problem;
+
+/**
  * `request.invalid`: the request does not match this contract. `details.issues` identifies
  * invalid fields.
  */
@@ -428,6 +479,11 @@ export type AuthorizedTaskIdParameter = string;
  * Optional strong validator of the current version.
  */
 export type IfMatchParameter = string;
+
+/**
+ * Random UUIDv4. Reuse it when retrying the same contact submission.
+ */
+export type ContactIdempotencyKeyParameter = string;
 
 export type ListInboxNotificationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -1290,7 +1346,91 @@ const completeReminderInternal = async (reminderId: string,
 
 
 
-return { listInboxNotificationsInternal, getListInboxNotificationsInternalUrl, listInboxUnreadSubjectsInternal, getListInboxUnreadSubjectsInternalUrl, markInboxNotificationsReadInternal, getMarkInboxNotificationsReadInternalUrl, getInboxNotificationCandidateInternal, getGetInboxNotificationCandidateInternalUrl, markInboxNotificationReadInternal, getMarkInboxNotificationReadInternalUrl, archiveInboxNotificationInternal, getArchiveInboxNotificationInternalUrl, getNotificationPreferencesInternal, getGetNotificationPreferencesInternalUrl, updateNotificationPreferencesInternal, getUpdateNotificationPreferencesInternalUrl, listRemindersInternal, getListRemindersInternalUrl, listVisibleReminderRecordsInternal, getListVisibleReminderRecordsInternalUrl, getTaskReminderInternal, getGetTaskReminderInternalUrl, setTaskReminderInternal, getSetTaskReminderInternalUrl, getReminderCandidateInternal, getGetReminderCandidateInternalUrl, getReminderInternal, getGetReminderInternalUrl, updateReminderNoteInternal, getUpdateReminderNoteInternalUrl, deleteReminderInternal, getDeleteReminderInternalUrl, snoozeReminderInternal, getSnoozeReminderInternalUrl, completeReminderInternal, getCompleteReminderInternalUrl };
+const getSubmitContactFormInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/contact-submissions`
+}
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Contact submissions have no organization or account association.
+ *
+ * Notification commits the submission and one durable delivery intent together. The worker
+ * sends the message as plain text to the support address configured by Notification. The
+ * user's validated address can be used only as Reply-To. The sender, recipient and mail
+ * subject are server-controlled, with a subject label selected from the supported categories.
+ * Notification sends no automatic mail to the submitted address and publishes no form data
+ * to the event bus. Log and trace metadata contains no body, address or idempotency key.
+ *
+ * The gateway forwards the idempotency key unchanged. For 24 hours after acceptance, the
+ * same key and validated payload replay the empty receipt without creating a new delivery
+ * intent. A concurrent request holding that key returns 409. Reuse for a different payload
+ * returns 422. Acceptance is durable and does not wait for SMTP.
+ * @summary Record a public-site message for support delivery
+ */
+const submitContactFormInternal = async (publicContactSubmission: PublicContactSubmission, options?: RequestInit): Promise<submitContactFormInternalResponse> => {
+
+  const res = await fetchFn(getSubmitContactFormInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(publicContactSubmission)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: submitContactFormInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as submitContactFormInternalResponse
+}
+
+
+
+const getSubscribeToNewsletterInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/newsletter-subscriptions`
+}
+
+/**
+ * Internal token: issuer `api-gateway`, actor `{type: system, id: api-gateway}`.
+ * Newsletter signups have no organization or account association.
+ *
+ * Notification records the mailbox and sign-up time. Lowercase the domain and preserve
+ * the local part when comparing mailboxes. The unique mailbox constraint applies even to
+ * concurrent requests. An existing record is left as is, including its subscription state.
+ * Both a new record and a replay answer with the same empty receipt. The operation sends
+ * no email and publishes no address. Acceptance follows durable storage.
+ * @summary Record a public-site newsletter signup
+ */
+const subscribeToNewsletterInternal = async (newsletterSubscription: NewsletterSubscription, options?: RequestInit): Promise<subscribeToNewsletterInternalResponse> => {
+
+  const res = await fetchFn(getSubscribeToNewsletterInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(newsletterSubscription)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: subscribeToNewsletterInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as subscribeToNewsletterInternalResponse
+}
+
+
+
+return { listInboxNotificationsInternal, getListInboxNotificationsInternalUrl, listInboxUnreadSubjectsInternal, getListInboxUnreadSubjectsInternalUrl, markInboxNotificationsReadInternal, getMarkInboxNotificationsReadInternalUrl, getInboxNotificationCandidateInternal, getGetInboxNotificationCandidateInternalUrl, markInboxNotificationReadInternal, getMarkInboxNotificationReadInternalUrl, archiveInboxNotificationInternal, getArchiveInboxNotificationInternalUrl, getNotificationPreferencesInternal, getGetNotificationPreferencesInternalUrl, updateNotificationPreferencesInternal, getUpdateNotificationPreferencesInternalUrl, listRemindersInternal, getListRemindersInternalUrl, listVisibleReminderRecordsInternal, getListVisibleReminderRecordsInternalUrl, getTaskReminderInternal, getGetTaskReminderInternalUrl, setTaskReminderInternal, getSetTaskReminderInternalUrl, getReminderCandidateInternal, getGetReminderCandidateInternalUrl, getReminderInternal, getGetReminderInternalUrl, updateReminderNoteInternal, getUpdateReminderNoteInternalUrl, deleteReminderInternal, getDeleteReminderInternalUrl, snoozeReminderInternal, getSnoozeReminderInternalUrl, completeReminderInternal, getCompleteReminderInternalUrl, submitContactFormInternal, getSubmitContactFormInternalUrl, subscribeToNewsletterInternal, getSubscribeToNewsletterInternalUrl };
 };
 
 export type listInboxNotificationsInternalResponse200 = {
@@ -2086,3 +2226,83 @@ export type completeReminderInternalResponseError = (completeReminderInternalRes
 };
 
 export type completeReminderInternalResponse = (completeReminderInternalResponseSuccess | completeReminderInternalResponseError)
+
+
+export type submitContactFormInternalResponse202 = {
+  data: SiteFormAcceptedResponse
+  status: 202
+}
+
+export type submitContactFormInternalResponse400 = {
+  data: InvalidRequestResponse
+  status: 400
+}
+
+export type submitContactFormInternalResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type submitContactFormInternalResponse403 = {
+  data: AccountForbiddenResponse
+  status: 403
+}
+
+export type submitContactFormInternalResponse409 = {
+  data: ContactSubmissionInProgressResponse
+  status: 409
+}
+
+export type submitContactFormInternalResponse422 = {
+  data: ContactSubmissionKeyReusedResponse
+  status: 422
+}
+
+export type submitContactFormInternalResponse503 = {
+  data: UnavailableResponse
+  status: 503
+}
+
+export type submitContactFormInternalResponseSuccess = (submitContactFormInternalResponse202) & {
+  headers: Headers;
+};
+export type submitContactFormInternalResponseError = (submitContactFormInternalResponse400 | submitContactFormInternalResponse401 | submitContactFormInternalResponse403 | submitContactFormInternalResponse409 | submitContactFormInternalResponse422 | submitContactFormInternalResponse503) & {
+  headers: Headers;
+};
+
+export type submitContactFormInternalResponse = (submitContactFormInternalResponseSuccess | submitContactFormInternalResponseError)
+
+
+export type subscribeToNewsletterInternalResponse202 = {
+  data: SiteFormAcceptedResponse
+  status: 202
+}
+
+export type subscribeToNewsletterInternalResponse400 = {
+  data: InvalidRequestResponse
+  status: 400
+}
+
+export type subscribeToNewsletterInternalResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type subscribeToNewsletterInternalResponse403 = {
+  data: AccountForbiddenResponse
+  status: 403
+}
+
+export type subscribeToNewsletterInternalResponse503 = {
+  data: UnavailableResponse
+  status: 503
+}
+
+export type subscribeToNewsletterInternalResponseSuccess = (subscribeToNewsletterInternalResponse202) & {
+  headers: Headers;
+};
+export type subscribeToNewsletterInternalResponseError = (subscribeToNewsletterInternalResponse400 | subscribeToNewsletterInternalResponse401 | subscribeToNewsletterInternalResponse403 | subscribeToNewsletterInternalResponse503) & {
+  headers: Headers;
+};
+
+export type subscribeToNewsletterInternalResponse = (subscribeToNewsletterInternalResponseSuccess | subscribeToNewsletterInternalResponseError)

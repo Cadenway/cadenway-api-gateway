@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import {
   createApplication,
   type CreateApplicationOptions,
   ProblemException,
+  REQUEST_ID_HEADER,
   toProblem,
 } from '@cadenway/nest-common';
 import type { DynamicModule, Type } from '@nestjs/common';
@@ -13,6 +15,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import type { AppConfig } from './config/app-config.js';
 import { noStore } from './presentation/http/middleware/no-store.middleware.js';
+import { siteFormProblem } from './problems/public-problem.js';
 
 /**
  * Constant SERVICE_NAME
@@ -110,6 +113,8 @@ const PROFILE_MEDIA_PATH =
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
+const GIT_WEBHOOK_PATH = /^\/v1\/webhooks\/(?:github|gitlab)\/?$/iu;
+const SITE_SUBMISSION_PATH = /^\/v1\/(?:contact-submissions|newsletter-subscriptions)\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
 function noStorePrivateResource(
@@ -178,10 +183,19 @@ export async function createGatewayApplication(
   logDestination?: CreateApplicationOptions['logDestination'],
   applicationModule: Type | DynamicModule = AppModule,
 ): Promise<NestExpressApplication> {
+  const cors = {
+    origin: [...config.ALLOWED_ORIGINS],
+    credentials: true,
+    methods: [...CORS_ALLOWED_METHODS],
+    allowedHeaders: [...CORS_ALLOWED_HEADERS],
+    exposedHeaders: [...CORS_EXPOSED_HEADERS],
+    maxAge: CORS_MAX_AGE_SECONDS,
+  };
   const app: NestExpressApplication = await createApplication(applicationModule, {
     service: SERVICE_NAME,
     config,
     provideConfig: true,
+    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab'],
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
@@ -193,6 +207,51 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
+  app.use(SITE_SUBMISSION_PATH, noStore);
+  app.use(
+    SITE_SUBMISSION_PATH,
+    (error: unknown, request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'no-store');
+      response.setHeader(REQUEST_ID_HEADER, randomUUID());
+      // A parser error skips the regular CORS middleware.
+      response.vary('Origin');
+      const origin = request.get('Origin');
+      if (origin !== undefined && cors.origin.includes(origin)) {
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Access-Control-Allow-Credentials', String(cors.credentials));
+        response.setHeader('Access-Control-Expose-Headers', cors.exposedHeaders.join(','));
+      }
+      const problem = toProblem(error);
+      if (
+        problem.status === 400 &&
+        problem.code !== 'request.invalid' &&
+        problem.code !== 'request.body-too-large'
+      ) {
+        next(
+          siteFormProblem(
+            new ProblemException({
+              status: 400,
+              code: 'request.invalid',
+              details: { issues: [{ in: 'body', path: '', code: 'invalid_format' }] },
+            }),
+          ),
+        );
+        return;
+      }
+      next(siteFormProblem(error));
+    },
+  );
+  app.use(GIT_WEBHOOK_PATH, (_request: Request, response: Response, next: NextFunction): void => {
+    response.setHeader('Cache-Control', 'private, no-store');
+    next();
+  });
+  app.use(
+    GIT_WEBHOOK_PATH,
+    (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      next(error);
+    },
+  );
   app.use(PROFILE_MEDIA_PATH, (request: Request, response: Response, next: NextFunction): void => {
     noStorePrivateResource(request, response, next, 'memberId');
   });
@@ -262,13 +321,6 @@ export async function createGatewayApplication(
   app.set('etag', false);
   app.use(helmet());
   app.use(cookieParser());
-  app.enableCors({
-    origin: [...config.ALLOWED_ORIGINS],
-    credentials: true,
-    methods: [...CORS_ALLOWED_METHODS],
-    allowedHeaders: [...CORS_ALLOWED_HEADERS],
-    exposedHeaders: [...CORS_EXPOSED_HEADERS],
-    maxAge: CORS_MAX_AGE_SECONDS,
-  });
+  app.enableCors(cors);
   return app;
 }

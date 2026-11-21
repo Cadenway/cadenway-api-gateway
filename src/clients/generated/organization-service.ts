@@ -278,6 +278,19 @@ export interface MyOrganizationPage {
   nextCursor: NextCursor | null;
 }
 
+export interface AutomationRecipientCheck {
+  /**
+     * UUIDv7 of the requested account. Compare case-equivalent forms as one account.
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  userId: string;
+}
+
+export interface AutomationRecipientDecision {
+  /** Whether the requested account is a current active member of the organization. */
+  eligible: boolean;
+}
+
 export interface MemberNameLookup {
   /**
      * @minItems 1
@@ -521,6 +534,11 @@ export type QuotaNotificationRecipientsOrganizationNotFoundResponse = Problem;
  * `organization.unavailable` when Organization cannot complete the recipient read.
  */
 export type QuotaNotificationRecipientsUnavailableResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the recipient membership check.
+ */
+export type AutomationRecipientUnavailableResponse = Problem;
 
 /**
  * `request.invalid` for invalid query parameters or a malformed cursor, including a cursor for a different operation or tenant.
@@ -1282,6 +1300,46 @@ const lookupMemberNamesInternal = async (memberNameLookup: MemberNameLookup, opt
 
 
 
+const getCheckAutomationRecipientInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/automation-recipients/check`
+}
+
+/**
+ * Only api-gateway may call this operation, with a signed user token for organization-service
+ * and a selected organization. Read the caller's current membership and the requested
+ * account's membership in one tenant snapshot. The caller must be a current owner or admin.
+ * Use the role from this snapshot for authorization.
+ *
+ * An active membership, including an active guest, makes the requested account eligible.
+ * For absent, removed or other-organization accounts return the same negative decision.
+ * This read-only operation returns a single boolean and does not consult the user directory.
+ * The decision is current at the time of the read and does not establish task access.
+ * @summary Check current organization membership for an automation rule recipient
+ */
+const checkAutomationRecipientInternal = async (automationRecipientCheck: AutomationRecipientCheck, options?: RequestInit): Promise<checkAutomationRecipientInternalResponse> => {
+
+  const res = await fetchFn(getCheckAutomationRecipientInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(automationRecipientCheck)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: checkAutomationRecipientInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkAutomationRecipientInternalResponse
+}
+
+
+
 const getGetMemberInternalUrl = (memberId: string,) => {
 
 
@@ -1994,7 +2052,7 @@ const getSearchMembershipInternal = async ( options?: RequestInit): Promise<getS
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -2385,6 +2443,46 @@ export type lookupMemberNamesInternalResponseError = (lookupMemberNamesInternalR
 };
 
 export type lookupMemberNamesInternalResponse = (lookupMemberNamesInternalResponseSuccess | lookupMemberNamesInternalResponseError)
+
+
+export type checkAutomationRecipientInternalResponse200 = {
+  data: AutomationRecipientDecision
+  status: 200
+}
+
+export type checkAutomationRecipientInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type checkAutomationRecipientInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type checkAutomationRecipientInternalResponse403 = {
+  data: RoleForbiddenResponse
+  status: 403
+}
+
+export type checkAutomationRecipientInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type checkAutomationRecipientInternalResponse503 = {
+  data: AutomationRecipientUnavailableResponse
+  status: 503
+}
+
+export type checkAutomationRecipientInternalResponseSuccess = (checkAutomationRecipientInternalResponse200) & {
+  headers: Headers;
+};
+export type checkAutomationRecipientInternalResponseError = (checkAutomationRecipientInternalResponse400 | checkAutomationRecipientInternalResponse401 | checkAutomationRecipientInternalResponse403 | checkAutomationRecipientInternalResponse404 | checkAutomationRecipientInternalResponse503) & {
+  headers: Headers;
+};
+
+export type checkAutomationRecipientInternalResponse = (checkAutomationRecipientInternalResponseSuccess | checkAutomationRecipientInternalResponseError)
 
 
 export type getMemberInternalResponse200 = {
