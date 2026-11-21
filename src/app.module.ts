@@ -32,6 +32,7 @@ import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
 import { TrashModule } from './modules/trash/trash.module.js';
 import { TwoStepVerificationModule } from './modules/two-step-verification/two-step-verification.module.js';
+import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
 
 /**
  * Constant ROUTE_MODULES
@@ -52,6 +53,7 @@ export const ROUTE_MODULES: readonly Type[] = [
   AutomationsModule,
   DocumentsModule,
   SearchModule,
+  WebhooksModule,
   RemindersModule,
   RealtimeTicketsModule,
   SessionsModule,

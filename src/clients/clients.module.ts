@@ -6,6 +6,7 @@ import { AUTOMATION_SERVICE, AutomationServiceClient } from './automation-servic
 import { BILLING_SERVICE, BillingServiceClient } from './billing-service.client.js';
 import { DOCUMENT_SERVICE, DocumentServiceClient } from './document-service.client.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
+import { INTEGRATION_SERVICE, IntegrationServiceClient } from './integration-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
 import { SEARCH_SERVICE, SearchServiceClient } from './search-service.client.js';
 import { STORAGE_SERVICE, StorageServiceClient } from './storage-service.client.js';
@@ -30,6 +31,19 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
             service: AUTOMATION_SERVICE,
             baseUrl: config.AUTOMATION_SERVICE_URL,
             signer,
+          }),
+        ),
+    },
+    {
+      provide: IntegrationServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): IntegrationServiceClient =>
+        new IntegrationServiceClient(
+          new InternalHttpClient({
+            service: INTEGRATION_SERVICE,
+            baseUrl: config.INTEGRATION_SERVICE_URL,
+            signer,
+            allowedUnavailableProblemCodes: ['integration.unavailable'],
           }),
         ),
     },
@@ -136,6 +150,7 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
   ],
   exports: [
     AutomationServiceClient,
+    IntegrationServiceClient,
     BillingServiceClient,
     DocumentServiceClient,
     IdentityServiceClient,
