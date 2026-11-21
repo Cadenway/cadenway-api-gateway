@@ -1974,12 +1974,15 @@ export class TaskServiceClient {
    * @param {string} taskKey - Key of the task.
    * @returns {Promise<z.output<typeof GetTaskInternalResponse>>} The task.
    */
-  public getTask(taskKey: string): Promise<z.output<typeof GetTaskInternalResponse>> {
+  public getTask(
+    taskKey: string,
+    signal?: AbortSignal,
+  ): Promise<z.output<typeof GetTaskInternalResponse>> {
     return call(
       'getTaskInternal',
       200,
       GetTaskInternalResponse,
-      this.routes.getTaskInternal(taskKey),
+      this.routes.getTaskInternal(taskKey, signal ? { signal } : undefined),
     );
   }
 

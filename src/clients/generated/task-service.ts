@@ -1339,14 +1339,15 @@ export interface Sprint {
 /**
  * Who made a change: a person (`user`, `id` is the account), an automation rule
  * (`automation`), the Git integration (`git`) or a service (`system`, `id` is its name, for
- * example `task-service` when a removed member leaves the assignees). Later versions add
- * actor types (the public intake form of the mockup, "Formulaire public") and members (the
- * Git provider): a client shows an unknown type as is.
+ * example `task-service` when a removed member leaves the assignees). A client can show an
+ * unknown type as is. Git activity can identify the verified provider.
  */
 export interface Actor {
   type: string;
   /** @minLength 1 */
   id: string;
+  /** Verified provider for Git activity. Other actors and earlier Git activity omit it. */
+  provider?: string;
 }
 
 /**
@@ -3371,6 +3372,110 @@ export interface OnboardingFinish {
 }
 
 /**
+ * Provider authenticated by Integration for the current delivery and mapping.
+ */
+export type GitTaskStatusActionProvider = typeof GitTaskStatusActionProvider[keyof typeof GitTaskStatusActionProvider];
+
+
+export const GitTaskStatusActionProvider = {
+  github: 'github',
+  gitlab: 'gitlab',
+} as const;
+
+/**
+ * UUIDv7 of a resource verified by Task for a Git command.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type GitTaskActionResourceId = string;
+
+export interface GitTaskStatusAction {
+  /** Provider authenticated by Integration for the current delivery and mapping. */
+  provider: GitTaskStatusActionProvider;
+  /** The Task space UUIDv7 of the verified repository mapping. */
+  spaceId: GitTaskActionResourceId;
+  /**
+     * UUIDv7 of the user whose authority Integration recorded when enabling the mapping.
+     * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+     */
+  mappingAuthorUserId: string;
+  /** The configured target status, or null when the delivery records a link without changing status. */
+  status: StatusKey | null;
+}
+
+/**
+ * A committed Task write or a completed command with no change, including when replayed.
+ */
+export type GitTaskActionReceiptDisposition = typeof GitTaskActionReceiptDisposition[keyof typeof GitTaskActionReceiptDisposition];
+
+
+export const GitTaskActionReceiptDisposition = {
+  applied: 'applied',
+  no_op: 'no_op',
+} as const;
+
+export interface GitTaskActionReceipt {
+  disposition: GitTaskActionReceiptDisposition;
+  taskId: GitTaskActionResourceId;
+  listId: GitTaskActionResourceId;
+  spaceId: GitTaskActionResourceId;
+}
+
+/**
+ * UUIDv7 of the user whose authority Automation recorded when creating the rule.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationRuleAuthorUserId = string;
+
+export type AutomationTaskAssignCommandType = typeof AutomationTaskAssignCommandType[keyof typeof AutomationTaskAssignCommandType];
+
+
+export const AutomationTaskAssignCommandType = {
+  assign: 'assign',
+} as const;
+
+/**
+ * UUIDv7 of the active organization member to add to the assignees.
+ */
+export type UserId = string;
+
+export interface AutomationTaskAssignCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  type: AutomationTaskAssignCommandType;
+  userId: UserId;
+}
+
+export type AutomationTaskPriorityCommandType = typeof AutomationTaskPriorityCommandType[keyof typeof AutomationTaskPriorityCommandType];
+
+
+export const AutomationTaskPriorityCommandType = {
+  priority: 'priority',
+} as const;
+
+export interface AutomationTaskPriorityCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  type: AutomationTaskPriorityCommandType;
+  priority: PriorityKey;
+}
+
+export type AutomationTaskActionCommand = AutomationTaskAssignCommand | AutomationTaskPriorityCommand;
+
+/**
+ * A committed Task write or a completed command with no change, including when replayed.
+ */
+export type TaskActionReceiptDisposition = typeof TaskActionReceiptDisposition[keyof typeof TaskActionReceiptDisposition];
+
+
+export const TaskActionReceiptDisposition = {
+  applied: 'applied',
+  no_op: 'no_op',
+} as const;
+
+export interface TaskActionReceipt {
+  /** A committed Task write or a completed command with no change, including when replayed. */
+  disposition: TaskActionReceiptDisposition;
+}
+
+/**
  * Members specific to the code, for example the fields that failed validation.
  */
 export type ProblemDetails = { [key: string]: unknown };
@@ -3645,6 +3750,10 @@ export const SheetExportDirection = {
   asc: 'asc',
   desc: 'desc',
 } as const;
+
+export type AutomationAssignActionType = 'assign';
+
+export type AutomationPriorityActionType = 'priority';
 
 /**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
@@ -3939,6 +4048,37 @@ export interface IntakeAttachmentAllocation {
   /** Absolute draft lease cutoff, at most 30 minutes after the draft was opened. */
   expiresAt: string;
 }
+
+/**
+ * The Git command disposition and the minimal task identity and placement authorized by
+ * Task when it recorded this command. A replay makes no version, activity or event changes.
+ */
+export type GitTaskActionReceiptResponse = GitTaskActionReceipt;
+
+/**
+ * The first or recorded disposition, without task or resource properties. A no-op commits
+ * only the receipt. A replay makes no version, activity or event changes.
+ */
+export type TaskActionReceiptResponse = TaskActionReceipt;
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+ * its current parent scope. All cases return the same problem without resource details.
+ */
+export type TaskActionTargetUnavailableResponse = Problem;
+
+/**
+ * `task.action-unavailable` when Task cannot verify current authorization or complete the
+ * command transaction. Retry with the same key. The problem omits resource details.
+ */
+export type TaskActionUnavailableResponse = Problem;
+
+/**
+ * `idempotency.key-reused` for a different body under the same command key,
+ * `task.assignee-invalid` for an ineligible recipient, or `task.assignee-limit-reached`
+ * when the task already has the maximum number of assignees. No resource details are returned.
+ */
+export type AutomationTaskActionRefusedResponse = Problem;
 
 /**
  * `request.invalid` with `details.issues` for an invalid request, selector or cursor.
@@ -4659,6 +4799,17 @@ export type RequiredIntakeIfMatchParameter = string;
 export type IntakeDraftKeyParameter = IntakeDraftKey;
 
 export type RequiredIntakeDraftKeyParameter = IntakeDraftKey;
+
+/**
+ * Stable command identity derived from the normalized Git delivery or triggering Task event,
+ * reused on every retry and redelivery for this actor, operation and task. Use an opaque
+ * value without raw provider headers or payload. Reserve a distinct value for each command
+ * within the signed organization and actor. Reusing a value for a different operation,
+ * task key or body is refused. Task rechecks current target authorization before returning
+ * an execution receipt and retains receipts for at least 24 hours. Callers keep their own
+ * durable delivery deduplication and do not resend a submitted command after that window.
+ */
+export type TaskActionIdempotencyKeyParameter = string;
 
 /**
  * Client-chosen key for this reservation within its tenant, publication and draft.
@@ -6769,6 +6920,110 @@ const updateTaskInternal = async (taskKey: string,
 
   const data: updateTaskInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateTaskInternalResponse
+}
+
+
+
+const getApplyGitTaskStatusActionInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/git-status-actions`
+}
+
+/**
+ * Requires the signed `integration-service` issuer, `git` actor with the integration ID,
+ * `task-service` audience and organization. Integration verifies the original provider
+ * delivery, resolves its current active repository mapping and status rule, and binds the
+ * request to the normalized delivery, verified provider and mapped space before calling Task.
+ * The mapping carries the user who authorized it. Task verifies the task, list and space are
+ * active in the signed organization, rechecks that the task is currently in that mapped space
+ * and that the authorizing user still has edit permission on it, in the transaction that
+ * locks and changes the task. The mapping author supplies permission evidence only.
+ *
+ * The default rules map a branch or first commit to `progress`, an opened PR or MR to
+ * `review` (for example, PR #214 for CAD-482), and a merged PR or MR to `done`.
+ * The status must be available in the current space and have a strictly higher Git rank
+ * than the task's current status. In increasing rank, the groups are `triage`, `backlog`,
+ * `todo`; then `waiting`, `progress`, `blocked`; then `review`; then `testing`; then
+ * `done`, `cancelled`. Milestones, unavailable statuses, cancellation and transitions of
+ * equal or lower rank yield `no_op`. Task applies its existing status transition invariants
+ * and side effects, including recurrence when entering `done`. A transition refused by a
+ * Task business invariant yields `no_op`. A null status authorizes the link with no
+ * status change, for example a check completion. A change records the Git actor and verified
+ * provider for activity, increments the task version and enqueues `task.updated.v1` and
+ * `task.status-changed.v1` in the same transaction as the command receipt.
+ * An authorized receipt binds the stable task ID to its placement at the decision.
+ * A consumer of a recorded placement rechecks the task's current placement before relay.
+ * @summary Apply a forward status transition from a verified Git delivery
+ */
+const applyGitTaskStatusActionInternal = async (taskKey: string,
+    gitTaskStatusAction: GitTaskStatusAction, options?: RequestInit): Promise<applyGitTaskStatusActionInternalResponse> => {
+
+  const res = await fetchFn(getApplyGitTaskStatusActionInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(gitTaskStatusAction)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: applyGitTaskStatusActionInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applyGitTaskStatusActionInternalResponse
+}
+
+
+
+const getApplyAutomationTaskActionInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/automation-actions`
+}
+
+/**
+ * Requires the signed `automation-service` issuer, `automation` actor with the rule ID,
+ * `task-service` audience and organization. Automation validates the `task.created.v1` or
+ * `task.status-changed.v1` event and binds the task key and organization to that event. It
+ * selects the action of its current enabled rule in that organization, using the authority
+ * recorded at rule creation. It ignores `task.status-changed.v1` events from `automation`
+ * actors.
+ *
+ * In the tenant transaction, Task locks the target, verifies that the task and its parents
+ * are active, and rechecks the rule author's current membership and effective edit permission
+ * on the task. The rule ID remains the actor for all activity and events. Assignment also
+ * applies Task's current recipient eligibility and assignee limit. An unchanged priority or
+ * an existing eligible assignee yields `no_op`. A change commits the command receipt, write,
+ * activity and usual task outbox entries together.
+ *
+ * This command accepts only `assign` and `priority`. A notification needs a separate
+ * Notification command with current task visibility for its recipient. An automatic comment
+ * needs a comment contract that can represent and enforce a rule's authorship and moderation.
+ * @summary Apply an enabled rule's task action to the task in its triggering event
+ */
+const applyAutomationTaskActionInternal = async (taskKey: string,
+    automationTaskActionCommand: AutomationTaskActionCommand, options?: RequestInit): Promise<applyAutomationTaskActionInternalResponse> => {
+
+  const res = await fetchFn(getApplyAutomationTaskActionInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(automationTaskActionCommand)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: applyAutomationTaskActionInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applyAutomationTaskActionInternalResponse
 }
 
 
@@ -11107,7 +11362,7 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
 
 export type listTaskSearchProjectionsInternalResponse200 = {
@@ -12213,6 +12468,106 @@ export type updateTaskInternalResponseError = (updateTaskInternalResponse400 | u
 };
 
 export type updateTaskInternalResponse = (updateTaskInternalResponseSuccess | updateTaskInternalResponseError)
+
+
+export type applyGitTaskStatusActionInternalResponse200 = {
+  data: GitTaskActionReceiptResponse
+  status: 200
+}
+
+export type applyGitTaskStatusActionInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type applyGitTaskStatusActionInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type applyGitTaskStatusActionInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type applyGitTaskStatusActionInternalResponse404 = {
+  data: TaskActionTargetUnavailableResponse
+  status: 404
+}
+
+export type applyGitTaskStatusActionInternalResponse409 = {
+  data: RequestInProgressResponse
+  status: 409
+}
+
+export type applyGitTaskStatusActionInternalResponse422 = {
+  data: IdempotencyKeyReusedResponse
+  status: 422
+}
+
+export type applyGitTaskStatusActionInternalResponse503 = {
+  data: TaskActionUnavailableResponse
+  status: 503
+}
+
+export type applyGitTaskStatusActionInternalResponseSuccess = (applyGitTaskStatusActionInternalResponse200) & {
+  headers: Headers;
+};
+export type applyGitTaskStatusActionInternalResponseError = (applyGitTaskStatusActionInternalResponse400 | applyGitTaskStatusActionInternalResponse401 | applyGitTaskStatusActionInternalResponse403 | applyGitTaskStatusActionInternalResponse404 | applyGitTaskStatusActionInternalResponse409 | applyGitTaskStatusActionInternalResponse422 | applyGitTaskStatusActionInternalResponse503) & {
+  headers: Headers;
+};
+
+export type applyGitTaskStatusActionInternalResponse = (applyGitTaskStatusActionInternalResponseSuccess | applyGitTaskStatusActionInternalResponseError)
+
+
+export type applyAutomationTaskActionInternalResponse200 = {
+  data: TaskActionReceiptResponse
+  status: 200
+}
+
+export type applyAutomationTaskActionInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type applyAutomationTaskActionInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type applyAutomationTaskActionInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type applyAutomationTaskActionInternalResponse404 = {
+  data: TaskActionTargetUnavailableResponse
+  status: 404
+}
+
+export type applyAutomationTaskActionInternalResponse409 = {
+  data: RequestInProgressResponse
+  status: 409
+}
+
+export type applyAutomationTaskActionInternalResponse422 = {
+  data: AutomationTaskActionRefusedResponse
+  status: 422
+}
+
+export type applyAutomationTaskActionInternalResponse503 = {
+  data: TaskActionUnavailableResponse
+  status: 503
+}
+
+export type applyAutomationTaskActionInternalResponseSuccess = (applyAutomationTaskActionInternalResponse200) & {
+  headers: Headers;
+};
+export type applyAutomationTaskActionInternalResponseError = (applyAutomationTaskActionInternalResponse400 | applyAutomationTaskActionInternalResponse401 | applyAutomationTaskActionInternalResponse403 | applyAutomationTaskActionInternalResponse404 | applyAutomationTaskActionInternalResponse409 | applyAutomationTaskActionInternalResponse422 | applyAutomationTaskActionInternalResponse503) & {
+  headers: Headers;
+};
+
+export type applyAutomationTaskActionInternalResponse = (applyAutomationTaskActionInternalResponseSuccess | applyAutomationTaskActionInternalResponseError)
 
 
 export type assignTaskInternalResponse200 = {
