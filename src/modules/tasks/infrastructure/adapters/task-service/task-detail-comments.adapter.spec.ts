@@ -5,6 +5,18 @@ import { GetTaskDetail } from '../../../application/use-cases/queries/details/ge
 import { createTaskDetailCommentsAdapter } from './task-detail-comments.adapter.js';
 
 describe('task detail comments adapter', () => {
+  it('forwards the cancellation signal to the Tasks client', async () => {
+    const page = { items: [], nextCursor: null, total: 0 };
+    const listTaskComments = vi.fn().mockResolvedValue(page);
+    const client = { listTaskComments } as unknown as TaskServiceClient;
+    const { signal } = new AbortController();
+
+    await expect(createTaskDetailCommentsAdapter(client).read('CAD-482', signal)).resolves.toBe(
+      page,
+    );
+    expect(listTaskComments).toHaveBeenCalledWith('CAD-482', {}, signal);
+  });
+
   it.each(['task.not-found', 'task.trashed', 'organization.not-found'])(
     'fails closed for 404 %s',
     async (code) => {
