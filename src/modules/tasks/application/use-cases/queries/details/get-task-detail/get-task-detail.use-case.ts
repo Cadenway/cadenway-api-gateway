@@ -8,8 +8,7 @@ import type { TaskDetailCoreSource } from '../../../../ports/outbound/task-servi
  *
  * @description
  * How long a secondary part of the detail may take, in milliseconds (the default of the aggregate
- * policy): past it, the part is named in `partial` and the detail answers without it. Its call
- * still ends within the deadline of its own internal HTTP client.
+ * policy): past it, the call is canceled and the part is named in `partial`.
  *
  * @type {number}
  */
@@ -71,21 +70,24 @@ export class GetTaskDetail {
    * Method execute
    *
    * @description
-   * Reads the core and every secondary part in parallel, then composes the detail.
+   * Reads the core and every secondary part in parallel. If the core fails, cancels any
+   * outstanding secondary reads and returns the core error immediately.
    *
    * @param {string} taskKey - Key of the task.
    * @returns {Promise<TaskDetail>} The detail, with the parts that could not be read named.
    * @throws {unknown} What the core source threw: the detail fails as a whole.
    */
   public async execute(taskKey: string): Promise<TaskDetail> {
-    const [coreResult, answers] = await Promise.all([
-      Promise.allSettled([this.core.getTaskDetail(taskKey)] as const),
-      Promise.allSettled(this.parts.map((part: TaskDetailPart) => this.readPart(part, taskKey))),
-    ]);
-    const [core] = coreResult;
-    if (core.status === 'rejected') {
-      throw core.reason;
-    }
+    const pendingCore = this.core.getTaskDetail(taskKey);
+    const abortParts = new AbortController();
+    const pendingParts = Promise.allSettled(
+      this.parts.map((part) => this.readPart(part, taskKey, abortParts.signal)),
+    );
+    const core = await pendingCore.catch((error: unknown) => {
+      abortParts.abort();
+      throw error;
+    });
+    const answers = await pendingParts;
     const parts: Map<string, TaskServiceDocument> = new Map<string, TaskServiceDocument>();
     const partial: string[] = [];
     for (const answer of answers) {
@@ -99,7 +101,7 @@ export class GetTaskDetail {
         parts.set(name, document);
       }
     }
-    return { core: core.value, parts, partial };
+    return { core, parts, partial };
   }
 
   /**
@@ -111,26 +113,37 @@ export class GetTaskDetail {
    *
    * @param {TaskDetailPart} part - The part.
    * @param {string} taskKey - Key of the task.
+   * @param {AbortSignal} abortParts - Cancels all secondary reads on core failure.
    * @returns {Promise<readonly [string, TaskServiceDocument | undefined]>} The name of the part
    * and its document, or `undefined` when it could not be read.
    */
   private async readPart(
     part: TaskDetailPart,
     taskKey: string,
+    abortParts: AbortSignal,
   ): Promise<readonly [string, TaskServiceDocument | undefined]> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late: Promise<undefined> = new Promise<undefined>((resolve) => {
-      timer = setTimeout(resolve, PART_DEADLINE_MS, undefined);
+    const deadline = new AbortController();
+    const signal = AbortSignal.any([abortParts, deadline.signal]);
+    let finish = (): void => undefined;
+    const canceled = new Promise<undefined>((resolve) => {
+      finish = () => {
+        resolve(undefined);
+      };
     });
+    signal.addEventListener('abort', finish, { once: true });
+    const timer = setTimeout(() => {
+      deadline.abort();
+    }, PART_DEADLINE_MS);
     try {
-      return [part.name, await Promise.race([part.read(taskKey), late])];
+      return [part.name, await Promise.race([part.read(taskKey, signal), canceled])];
     } catch (error) {
-      if (part.failsDetail?.(error) === true) {
+      if (!signal.aborted && part.failsDetail?.(error) === true) {
         throw error;
       }
       return [part.name, undefined];
     } finally {
       clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
     }
   }
   // #endregion

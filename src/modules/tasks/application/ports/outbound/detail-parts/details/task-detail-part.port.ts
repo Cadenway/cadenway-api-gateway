@@ -28,12 +28,13 @@ export interface TaskDetailPart {
    * Method read
    *
    * @description
-   * Reads the part of the task.
+   * Reads the part of the task while the aggregate still needs it.
    *
    * @param {string} taskKey - Key of the task.
+   * @param {AbortSignal} signal - Cancels the read on timeout or core failure.
    * @returns {Promise<TaskServiceDocument>} The part, as its service answered it.
    */
-  read(taskKey: string): Promise<TaskServiceDocument>;
+  read(taskKey: string, signal: AbortSignal): Promise<TaskServiceDocument>;
 
   /** Whether a failed read must fail the entire detail. */
   failsDetail?(error: unknown): boolean;

@@ -6,7 +6,7 @@ import type { TaskDetailPart } from '../../../application/ports/outbound/detail-
 export function createTaskDetailCommentsAdapter(client: TaskServiceClient): TaskDetailPart {
   return {
     name: 'comments',
-    read: (taskKey) => client.listTaskComments(taskKey, {}),
+    read: (taskKey, signal) => client.listTaskComments(taskKey, {}, signal),
     failsDetail: (error) =>
       error instanceof ProblemException &&
       error.problem.status === 404 &&

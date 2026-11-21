@@ -74,8 +74,9 @@ returning its public path. The producer owns all work log authorization and dura
   or a body that is zero-byte or not JSON in UTF-8 on a route whose contract requires one,
   answers `400 request.invalid` before any call.
 - The detail (`GetTaskDetail`, bound in `composition/`) reads the core of task-service and the
-  secondary parts in parallel. The core is the main part: its failure fails the detail. A
-  secondary part that fails or takes more than 800 ms is named in `partial` and left out. A task
+  secondary parts in parallel. A core failure cancels any outstanding secondary reads and fails
+  the detail immediately. A secondary read is canceled after 800 ms. A failed or timed-out
+  secondary part is named in `partial` and left out, subject to the visibility rule below. A task
   in the trash fails the core with `404 task.trashed`: the detail answers that public problem with
   its `details` (`key`, `name`, `entryId`, `rootKey`, `trashedAt`, `trashedBy`, `purgeAt`, without
   `service`), never a `503` or a partial detail. `list.callerRole` of the core is relayed as

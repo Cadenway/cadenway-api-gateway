@@ -9,7 +9,7 @@ import {
   type InternalPrincipal,
   type OrganizationContext,
 } from '@cadenway/nest-common';
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -259,6 +259,55 @@ describe('Task notification visibility', () => {
     cancellation.abort();
     expect(upstreamSignal?.aborted).toBe(true);
   });
+});
+
+it('closes the internal comments request when the aggregate cancels it', async () => {
+  const keys = generateSigningKeys();
+  const signer = await InternalTokenSigner.create({
+    issuer: GATEWAY_ISSUER,
+    privateJwk: JSON.parse(keys.privateJwk) as Ed25519PrivateJwk,
+  });
+  const lifecycle = new EventEmitter();
+  const connected = once(lifecycle, 'connected');
+  const disconnected = once(lifecycle, 'disconnected');
+  const cancellation = new AbortController();
+  const reason = new Error('Task detail no longer needs comments.');
+  const producer = createServer((request, response) => {
+    response.once('close', () => lifecycle.emit('disconnected'));
+    lifecycle.emit('connected', request.url);
+  });
+
+  producer.listen(0, '127.0.0.1');
+  await once(producer, 'listening');
+  try {
+    const address = producer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('The loopback server did not obtain a TCP port.');
+    }
+    const client = new TaskServiceClient(
+      new InternalHttpClient({
+        service: TASK_SERVICE,
+        baseUrl: `http://127.0.0.1:${String(address.port)}`,
+        signer,
+      }),
+    );
+    const pending = runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+      client.listTaskComments('CAD-482', { limit: 20 }, cancellation.signal),
+    );
+    const rejected = pending.catch((error: unknown) => error);
+    expect(await connected).toEqual(['/internal/v1/tasks/CAD-482/comments?limit=20']);
+    cancellation.abort(reason);
+    expect(await rejected).toBe(reason);
+    await disconnected;
+  } finally {
+    cancellation.abort(reason);
+    producer.closeAllConnections();
+    await new Promise<void>((resolve) => {
+      producer.close(() => {
+        resolve();
+      });
+    });
+  }
 });
 
 /**

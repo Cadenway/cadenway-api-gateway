@@ -27,7 +27,7 @@ function coreSource(): TaskDetailCoreSource {
  * @param read - What the part does.
  * @returns The part.
  */
-function part(name: string, read: () => Promise<TaskServiceDocument>): TaskDetailPart {
+function part(name: string, read: TaskDetailPart['read']): TaskDetailPart {
   return { name, read: vi.fn(read) };
 }
 
@@ -57,12 +57,13 @@ describe('GetTaskDetail', () => {
     expect(detail.partial).toEqual(['development']);
   });
 
-  it('names a part that does not answer within 800 ms in partial, without waiting for it', async () => {
+  it('cancels a slow part after 800 ms and lists it in partial', async () => {
     vi.useFakeTimers();
-    const slow: TaskDetailPart = part(
-      'comments',
-      () => new Promise<TaskServiceDocument>(() => undefined),
-    );
+    const onAbort = vi.fn();
+    const slow = part('comments', (_taskKey, signal) => {
+      signal.addEventListener('abort', onAbort, { once: true });
+      return new Promise(() => undefined);
+    });
 
     const pending: Promise<unknown> = new GetTaskDetail(coreSource(), [slow]).execute('CAD-482');
     await vi.advanceTimersByTimeAsync(799);
@@ -72,10 +73,43 @@ describe('GetTaskDetail', () => {
     });
     await Promise.resolve();
     expect(settled).toBe(false);
+    expect(onAbort).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
 
     await expect(pending).resolves.toEqual({ core: CORE, parts: new Map(), partial: ['comments'] });
+    expect(onAbort).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each([
+    { status: 404, code: 'task.not-found' },
+    { status: 503, code: 'upstream.failed' },
+  ] as const)(
+    'returns a $status core error immediately and cancels the outstanding part',
+    async (problem) => {
+      vi.useFakeTimers();
+      const failure = new ProblemException(problem);
+      const source = { getTaskDetail: () => Promise.reject(failure) };
+      const onAbort = vi.fn();
+      const slow = part('comments', (_taskKey, signal) => {
+        signal.addEventListener('abort', onAbort, { once: true });
+        return new Promise(() => undefined);
+      });
+      let returnedError: unknown;
+      const settled = new GetTaskDetail(source, [slow])
+        .execute('CAD-482')
+        .catch((error: unknown) => {
+          returnedError = error;
+        });
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(returnedError).toBe(failure);
+      expect(onAbort).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+      await settled;
+    },
+  );
 
   it('fails closed when the comments source denies visibility', async () => {
     const denial = new ProblemException({ status: 404, code: 'task.not-found' });

@@ -2036,6 +2036,7 @@ export class TaskServiceClient {
   public listTaskComments(
     taskKey: string,
     query: unknown,
+    signal?: AbortSignal,
   ): Promise<z.output<typeof ListTaskCommentsInternalResponse>> {
     const operation = 'listTaskCommentsInternal';
     return call(
@@ -2045,6 +2046,7 @@ export class TaskServiceClient {
       this.routes.listTaskCommentsInternal(
         taskKey,
         toRequest(operation, ListTaskCommentsInternalQueryParams, query),
+        signal === undefined ? undefined : { signal },
       ),
     );
   }
