@@ -19,8 +19,14 @@ const bindingId = '019a700b-1a2b-7c3d-8e4f-5a6b7c8d9e01';
 const delivery = 'd7a11e5e-1197-4af8-815f-b26f5ad28f19';
 const githubSignature = `sha256=${'a'.repeat(64)}`;
 const payload = Buffer.from('\n{ "action": "opened", "title": "écran" }\n');
+const gitlabMetadata = {
+  'webhook-id': [delivery],
+  'x-gitlab-event': ['Merge Request Hook'],
+  'webhook-signature': ['v1,c2lnbmF0dXJl v1,c2Vjb25k'],
+};
+const gitlabHeaders = { ...gitlabMetadata, 'webhook-timestamp': ['0000001234'] };
 
-function request(headersDistinct: Record<string, string[]>, body: unknown = payload): Request {
+function request(headersDistinct: Request['headersDistinct'], body: unknown = payload): Request {
   return {
     headersDistinct,
     body,
@@ -58,15 +64,7 @@ describe('public Git webhook delivery', () => {
     const github = vi.fn();
     const gitlab = vi.fn().mockResolvedValue(undefined);
     const controller = new GitWebhooksController(new ReceiveGitWebhook({ github, gitlab }));
-    await controller.gitlab(
-      request({
-        'webhook-id': [delivery],
-        'x-gitlab-event': ['Merge Request Hook'],
-        'webhook-timestamp': ['0000001234'],
-        'webhook-signature': ['v1,c2lnbmF0dXJl v1,c2Vjb25k'],
-      }),
-      { bindingId },
-    );
+    await controller.gitlab(request(gitlabHeaders), { bindingId });
     expect(gitlab).toHaveBeenCalledExactlyOnceWith({
       bindingId,
       delivery,
@@ -77,6 +75,41 @@ describe('public Git webhook delivery', () => {
     });
     expect(github).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { name: 'missing', headers: {} },
+    { name: 'malformed', headers: { 'webhook-timestamp': ['not-a-timestamp'] } },
+    { name: 'repeated', headers: { 'webhook-timestamp': ['0000001234', '0000001234'] } },
+  ])(
+    'returns a generic authentication refusal for a $name GitLab timestamp',
+    async ({ headers }) => {
+      const gitlab = vi.fn();
+      const controller = new GitWebhooksController(
+        new ReceiveGitWebhook({ github: vi.fn(), gitlab }),
+      );
+      await expect(
+        controller.gitlab(request({ ...gitlabMetadata, ...headers }), { bindingId }),
+      ).rejects.toMatchObject({ problem: { status: 401, code: 'webhook.authentication-failed' } });
+      expect(gitlab).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['webhook-id', 'x-gitlab-event'] as const)(
+    'keeps a repeated GitLab %s header a bad request',
+    async (header) => {
+      const gitlab = vi.fn();
+      const controller = new GitWebhooksController(
+        new ReceiveGitWebhook({ github: vi.fn(), gitlab }),
+      );
+      const value = gitlabHeaders[header];
+      await expect(
+        controller.gitlab(request({ ...gitlabHeaders, [header]: [...value, ...value] }), {
+          bindingId,
+        }),
+      ).rejects.toMatchObject({ problem: { status: 400, code: 'request.invalid' } });
+      expect(gitlab).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects repeated metadata, absent signatures and decoded JSON before relaying', async () => {
     const github = vi.fn();

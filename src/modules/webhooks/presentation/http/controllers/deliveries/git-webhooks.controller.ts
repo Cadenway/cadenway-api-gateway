@@ -21,7 +21,11 @@ function header(request: Request, name: string): unknown {
 }
 
 /** Refuses absent or malformed provider authentication without disclosing its contents. */
-function providerSignature(request: Request, name: string, schema: z.ZodType<string>): string {
+function providerAuthenticationHeader(
+  request: Request,
+  name: string,
+  schema: z.ZodType<string>,
+): string {
   const parsed = schema.safeParse(header(request, name));
   if (!parsed.success)
     throw new ProblemException({ status: 401, code: 'webhook.authentication-failed' });
@@ -75,7 +79,7 @@ export class GitWebhooksController {
           headers['X-GitHub-Event'],
           header(request, 'X-GitHub-Event'),
         ),
-        signature: providerSignature(
+        signature: providerAuthenticationHeader(
           request,
           'X-Hub-Signature-256',
           headers['X-Hub-Signature-256'],
@@ -114,12 +118,16 @@ export class GitWebhooksController {
           headers['X-Gitlab-Event'],
           header(request, 'X-Gitlab-Event'),
         ),
-        timestamp: toRequestHeader(
+        timestamp: providerAuthenticationHeader(
+          request,
           'webhook-timestamp',
           headers['webhook-timestamp'],
-          header(request, 'webhook-timestamp'),
         ),
-        signature: providerSignature(request, 'webhook-signature', headers['webhook-signature']),
+        signature: providerAuthenticationHeader(
+          request,
+          'webhook-signature',
+          headers['webhook-signature'],
+        ),
         body: rawBody(request),
       },
     });
