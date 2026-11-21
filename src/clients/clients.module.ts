@@ -5,6 +5,7 @@ import type { AppConfig } from '../config/app-config.js';
 import { DOCUMENT_SERVICE, DocumentServiceClient } from './document-service.client.js';
 import { IDENTITY_SERVICE, IdentityServiceClient } from './identity-service.client.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
+import { SEARCH_SERVICE, SearchServiceClient } from './search-service.client.js';
 import { STORAGE_SERVICE, StorageServiceClient } from './storage-service.client.js';
 import { NOTIFICATION_SERVICE, NotificationServiceClient } from './notification-service.client.js';
 import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
@@ -18,6 +19,19 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
  */
 @Module({
   providers: [
+    {
+      provide: SearchServiceClient,
+      inject: [CONFIG, InternalTokenSigner],
+      useFactory: (config: AppConfig, signer: InternalTokenSigner): SearchServiceClient =>
+        new SearchServiceClient(
+          new InternalHttpClient({
+            service: SEARCH_SERVICE,
+            baseUrl: config.SEARCH_SERVICE_URL,
+            signer,
+            allowedUnavailableProblemCodes: ['search.unavailable'],
+          }),
+        ),
+    },
     {
       provide: DocumentServiceClient,
       inject: [CONFIG, InternalTokenSigner],
@@ -97,6 +111,7 @@ import { TASK_SERVICE, TaskServiceClient } from './task-service.client.js';
     DocumentServiceClient,
     IdentityServiceClient,
     OrganizationServiceClient,
+    SearchServiceClient,
     StorageServiceClient,
     TaskServiceClient,
     NotificationServiceClient,

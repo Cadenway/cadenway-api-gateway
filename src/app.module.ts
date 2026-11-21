@@ -24,6 +24,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { ProfileMediaModule } from './modules/profile-media/profile-media.module.js';
 import { RealtimeTicketsModule } from './modules/realtime-tickets/realtime-tickets.module.js';
 import { RemindersModule } from './modules/reminders/reminders.module.js';
+import { SearchModule } from './modules/search/search.module.js';
 import { SessionsModule } from './modules/sessions/sessions.module.js';
 import { SpacesModule } from './modules/spaces/spaces.module.js';
 import { TasksModule } from './modules/tasks/tasks.module.js';
@@ -46,6 +47,7 @@ export const ROUTE_MODULES: readonly Type[] = [
   NotificationPreferencesModule,
   InboxModule,
   DocumentsModule,
+  SearchModule,
   RemindersModule,
   RealtimeTicketsModule,
   SessionsModule,

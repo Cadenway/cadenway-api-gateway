@@ -7,6 +7,233 @@ interface TypedResponse<T> extends Response {
   json(): Promise<T>;
 }
 
+export type SearchProjectionKind = typeof SearchProjectionKind[keyof typeof SearchProjectionKind];
+
+
+export const SearchProjectionKind = {
+  task: 'task',
+  list: 'list',
+  space: 'space',
+} as const;
+
+/**
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type SearchProjectionUuid = string;
+
+/**
+ * @minimum 1
+ * @maximum 9007199254740991
+ */
+export type SearchProjectionVersion = number;
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+export type SearchProjectionIdentifier = TaskKey | SearchProjectionUuid;
+
+/**
+ * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+ * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+ * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+ * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+ * status, it never adds or removes a key.
+ */
+export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
+
+
+export const StatusKey = {
+  triage: 'triage',
+  backlog: 'backlog',
+  todo: 'todo',
+  progress: 'progress',
+  review: 'review',
+  testing: 'testing',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
+
+export interface SearchTaskProjection {
+  kind: 'task';
+  id: TaskKey;
+  version: SearchProjectionVersion;
+  /**
+     * @minLength 1
+     * @maxLength 300
+     */
+  name: string;
+  lifecycle: 'active';
+  status: StatusKey;
+  listId: SearchProjectionUuid;
+  spaceId: SearchProjectionUuid;
+}
+
+export interface SearchListProjection {
+  kind: 'list';
+  id: SearchProjectionUuid;
+  version: SearchProjectionVersion;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  lifecycle: 'active';
+  spaceId: SearchProjectionUuid;
+}
+
+export interface SearchSpaceProjection {
+  kind: 'space';
+  id: SearchProjectionUuid;
+  version: SearchProjectionVersion;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  lifecycle: 'active';
+}
+
+export type SearchProjection = SearchTaskProjection | SearchListProjection | SearchSpaceProjection;
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface SearchProjectionPage {
+  /** @maxItems 100 */
+  items: SearchProjection[];
+  nextCursor: NextCursor | null;
+}
+
+export interface SearchTaskProjectionLookup {
+  kind: 'task';
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  ids: TaskKey[];
+}
+
+/**
+ * @minItems 1
+ * @maxItems 100
+ */
+export type SearchProjectionUuidBatch = SearchProjectionUuid[];
+
+export interface SearchListProjectionLookup {
+  kind: 'list';
+  ids: SearchProjectionUuidBatch;
+}
+
+export interface SearchSpaceProjectionLookup {
+  kind: 'space';
+  ids: SearchProjectionUuidBatch;
+}
+
+export type SearchProjectionLookup = SearchTaskProjectionLookup | SearchListProjectionLookup | SearchSpaceProjectionLookup;
+
+export interface SearchProjectionPresent {
+  status: 'present';
+  projection: SearchProjection;
+}
+
+export interface SearchProjectionAbsent {
+  status: 'absent';
+  id: SearchProjectionIdentifier;
+  version: SearchProjectionVersion | null;
+}
+
+export interface SearchProjectionDecisions {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: (SearchProjectionPresent | SearchProjectionAbsent)[];
+}
+
+/**
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
+export interface SearchMembership {
+  memberId: string;
+  role: Role;
+  /**
+     * Version of the active membership.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+export interface SearchTaskCandidate {
+  kind: 'task';
+  id: TaskKey;
+}
+
+export interface SearchListCandidate {
+  kind: 'list';
+  id: SearchProjectionUuid;
+}
+
+export interface SearchSpaceCandidate {
+  kind: 'space';
+  id: SearchProjectionUuid;
+}
+
+export interface SearchAccessLookup {
+  membership: SearchMembership;
+  /** @maxItems 100 */
+  candidates: (SearchTaskCandidate | SearchListCandidate | SearchSpaceCandidate)[];
+}
+
+export interface SearchVisibleTask {
+  kind: 'task';
+  id: TaskKey;
+  version: SearchProjectionVersion;
+  listId: SearchProjectionUuid;
+  spaceId: SearchProjectionUuid;
+}
+
+export interface SearchVisibleList {
+  kind: 'list';
+  id: SearchProjectionUuid;
+  version: SearchProjectionVersion;
+  spaceId: SearchProjectionUuid;
+}
+
+export interface SearchVisibleSpace {
+  kind: 'space';
+  id: SearchProjectionUuid;
+  version: SearchProjectionVersion;
+  /** The actor has a current role on the space itself. List grants alone do not confer this role. */
+  directSpace: boolean;
+}
+
+export interface SearchAccessProof {
+  /** @maxItems 100 */
+  results: (SearchVisibleTask | SearchVisibleList | SearchVisibleSpace)[];
+}
+
 export type ListTaskExportRowsItem = {
   /**
      * Encoded identifier, name, status and priority cells in column order.
@@ -70,12 +297,6 @@ export interface CustomFieldDefinition {
      */
   version: number;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface CustomFieldDefinitionPage {
   items: CustomFieldDefinition[];
@@ -219,14 +440,6 @@ export type GoalMilestoneResultKind = typeof GoalMilestoneResultKind[keyof typeo
 export const GoalMilestoneResultKind = {
   milestone: 'milestone',
 } as const;
-
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
 
 /**
  * Progress is 100 when the visible milestone is reached and zero otherwise.
@@ -410,29 +623,6 @@ export type TeamDashboardWeeks = typeof TeamDashboardWeeks[keyof typeof TeamDash
 export const TeamDashboardWeeks = {
   NUMBER_8: 8,
   NUMBER_12: 12,
-} as const;
-
-/**
- * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
- * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
- * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
- * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
- * status, it never adds or removes a key.
- */
-export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
-
-
-export const StatusKey = {
-  triage: 'triage',
-  backlog: 'backlog',
-  todo: 'todo',
-  progress: 'progress',
-  review: 'review',
-  testing: 'testing',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  cancelled: 'cancelled',
 } as const;
 
 export interface TeamDashboardStatusCount {
@@ -3751,6 +3941,37 @@ export interface IntakeAttachmentAllocation {
 }
 
 /**
+ * `request.invalid` with `details.issues` for an invalid request, selector or cursor.
+ * `request.body-too-large` applies when the request exceeds the JSON body limit.
+ */
+export type SearchBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type SearchInternalTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed`, `auth.actor-not-allowed` or `auth.organization-required`.
+ */
+export type SearchInternalAccessRefusedResponse = Problem;
+
+/**
+ * `task.search-access-unavailable`: current membership or candidate access could not be proved.
+ */
+export type SearchAccessUnavailableResponse = Problem;
+
+/**
+ * `task.projection-batch-too-large`: the full result exceeds the response byte limit. Retry with smaller batches.
+ */
+export type SearchProjectionBatchTooLargeResponse = Problem;
+
+/**
+ * `task.projection-unavailable`: the producer could not complete the snapshot.
+ */
+export type SearchProjectionsUnavailableResponse = Problem;
+
+/**
  * `list.not-found` when the list is not a readable sprint. `organization.not-found`
  * follows `ListNotFound`.
  */
@@ -4380,6 +4601,12 @@ export type ChecklistItemRefusedResponse = Problem;
  */
 export type VersionMismatchResponse = Problem;
 
+export type SearchProjectionKindParameter = SearchProjectionKind;
+
+export type SearchProjectionSpaceParameter = SearchProjectionUuid;
+
+export type SearchProjectionListParameter = SearchProjectionUuid;
+
 export type SheetExportColumnParameter = SheetExportColumn;
 
 export type SheetExportDirectionParameter = SheetExportDirection;
@@ -4572,6 +4799,29 @@ export type ReportWeekStartParameter = TaskWorkDate;
  * Keep only milestones when true, or only ordinary tasks when false; absent leaves both.
  */
 export type MilestoneFilterParameter = boolean;
+
+export type ListTaskSearchProjectionsInternalParams = {
+  /** Kind of Task resource to export. */
+  kind: SearchProjectionKindParameter;
+  /**
+   * Parent space filter for task and list exports.
+   * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+   */
+  spaceId?: SearchProjectionSpaceParameter;
+  /**
+   * Parent list filter for task exports.
+   * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+   */
+  listId?: SearchProjectionListParameter;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
 
 export type ListSpacesInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -5287,6 +5537,176 @@ const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string 
 };
 
 export const getTaskServiceInternalRoutes = (fetchFn: typeof globalThis.fetch = fetch) => {
+const getListTaskSearchProjectionsInternalUrl = (params: ListTaskSearchProjectionsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/task-search-projections?${stringifiedParams}` : `/internal/v1/task-search-projections`
+}
+
+/**
+ * Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+ * organization required. The token supplies the tenant. The export is system-only and
+ * does not grant any end-user access to its results. All responses are private, no-store.
+ *
+ * Returns the requested kind in ascending immutable row UUID order. A read-only tenant
+ * snapshot produces each page and checks its rows, lifecycle and current placement.
+ * The first page captures an inclusive upper row UUID for the export scope. The opaque
+ * cursor authenticates the tenant, kind, filters, upper bound and last emitted UUID.
+ * A cursor that does not match this request answers `400 request.invalid`. A page may
+ * contain fewer than `limit` items to keep the compact UTF-8 JSON response within 1,048,576 bytes. Only
+ * `nextCursor: null` completes the export. A nonterminal page advances past the last
+ * emitted record.
+ *
+ * Trashed, deleted or archived records and tasks or lists made inactive by an ancestor
+ * are excluded. A space moved out of active state also excludes its lists and tasks.
+ * A `spaceId` may narrow a list or task export, and a `listId` may narrow a task export.
+ * When both are supplied the filters intersect. A missing or cross-tenant parent matches
+ * nothing. Other filter and kind combinations answer `400 request.invalid`.
+ * A page is not a snapshot of the whole export. Search starts durable invalidations
+ * before the first page and reconciles them against current source reads before
+ * promoting the rebuilt index. A reopened parent needs a scoped export to discover
+ * active descendants that were absent during an earlier build.
+ * This operation writes and emits nothing.
+ * @summary Export one page of Task search projections
+ */
+const listTaskSearchProjectionsInternal = async (params: ListTaskSearchProjectionsInternalParams, options?: RequestInit): Promise<listTaskSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getListTaskSearchProjectionsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskSearchProjectionsInternalResponse
+}
+
+
+
+const getResolveTaskSearchProjectionsInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/task-search-projections/resolve`
+}
+
+/**
+ * Internal token: issuer `search-service` only, actor `{type: system, id: search-service}`,
+ * organization required. The token supplies the tenant. All responses are private, no-store.
+ *
+ * Returns exactly one decision for each input ID, in request order, from one read-only
+ * tenant snapshot. Task IDs are their stable keys, such as `CAD-482`. List and space IDs
+ * are their UUIDs, compared case-insensitively and returned in canonical lowercase. IDs
+ * must be unique after normalization.
+ * Invalid IDs for the selected kind or duplicate IDs answer `400 request.invalid`.
+ *
+ * A current active record yields `present` with its projection. An absent record, an
+ * inactive record or one with an inactive ancestor yields `absent`. An absent decision
+ * reports the known same-tenant source version, or `null` when no source version is
+ * available. An unknown or cross-tenant ID has the same absent result and a null version.
+ * Parent changes may change whether a descendant is present without changing its own
+ * version. Treat these decisions as current authority; a stale fact or an unchanged
+ * descendant version cannot supersede them. This lookup does not confer end-user access.
+ *
+ * If the complete compact UTF-8 JSON response exceeds 1,048,576 bytes, the caller splits
+ * the batch after `422 task.projection-batch-too-large`. The producer never returns
+ * partial decisions. The caller treats a missing, additional, malformed, out-of-order
+ * or wrong-kind decision as an unavailable proof. This operation writes and emits nothing.
+ * @summary Resolve current Task search projections by identifier
+ */
+const resolveTaskSearchProjectionsInternal = async (searchProjectionLookup: SearchProjectionLookup, options?: RequestInit): Promise<resolveTaskSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getResolveTaskSearchProjectionsInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(searchProjectionLookup)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resolveTaskSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resolveTaskSearchProjectionsInternalResponse
+}
+
+
+
+const getResolveTaskSearchAccessInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/task-search-access/resolve`
+}
+
+/**
+ * Requires issuer `search-service`, a verified actor of type `user` and an organization
+ * in the signed token. Search signs the request for its verified current user and tenant.
+ * The body cannot override either. Every response carries `Cache-Control: private, no-store`.
+ *
+ * Search obtains `membership` from Organization's current search membership proof for
+ * this same actor and organization before calling Task. Task compares the membership ID,
+ * version and role with its active membership projection, then reads resource placement,
+ * lifecycle and effective grants in the same read-only tenant snapshot. The body supplies
+ * a consistency check only. A missing local membership, any mismatch or an unavailable
+ * snapshot fails the whole request with `503 task.search-access-unavailable`.
+ *
+ * A request contains up to 100 unique selectors. An empty set still checks membership.
+ * Task keys are stable. UUIDs are compared case-insensitively and returned in canonical
+ * lowercase. A repeated selector after normalization answers `400 request.invalid`.
+ * Task applies its canonical read policy to each candidate in its current placement.
+ * Unknown, hidden, cross-tenant, archived, deleted and trashed candidates, including
+ * those made inactive by a parent, are all omitted. The remaining proofs follow the
+ * request order and carry only identities, versions, current parent IDs and the space
+ * access distinction. A space accessible only through a list has `directSpace: false`.
+ * A document in that space requires `directSpace: true`, regardless of grants on lists.
+ *
+ * A proof is for the signed user and organization in this request only. Search excludes
+ * omitted candidates and indexed records whose version or placement disagrees with current
+ * proof. It rejects the whole proof if a result is malformed, duplicated, out of order or
+ * outside the request. Results contain no titles, bodies or other display data. No state
+ * changes and no events are emitted.
+ * @summary Prove current visibility of Task search candidates
+ */
+const resolveTaskSearchAccessInternal = async (searchAccessLookup: SearchAccessLookup, options?: RequestInit): Promise<resolveTaskSearchAccessInternalResponse> => {
+
+  const res = await fetchFn(getResolveTaskSearchAccessInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(searchAccessLookup)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resolveTaskSearchAccessInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resolveTaskSearchAccessInternalResponse
+}
+
+
+
 const getCreateSpaceInternalUrl = () => {
 
 
@@ -10687,8 +11107,118 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
+
+export type listTaskSearchProjectionsInternalResponse200 = {
+  data: SearchProjectionPage
+  status: 200
+}
+
+export type listTaskSearchProjectionsInternalResponse400 = {
+  data: SearchBadRequestResponse
+  status: 400
+}
+
+export type listTaskSearchProjectionsInternalResponse401 = {
+  data: SearchInternalTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskSearchProjectionsInternalResponse403 = {
+  data: SearchInternalAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionsUnavailableResponse
+  status: 503
+}
+
+export type listTaskSearchProjectionsInternalResponseSuccess = (listTaskSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskSearchProjectionsInternalResponseError = (listTaskSearchProjectionsInternalResponse400 | listTaskSearchProjectionsInternalResponse401 | listTaskSearchProjectionsInternalResponse403 | listTaskSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listTaskSearchProjectionsInternalResponse = (listTaskSearchProjectionsInternalResponseSuccess | listTaskSearchProjectionsInternalResponseError)
+
+
+export type resolveTaskSearchProjectionsInternalResponse200 = {
+  data: SearchProjectionDecisions
+  status: 200
+}
+
+export type resolveTaskSearchProjectionsInternalResponse400 = {
+  data: SearchBadRequestResponse
+  status: 400
+}
+
+export type resolveTaskSearchProjectionsInternalResponse401 = {
+  data: SearchInternalTokenRefusedResponse
+  status: 401
+}
+
+export type resolveTaskSearchProjectionsInternalResponse403 = {
+  data: SearchInternalAccessRefusedResponse
+  status: 403
+}
+
+export type resolveTaskSearchProjectionsInternalResponse422 = {
+  data: SearchProjectionBatchTooLargeResponse
+  status: 422
+}
+
+export type resolveTaskSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionsUnavailableResponse
+  status: 503
+}
+
+export type resolveTaskSearchProjectionsInternalResponseSuccess = (resolveTaskSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type resolveTaskSearchProjectionsInternalResponseError = (resolveTaskSearchProjectionsInternalResponse400 | resolveTaskSearchProjectionsInternalResponse401 | resolveTaskSearchProjectionsInternalResponse403 | resolveTaskSearchProjectionsInternalResponse422 | resolveTaskSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type resolveTaskSearchProjectionsInternalResponse = (resolveTaskSearchProjectionsInternalResponseSuccess | resolveTaskSearchProjectionsInternalResponseError)
+
+
+export type resolveTaskSearchAccessInternalResponse200 = {
+  data: SearchAccessProof
+  status: 200
+}
+
+export type resolveTaskSearchAccessInternalResponse400 = {
+  data: SearchBadRequestResponse
+  status: 400
+}
+
+export type resolveTaskSearchAccessInternalResponse401 = {
+  data: SearchInternalTokenRefusedResponse
+  status: 401
+}
+
+export type resolveTaskSearchAccessInternalResponse403 = {
+  data: SearchInternalAccessRefusedResponse
+  status: 403
+}
+
+export type resolveTaskSearchAccessInternalResponse503 = {
+  data: SearchAccessUnavailableResponse
+  status: 503
+}
+
+export type resolveTaskSearchAccessInternalResponseSuccess = (resolveTaskSearchAccessInternalResponse200) & {
+  headers: Headers;
+};
+export type resolveTaskSearchAccessInternalResponseError = (resolveTaskSearchAccessInternalResponse400 | resolveTaskSearchAccessInternalResponse401 | resolveTaskSearchAccessInternalResponse403 | resolveTaskSearchAccessInternalResponse503) & {
+  headers: Headers;
+};
+
+export type resolveTaskSearchAccessInternalResponse = (resolveTaskSearchAccessInternalResponseSuccess | resolveTaskSearchAccessInternalResponseError)
+
 
 export type createSpaceInternalResponse201 = {
   data: SpaceCreated
