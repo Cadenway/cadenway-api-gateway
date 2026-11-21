@@ -56,6 +56,12 @@ injector. Route handlers declare the security of their public operation with
   redemption sets the usual session cookie. A two-step challenge follows the existing sign-in flow.
 - The organization and role of a request come from the introspection only, into the internal
   token; the gateway never decides a role rule.
+- Operations that opt in with `organizationPrecondition` compare an optional
+  `If-Organization-Match` to that same verified context after rate limiting and before any
+  business call. The header is a single, case-insensitive UUIDv7. Malformed or repeated values
+  answer `400 request.invalid`; a valid mismatch answers `412 organization.context-changed`
+  with no resource details and `Cache-Control: private, no-store`. Absence keeps the verified
+  organization and the operation's existing version precondition.
 - A `withheldOrganization` of either introspection (two-step verification required by the policy
   of the organization, decision of P2c-2) is checked before the organization and scope checks: a
   session answers `403 organization.mfa-required` with `details.organizationId` on the operations

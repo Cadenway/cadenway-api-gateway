@@ -1,10 +1,11 @@
 import { CONFIG, setRequestOrganizationContext } from '@cadenway/nest-common';
 import {
+  applyDecorators,
   Inject,
   Injectable,
   SetMetadata,
+  UseInterceptors,
   type CanActivate,
-  type CustomDecorator,
   type ExecutionContext,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -24,6 +25,7 @@ import {
 } from '../../../../../../problems/session-problems.js';
 import { toPublicProblem } from '../../../../../../problems/upstream-problem.js';
 import { toClientAddress } from '../../../../../../presentation/http/mappers/client-address.mapper.js';
+import { OrganizationPreconditionInterceptor } from '../../../../../../presentation/http/middleware/organization-precondition.interceptor.js';
 import { attachVerifiedCredential } from '../../../../../../presentation/http/session/request-session.js';
 import { readSessionCookie } from '../../../../../../presentation/http/session/session-cookie.js';
 import type { VerifiedApiToken } from '../../../../application/models/api-token/verified-api-token.model.js';
@@ -176,10 +178,13 @@ export class CredentialGuard implements CanActivate {
    * checked against the shipped specs by the route tests.
    *
    * @param {OperationSecurity} operation - `operationId`, `security` and organization scope.
-   * @returns {CustomDecorator} The method decorator.
+   * @returns {MethodDecorator} The method decorator.
    */
-  public static requires(operation: OperationSecurity): CustomDecorator {
-    return SetMetadata(OPERATION_SECURITY, operation);
+  public static requires(operation: OperationSecurity): MethodDecorator {
+    const metadata = SetMetadata(OPERATION_SECURITY, operation);
+    return operation.organizationPrecondition === true
+      ? applyDecorators(metadata, UseInterceptors(OrganizationPreconditionInterceptor))
+      : metadata;
   }
 
   /**

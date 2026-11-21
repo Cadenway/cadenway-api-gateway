@@ -120,6 +120,7 @@ export class DependenciesController {
     operationId: 'listTaskDependencies',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskDependencies(
     @Param(new ZodValidationPipe(ListTaskDependenciesParams))
@@ -143,6 +144,7 @@ export class DependenciesController {
     operationId: 'createTaskDependency',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createTaskDependency(
     @Param(new ZodValidationPipe(CreateTaskDependencyParams))
@@ -187,6 +189,7 @@ export class DependenciesController {
     operationId: 'getTaskDependency',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTaskDependency(
     @Param(new ZodValidationPipe(GetTaskDependencyParams))
@@ -209,6 +212,7 @@ export class DependenciesController {
     operationId: 'deleteTaskDependency',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteTaskDependency(
     @Param(new ZodValidationPipe(DeleteTaskDependencyParams))
@@ -228,6 +232,7 @@ export class DependenciesController {
     operationId: 'listDependencyCandidates',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listDependencyCandidates(
     @Param(new ZodValidationPipe(ListDependencyCandidatesParams))

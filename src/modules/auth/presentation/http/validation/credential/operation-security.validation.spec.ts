@@ -43,6 +43,11 @@ const BODYLESS_POSTS = new Set([
   'completeReminder',
 ]);
 
+// Include the context checks from the matching contract worktree while the installed contract
+// only declares If-Organization-Match on task update and detail.
+const ORGANIZATION_PRECONDITION_PATH =
+  /^\/v1\/(?:tasks\/(?:\{taskKey\}(?:\/[^/]+)*|bulk-actions)|organization(?:\/authentication-policy|\/logo\/uploads)?|archives\/(?:lists|tasks)|trash\/[^/]+(?:\/[^/]+)*)$/u;
+
 /**
  * Interface ServedRoute
  *
@@ -269,6 +274,8 @@ function contractOperations(): readonly ContractOperation[] {
             ? [...problemCodes(spec, forbiddenPointer), ...describedCodes(spec, forbiddenPointer)]
             : [];
         const bodylessPost = BODYLESS_POSTS.has(operationId);
+        const logoMutation =
+          path === '/v1/organization/logo' && (method === 'put' || method === 'delete');
         if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
           throw new Error(`${operationId} no longer has a bodyless POST contract.`);
         }
@@ -279,6 +286,9 @@ function contractOperations(): readonly ContractOperation[] {
             security: security as OperationSecurity['security'],
             organization: forbidden.includes('organization.not-selected'),
             ...(bodylessPost ? { allowBodylessPost: true } : {}),
+            ...(ORGANIZATION_PRECONDITION_PATH.test(path) || logoMutation
+              ? { organizationPrecondition: true }
+              : {}),
           },
         });
       }
@@ -296,6 +306,9 @@ describe('the security of every route against the public contracts', () => {
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
     expect(operations).toHaveLength(237);
+    expect(
+      operations.filter((operation) => operation.security.organizationPrecondition),
+    ).toHaveLength(63);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

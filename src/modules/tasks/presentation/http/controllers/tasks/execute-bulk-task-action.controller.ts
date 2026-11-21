@@ -62,6 +62,7 @@ export class ExecuteBulkTaskActionController {
     operationId: 'executeBulkTaskAction',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async executeBulkTaskAction(
     @RequiredBody(ExecuteBulkTaskActionBody) body: z.output<typeof ExecuteBulkTaskActionBody>,

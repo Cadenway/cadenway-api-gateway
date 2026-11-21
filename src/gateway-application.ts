@@ -112,7 +112,9 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
-const TASK_DETAIL_PATH = /^\/v1\/tasks\/[^/]+\/detail\/?$/iu;
+// All routes addressed by a task key, plus the bulk actions and current-organization collections.
+const ORGANIZATION_BOUND_PATH =
+  /^\/v1\/(?:tasks\/[^/]+(?:\/[^/]+)*|organization(?:\/authentication-policy)?|archives\/(?:lists|tasks)|trash\/(?:empty|entries(?:\/[^/]+(?:\/restore)?)?))\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_PRIVATE_PATH = /^\/v1\/billing\/(?:subscription|checkout|invoices)\/?$/iu;
 const FEDERATED_AUTH_PATH =
@@ -292,9 +294,10 @@ export async function createGatewayApplication(
     }
     noStorePrivateResource(request, response, next, 'documentId');
   });
-  // Numeric task ETags are version preconditions and may match across organizations.
+  // Keep the numeric ETag available to If-Match writes. It is not a validator of a cached
+  // representation: the same URL and version can refer to different organizations.
   app.use(
-    [TASK_DETAIL_PATH, SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
+    [ORGANIZATION_BOUND_PATH, SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -305,7 +308,14 @@ export async function createGatewayApplication(
     },
   );
   app.use(
-    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
+    [
+      ORGANIZATION_BOUND_PATH,
+      PROFILE_MEDIA_PATH,
+      DOCUMENTS_PATH,
+      SEARCH_PATH,
+      BILLING_PRIVATE_PATH,
+      AUTOMATIONS_PATH,
+    ],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       const problem = toProblem(error);

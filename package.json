@@ -22,7 +22,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --project unit",
     "test:coverage": "vitest run --project unit --coverage",
-    "test:integration": "vitest run --project integration --passWithNoTests",
+    "test:integration": "vitest run --project integration",
     "quality": "pnpm format:check && pnpm test:lint && pnpm lint && pnpm typecheck && pnpm test:architecture && pnpm test:coverage && pnpm build"
   },
   "dependencies": {

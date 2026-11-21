@@ -299,6 +299,7 @@ export class IntakeController {
     operationId: 'getTaskIntakeContact',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async contact(
     @Param(new ZodValidationPipe(GetTaskIntakeContactParams))

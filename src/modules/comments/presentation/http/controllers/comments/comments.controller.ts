@@ -138,6 +138,7 @@ export class CommentsController {
     operationId: 'listTaskComments',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskComments(
     @Param(new ZodValidationPipe(ListTaskCommentsParams))
@@ -161,6 +162,7 @@ export class CommentsController {
     operationId: 'createTaskComment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createTaskComment(
     @Param(new ZodValidationPipe(CreateTaskCommentParams))
@@ -193,6 +195,7 @@ export class CommentsController {
     operationId: 'getTaskComment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTaskComment(
     @Param(new ZodValidationPipe(GetTaskCommentParams))
@@ -217,6 +220,7 @@ export class CommentsController {
     operationId: 'updateTaskComment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateTaskComment(
     @Param(new ZodValidationPipe(UpdateTaskCommentParams))
@@ -249,6 +253,7 @@ export class CommentsController {
     operationId: 'deleteTaskComment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteTaskComment(
     @Param(new ZodValidationPipe(DeleteTaskCommentParams))
@@ -266,6 +271,7 @@ export class CommentsController {
     operationId: 'listTaskParticipants',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskParticipants(
     @Param(new ZodValidationPipe(ListTaskParticipantsParams))

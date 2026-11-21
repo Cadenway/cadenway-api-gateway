@@ -359,6 +359,7 @@ export class OrganizationsController {
     operationId: 'getCurrentOrganization',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getCurrentOrganization(): Promise<Organization> {
     return toOrganization(await this.relay(READ_PROBLEMS, () => this.reading.execute()));
@@ -380,6 +381,7 @@ export class OrganizationsController {
     operationId: 'updateCurrentOrganization',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateCurrentOrganization(
     @Body(new ZodValidationPipe(UpdateCurrentOrganizationBody))

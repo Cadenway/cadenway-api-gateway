@@ -94,6 +94,7 @@ export class TaskTimeController {
     operationId: 'listTaskTimeEntries',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Param(new ZodValidationPipe(ListTaskTimeEntriesParams))
@@ -115,6 +116,7 @@ export class TaskTimeController {
     operationId: 'createTaskTimeEntry',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async create(
     @Param(new ZodValidationPipe(CreateTaskTimeEntryParams))
@@ -149,6 +151,7 @@ export class TaskTimeController {
     operationId: 'getTaskTimeEntry',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetTaskTimeEntryParams))
@@ -169,6 +172,7 @@ export class TaskTimeController {
     operationId: 'deleteTaskTimeEntry',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async remove(
     @Param(new ZodValidationPipe(DeleteTaskTimeEntryParams))
@@ -183,6 +187,7 @@ export class TaskTimeController {
     operationId: 'getTaskTimeSummary',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async summary(
     @Param(new ZodValidationPipe(GetTaskTimeSummaryParams))
@@ -202,6 +207,7 @@ export class TaskTimeController {
     operationId: 'getTaskStatusDurations',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async durations(
     @Param(new ZodValidationPipe(GetTaskStatusDurationsParams))

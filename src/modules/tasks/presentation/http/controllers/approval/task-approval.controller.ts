@@ -93,6 +93,7 @@ export class TaskApprovalController {
     operationId: 'getTaskApproval',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetTaskApprovalParams))
@@ -119,6 +120,7 @@ export class TaskApprovalController {
     operationId: 'requestTaskApproval',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async request(
     @Param(new ZodValidationPipe(RequestTaskApprovalParams))
@@ -153,6 +155,7 @@ export class TaskApprovalController {
     operationId: 'voteOnTaskApproval',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async vote(
     @Param(new ZodValidationPipe(VoteOnTaskApprovalParams))
@@ -192,6 +195,7 @@ export class TaskApprovalController {
     operationId: 'withdrawTaskApprovalVote',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async withdraw(
     @Param(new ZodValidationPipe(WithdrawTaskApprovalVoteParams))

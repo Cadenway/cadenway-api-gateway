@@ -114,6 +114,7 @@ export class TaskAttachmentController {
     operationId: 'listTaskAttachments',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Param(new ZodValidationPipe(ListTaskAttachmentsParams))
@@ -145,6 +146,7 @@ export class TaskAttachmentController {
     operationId: 'startTaskAttachmentUpload',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async start(
     @Param(new ZodValidationPipe(StartTaskAttachmentUploadParams))
@@ -176,6 +178,7 @@ export class TaskAttachmentController {
     operationId: 'getTaskAttachment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetTaskAttachmentParams))
@@ -215,6 +218,7 @@ export class TaskAttachmentController {
     operationId: 'completeTaskAttachmentUpload',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async complete(
     @Param(new ZodValidationPipe(CompleteTaskAttachmentUploadParams))
@@ -251,6 +255,7 @@ export class TaskAttachmentController {
     operationId: 'getTaskAttachmentDownload',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async download(
     @Param(new ZodValidationPipe(GetTaskAttachmentDownloadParams))
@@ -280,6 +285,7 @@ export class TaskAttachmentController {
     operationId: 'deleteTaskAttachment',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async remove(
     @Param(new ZodValidationPipe(DeleteTaskAttachmentParams))

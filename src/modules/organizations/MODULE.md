@@ -34,6 +34,10 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   has none.
 - The organization of a call is the one of the internal token, from the introspection; the body
   never names it, except for the choice of the current organization, which identity-service checks.
+- Reads and writes of the current organization and its authentication policy accept
+  `If-Organization-Match` to check the verified context. The choice operation only uses its
+  existing request body. Current-organization reads are private and non-cacheable. Their numeric
+  version tag remains available for `If-Match` writes.
 - `404 session.not-found` of the choice of organization and of the change of the policy answers
   `401 auth.session-expired`: the session ended since its introspection.
 - The choice of an organization relays `403 organization.mfa-required` (`details.organizationId`)

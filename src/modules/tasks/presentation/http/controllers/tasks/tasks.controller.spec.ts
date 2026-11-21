@@ -371,8 +371,8 @@ const ROUTES: readonly TaskRoute[] = [
 const CASES: readonly RouteCase[] = ROUTES.flatMap(taskRouteCases);
 
 /** The routes that accept an organization precondition. */
-const ORGANIZATION_PRECONDITION_ROUTES = ROUTES.filter(
-  (route) => route.call === 'getTaskDetail' || route.call === 'updateTask',
+const ORGANIZATION_PRECONDITION_ROUTES = ROUTES.filter((route) =>
+  ['getTask', 'getTaskDetail', 'updateTask'].includes(route.call),
 );
 
 describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {

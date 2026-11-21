@@ -73,15 +73,16 @@ returning its public path. The producer owns all work log authorization and dura
   HTTP client: a repeat after a change that succeeded would answer `412`. A blank `If-Match`,
   or a body that is zero-byte or not JSON in UTF-8 on a route whose contract requires one,
   answers `400 request.invalid` before any call.
-- `GET /v1/tasks/{taskKey}/detail` and `PATCH /v1/tasks/{taskKey}` accept an optional
-  `If-Organization-Match` UUIDv7 precondition. The gateway compares it with the credential's
-  verified organization before calling Task. An invalid or repeated header answers
+- The routes addressed by a task key and task bulk actions accept an optional
+  `If-Organization-Match` UUIDv7 precondition. After the credential and rate-limit guards, the
+  gateway compares it with the verified organization before calling downstream services. An invalid or repeated header answers
   `400 request.invalid`. A mismatch answers `412 organization.context-changed` with
   `Cache-Control: private, no-store` and no resource details. The `If-Match` version precondition
   still applies to writes.
-- Task detail responses carry `Cache-Control: private, no-store`. The gateway ignores conditional
-  cache headers on detail reads because the same version can occur in different organizations.
-  The `ETag` remains available for the next write.
+- These routes are marked `no-store`. The gateway ignores read cache validators on these URLs
+  because a legacy numeric `ETag` can name different representations in different organizations.
+  It still returns the numeric `ETag` where declared for existing `If-Match` writes. Introducing
+  representation validators requires a separate contract migration.
 - The detail (`GetTaskDetail`, bound in `composition/`) reads the core of task-service and the
   secondary parts in parallel. A core failure cancels any outstanding secondary reads and fails
   the detail immediately. A secondary read is canceled after 800 ms. A failed or timed-out

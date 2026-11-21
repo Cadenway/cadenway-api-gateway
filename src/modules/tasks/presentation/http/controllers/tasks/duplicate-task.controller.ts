@@ -59,6 +59,7 @@ export class DuplicateTaskController {
     operationId: 'duplicateTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async duplicateTask(
     @Param(new ZodValidationPipe(DuplicateTaskParams)) params: z.output<typeof DuplicateTaskParams>,

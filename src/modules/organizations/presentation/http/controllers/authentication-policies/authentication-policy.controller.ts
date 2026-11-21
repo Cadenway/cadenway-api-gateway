@@ -188,6 +188,7 @@ export class AuthenticationPolicyController {
     operationId: 'getAuthenticationPolicy',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getAuthenticationPolicy(
     @Res({ passthrough: true }) response: Response,
@@ -218,6 +219,7 @@ export class AuthenticationPolicyController {
     operationId: 'updateAuthenticationPolicy',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateAuthenticationPolicy(
     @Body(new ZodValidationPipe(UpdateAuthenticationPolicyBody))
