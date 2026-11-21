@@ -9,6 +9,7 @@ import { checkBearerFailuresProvider } from './composition/providers/use-cases/a
 import { countAnonymousRequestProvider } from './composition/providers/use-cases/addresses/count-anonymous-request.provider.js';
 import { countIntakeRequestProvider } from './composition/providers/use-cases/addresses/count-intake-request.provider.js';
 import { countWebhookRequestProvider } from './composition/providers/use-cases/addresses/count-webhook-request.provider.js';
+import { countSiteRequestProvider } from './composition/providers/use-cases/addresses/count-site-request.provider.js';
 import { countBearerFailureProvider } from './composition/providers/use-cases/addresses/count-bearer-failure.provider.js';
 import { countRequestProvider } from './composition/providers/use-cases/requests/count-request.provider.js';
 import { CheckBearerFailures } from './public/addresses/check-bearer-failures.js';
@@ -20,6 +21,8 @@ import { RateLimitGuard } from './public/requests/rate-limit-guard.js';
 import { IntakeRateLimitGuard } from './public/requests/intake-rate-limit-guard.js';
 import { WebhookRateLimitGuard } from './public/requests/webhook-rate-limit-guard.js';
 import { CountWebhookRequest } from './public/addresses/count-webhook-request.js';
+import { SiteRateLimitGuard } from './public/requests/site-rate-limit-guard.js';
+import { CountSiteRequest } from './public/addresses/count-site-request.js';
 
 /**
  * Class RateLimitModule
@@ -44,11 +47,13 @@ import { CountWebhookRequest } from './public/addresses/count-webhook-request.js
     countAnonymousRequestProvider,
     countIntakeRequestProvider,
     countWebhookRequestProvider,
+    countSiteRequestProvider,
     checkBearerFailuresProvider,
     countBearerFailureProvider,
     RateLimitGuard,
     IntakeRateLimitGuard,
     WebhookRateLimitGuard,
+    SiteRateLimitGuard,
   ],
   exports: [
     RateLimitGuard,
@@ -58,6 +63,8 @@ import { CountWebhookRequest } from './public/addresses/count-webhook-request.js
     IntakeRateLimitGuard,
     WebhookRateLimitGuard,
     CountWebhookRequest,
+    CountSiteRequest,
+    SiteRateLimitGuard,
     CheckBearerFailures,
     CountBearerFailure,
   ],
