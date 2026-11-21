@@ -1,5 +1,6 @@
 import * as schemas from '@cadenway/contracts/validators/internal/notification-service';
 import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
+import { trace } from '@opentelemetry/api';
 import type { z } from 'zod';
 
 import {
@@ -35,6 +36,39 @@ export class NotificationServiceClient {
   // #endregion
 
   // #region Methods
+  /** Records a public contact submission in Notification's system scope. */
+  public async submitContactForm(
+    body: z.input<typeof schemas.SubmitContactFormInternalBody>,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const operation = 'submitContactFormInternal';
+    const response = await answered(
+      NOTIFICATION_SERVICE,
+      operation,
+      this.routes.submitContactFormInternal(
+        schemas.SubmitContactFormInternalBody.parse(body),
+        this.siteOptions(idempotencyKey),
+      ),
+    );
+    expectStatus(NOTIFICATION_SERVICE, operation, response, 202);
+  }
+
+  /** Records a public newsletter signup in Notification's system scope. */
+  public async subscribeToNewsletter(
+    body: z.input<typeof schemas.SubscribeToNewsletterInternalBody>,
+  ): Promise<void> {
+    const operation = 'subscribeToNewsletterInternal';
+    const response = await answered(
+      NOTIFICATION_SERVICE,
+      operation,
+      this.routes.subscribeToNewsletterInternal(
+        schemas.SubscribeToNewsletterInternalBody.parse(body),
+        this.siteOptions(),
+      ),
+    );
+    expectStatus(NOTIFICATION_SERVICE, operation, response, 202);
+  }
+
   /** Reads account-global notification preferences. */
   public async getNotificationPreferences(): Promise<
     z.output<typeof schemas.GetNotificationPreferencesInternalResponse>
@@ -337,6 +371,22 @@ export class NotificationServiceClient {
       schemas.CompleteReminderInternalResponse,
     );
     return this.checkedReminder('completeReminderInternal', reminder, taskId, id);
+  }
+
+  /** Uses explicit global system claims for public Site submissions. */
+  private siteOptions(idempotencyKey?: string): InternalRequestInit {
+    const traceId = trace.getActiveSpan()?.spanContext().traceId;
+    return {
+      idempotent: false,
+      ...(idempotencyKey === undefined ? {} : { headers: { 'Idempotency-Key': idempotencyKey } }),
+      claims: {
+        actor: { type: 'system', id: 'api-gateway' },
+        organizationId: null,
+        role: null,
+        scopes: [],
+        ...(traceId === undefined ? {} : { traceId }),
+      },
+    };
   }
 
   /** Prevents a checked Task decision being reused by an automatic transport retry. */

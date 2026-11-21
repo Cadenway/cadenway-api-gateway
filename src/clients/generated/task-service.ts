@@ -3460,6 +3460,30 @@ export interface AutomationTaskPriorityCommand {
 export type AutomationTaskActionCommand = AutomationTaskAssignCommand | AutomationTaskPriorityCommand;
 
 /**
+ * Markdown of 1 to 5,000 Unicode code points, not whitespace only; stored unchanged.
+ * @minLength 1
+ * @maxLength 5000
+ * @pattern \S
+ */
+export type Body = string;
+
+export interface AutomationTaskCommentCommand {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  body: Body;
+}
+
+/**
+ * UUIDv7 of the account selected by the rule's notification action.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type AutomationNotificationRecipientUserId = string;
+
+export interface AutomationTaskNotificationAuthorization {
+  ruleAuthorUserId: AutomationRuleAuthorUserId;
+  recipientUserId: AutomationNotificationRecipientUserId;
+}
+
+/**
  * A committed Task write or a completed command with no change, including when replayed.
  */
 export type TaskActionReceiptDisposition = typeof TaskActionReceiptDisposition[keyof typeof TaskActionReceiptDisposition];
@@ -4079,6 +4103,61 @@ export type TaskActionUnavailableResponse = Problem;
  * when the task already has the maximum number of assignees. No resource details are returned.
  */
 export type AutomationTaskActionRefusedResponse = Problem;
+
+/**
+ * `request.invalid`: the request does not match the schema; one `details.issues` entry per issue.
+ */
+export type AutomationTaskBadRequestResponse = Problem;
+
+/**
+ * The internal token is missing (`auth.token-missing`) or refused (`auth.token-invalid`,
+ * with `details.reason`).
+ */
+export type AutomationTaskInternalTokenRefusedResponse = Problem;
+
+/**
+ * The internal token is valid but the route does not accept its issuer
+ * (`auth.issuer-not-allowed`) or its actor (`auth.actor-not-allowed`), or it carries no
+ * organization (`auth.organization-required`).
+ */
+export type AutomationTaskInternalAccessRefusedResponse = Problem;
+
+export type AutomationTaskCommentReceiptResponse = {
+  disposition: 'applied';
+};
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized target, including
+ * its current parent scope. All cases return the same problem without resource details.
+ */
+export type AutomationTaskCommentTargetUnavailableResponse = Problem;
+
+/**
+ * `idempotency.request-in-progress`: a request with the same `Idempotency-Key` still runs.
+ */
+export type AutomationTaskCommentInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: the `Idempotency-Key` was sent before with another body.
+ */
+export type AutomationTaskCommentKeyReusedResponse = Problem;
+
+/**
+ * `task.action-unavailable` when Task cannot verify current authorization or complete the
+ * command transaction. Retry with the same key. The problem omits resource details.
+ */
+export type AutomationTaskCommentUnavailableResponse = Problem;
+
+/**
+ * `task.not-found` for a missing, inactive, cross-tenant or unauthorized task or parent,
+ * or when either account lacks the required access. All cases return the same problem.
+ */
+export type AutomationTaskNotificationAuthorizationDeniedResponse = Problem;
+
+/**
+ * `task.notification-authorization-unavailable`: Task could not establish a current access snapshot.
+ */
+export type AutomationTaskNotificationAuthorizationUnavailableResponse = Problem;
 
 /**
  * `request.invalid` with `details.issues` for an invalid request, selector or cursor.
@@ -7002,9 +7081,9 @@ const getApplyAutomationTaskActionInternalUrl = (taskKey: string,) => {
  * an existing eligible assignee yields `no_op`. A change commits the command receipt, write,
  * activity and usual task outbox entries together.
  *
- * This command accepts only `assign` and `priority`. A notification needs a separate
- * Notification command with current task visibility for its recipient. An automatic comment
- * needs a comment contract that can represent and enforce a rule's authorship and moderation.
+ * This command accepts only `assign` and `priority`. Automatic comments have their own
+ * Task command. Notification handles the `notify` action and checks current task access
+ * through the automation notification authorization operation.
  * @summary Apply an enabled rule's task action to the task in its triggering event
  */
 const applyAutomationTaskActionInternal = async (taskKey: string,
@@ -7024,6 +7103,101 @@ const applyAutomationTaskActionInternal = async (taskKey: string,
 
   const data: applyAutomationTaskActionInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as applyAutomationTaskActionInternalResponse
+}
+
+
+
+const getApplyAutomationTaskCommentInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/automation-comments`
+}
+
+/**
+ * Requires signed issuer `automation-service`, audience `task-service`, an organization
+ * and an `automation` actor whose ID is the rule UUIDv7 in canonical lowercase form.
+ * Automation signs that form so every retry uses the same actor-scoped receipt. It binds
+ * the command to the task key and organization of a validated `task.created.v1` or
+ * `task.status-changed.v1` event, ignores automation-authored status events, and selects
+ * the action and recorded author of its current enabled rule in that organization.
+ *
+ * Task uses the signed organization only. It checks current rule-author membership and
+ * effective `edit` access on the active task and its active parent scope before any
+ * receipt lookup or replay. The write transaction locks and rechecks those conditions.
+ * The signed rule is the author of the comment, its activity and its event. On ordinary
+ * comment reads, it has `actor.type: automation`, `mentions: []` and
+ * `replyToCommentId: null`. The rule author's account ID serves only as authorization
+ * evidence and is not exposed as the comment author. A human task editor who also manages
+ * the current space may delete the comment through the ordinary moderation path.
+ *
+ * The comment, task version, comment activity, text-free `comment.created.v1` event with
+ * current eligible watchers, and command receipt commit together. A replay returns the
+ * recorded disposition without repeating those changes or recreating a moderated comment.
+ * All responses send `Cache-Control: private, no-store`.
+ * @summary Apply an enabled rule's comment action to its triggering task
+ */
+const applyAutomationTaskCommentInternal = async (taskKey: string,
+    automationTaskCommentCommand: AutomationTaskCommentCommand, options?: RequestInit): Promise<applyAutomationTaskCommentInternalResponse> => {
+
+  const res = await fetchFn(getApplyAutomationTaskCommentInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(automationTaskCommentCommand)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: applyAutomationTaskCommentInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applyAutomationTaskCommentInternalResponse
+}
+
+
+
+const getAuthorizeAutomationNotificationInternalUrl = (taskKey: string,) => {
+
+
+
+
+  return `/internal/v1/tasks/${taskKey}/automation-notification-authorization`
+}
+
+/**
+ * Requires signed issuer `notification-service`, audience `task-service`, organization
+ * and actor `{type: system, id: notification-service}`. The token supplies the tenant.
+ * Notification calls for the exact task key, rule author and recipient in its validated
+ * automation command. In one current tenant snapshot, Task checks that the task and its
+ * parent scope are active, both accounts are current members, the author has effective
+ * `edit` access and the recipient can read the task at its current placement.
+ *
+ * Notification requests a fresh decision on each attempt before creating a notification
+ * or acknowledging a replay. A denial or unavailable decision authorizes no delivery.
+ * This read makes no changes, issues no reusable proof and returns no task identity,
+ * placement, content or account details. All responses send `Cache-Control: private, no-store`.
+ * @summary Authorize this task as the subject of an automation notification
+ */
+const authorizeAutomationNotificationInternal = async (taskKey: string,
+    automationTaskNotificationAuthorization: AutomationTaskNotificationAuthorization, options?: RequestInit): Promise<authorizeAutomationNotificationInternalResponse> => {
+
+  const res = await fetchFn(getAuthorizeAutomationNotificationInternalUrl(taskKey),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(automationTaskNotificationAuthorization)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: authorizeAutomationNotificationInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as authorizeAutomationNotificationInternalResponse
 }
 
 
@@ -7809,10 +7983,17 @@ const getDeleteTaskCommentInternalUrl = (taskKey: string,
 }
 
 /**
- * Requires `comment` or `edit` and the human author; another editor gets
- * `403 comment.author-required`. If-Match is optional and uses the comment version. Removes
- * text and spans, leaves a content-free tombstone for replies until task purge, and excludes
- * it from pages and counts. The task version, activity and outbox change atomically.
+ * For a human-authored comment, requires `comment` or `edit` and the author. For a
+ * rule-authored comment, requires `edit` on the task and permission to manage its current
+ * space. The space owner, or an organization owner or admin in an organization-visible
+ * space, may manage that space under the existing access rules. Creating the rule grants
+ * no moderation authority. After the task role check, a caller outside the applicable
+ * author or moderator rule gets `403 comment.author-required`.
+ *
+ * If-Match is optional and uses the comment version. Removes text and spans, leaves a
+ * content-free tombstone for replies until task purge, and excludes it from pages and
+ * counts. The task version, activity and outbox change atomically. When a moderator
+ * deletes a rule-authored comment, `comment.deleted.v1` carries the human moderator's actor.
  * Internal token: issuer api-gateway, actor user and organization required.
  * @summary Delete a task comment
  */
@@ -11362,7 +11543,7 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, applyAutomationTaskCommentInternal, getApplyAutomationTaskCommentInternalUrl, authorizeAutomationNotificationInternal, getAuthorizeAutomationNotificationInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
 
 export type listTaskSearchProjectionsInternalResponse200 = {
@@ -12568,6 +12749,96 @@ export type applyAutomationTaskActionInternalResponseError = (applyAutomationTas
 };
 
 export type applyAutomationTaskActionInternalResponse = (applyAutomationTaskActionInternalResponseSuccess | applyAutomationTaskActionInternalResponseError)
+
+
+export type applyAutomationTaskCommentInternalResponse200 = {
+  data: AutomationTaskCommentReceiptResponse
+  status: 200
+}
+
+export type applyAutomationTaskCommentInternalResponse400 = {
+  data: AutomationTaskBadRequestResponse
+  status: 400
+}
+
+export type applyAutomationTaskCommentInternalResponse401 = {
+  data: AutomationTaskInternalTokenRefusedResponse
+  status: 401
+}
+
+export type applyAutomationTaskCommentInternalResponse403 = {
+  data: AutomationTaskInternalAccessRefusedResponse
+  status: 403
+}
+
+export type applyAutomationTaskCommentInternalResponse404 = {
+  data: AutomationTaskCommentTargetUnavailableResponse
+  status: 404
+}
+
+export type applyAutomationTaskCommentInternalResponse409 = {
+  data: AutomationTaskCommentInProgressResponse
+  status: 409
+}
+
+export type applyAutomationTaskCommentInternalResponse422 = {
+  data: AutomationTaskCommentKeyReusedResponse
+  status: 422
+}
+
+export type applyAutomationTaskCommentInternalResponse503 = {
+  data: AutomationTaskCommentUnavailableResponse
+  status: 503
+}
+
+export type applyAutomationTaskCommentInternalResponseSuccess = (applyAutomationTaskCommentInternalResponse200) & {
+  headers: Headers;
+};
+export type applyAutomationTaskCommentInternalResponseError = (applyAutomationTaskCommentInternalResponse400 | applyAutomationTaskCommentInternalResponse401 | applyAutomationTaskCommentInternalResponse403 | applyAutomationTaskCommentInternalResponse404 | applyAutomationTaskCommentInternalResponse409 | applyAutomationTaskCommentInternalResponse422 | applyAutomationTaskCommentInternalResponse503) & {
+  headers: Headers;
+};
+
+export type applyAutomationTaskCommentInternalResponse = (applyAutomationTaskCommentInternalResponseSuccess | applyAutomationTaskCommentInternalResponseError)
+
+
+export type authorizeAutomationNotificationInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type authorizeAutomationNotificationInternalResponse400 = {
+  data: AutomationTaskBadRequestResponse
+  status: 400
+}
+
+export type authorizeAutomationNotificationInternalResponse401 = {
+  data: AutomationTaskInternalTokenRefusedResponse
+  status: 401
+}
+
+export type authorizeAutomationNotificationInternalResponse403 = {
+  data: AutomationTaskInternalAccessRefusedResponse
+  status: 403
+}
+
+export type authorizeAutomationNotificationInternalResponse404 = {
+  data: AutomationTaskNotificationAuthorizationDeniedResponse
+  status: 404
+}
+
+export type authorizeAutomationNotificationInternalResponse503 = {
+  data: AutomationTaskNotificationAuthorizationUnavailableResponse
+  status: 503
+}
+
+export type authorizeAutomationNotificationInternalResponseSuccess = (authorizeAutomationNotificationInternalResponse204) & {
+  headers: Headers;
+};
+export type authorizeAutomationNotificationInternalResponseError = (authorizeAutomationNotificationInternalResponse400 | authorizeAutomationNotificationInternalResponse401 | authorizeAutomationNotificationInternalResponse403 | authorizeAutomationNotificationInternalResponse404 | authorizeAutomationNotificationInternalResponse503) & {
+  headers: Headers;
+};
+
+export type authorizeAutomationNotificationInternalResponse = (authorizeAutomationNotificationInternalResponseSuccess | authorizeAutomationNotificationInternalResponseError)
 
 
 export type assignTaskInternalResponse200 = {
