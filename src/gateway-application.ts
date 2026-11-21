@@ -110,6 +110,7 @@ const PROFILE_MEDIA_PATH =
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
+const GIT_WEBHOOK_PATH = /^\/v1\/webhooks\/(?:github|gitlab)\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
 function noStorePrivateResource(
@@ -182,6 +183,7 @@ export async function createGatewayApplication(
     service: SERVICE_NAME,
     config,
     provideConfig: true,
+    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab'],
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
@@ -193,6 +195,17 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
+  app.use(GIT_WEBHOOK_PATH, (_request: Request, response: Response, next: NextFunction): void => {
+    response.setHeader('Cache-Control', 'private, no-store');
+    next();
+  });
+  app.use(
+    GIT_WEBHOOK_PATH,
+    (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      next(error);
+    },
+  );
   app.use(PROFILE_MEDIA_PATH, (request: Request, response: Response, next: NextFunction): void => {
     noStorePrivateResource(request, response, next, 'memberId');
   });

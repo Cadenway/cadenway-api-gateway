@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { redisImage } from '../../../../../../tests/support/redis-image.js';
 import type { RequestAllowance } from '../../../application/models/requests/request-allowance.model.js';
+import { CountWebhookRequest } from '../../../application/use-cases/commands/addresses/count-webhook-request/count-webhook-request.use-case.js';
 import { RedisRequestCounter, type RequestQuota } from './redis-request-counter.adapter.js';
 
 /**
@@ -84,6 +85,32 @@ describe('RedisRequestCounter on Redis', () => {
     expect(allowances[600]?.retryAfterSeconds).toBeGreaterThanOrEqual(1);
     expect(allowances[600]?.retryAfterSeconds).toBeLessThanOrEqual(60);
     expect(otherAllowance).toEqual({ allowed: true, retryAfterSeconds: 0 });
+  });
+
+  it('isolates Git webhook providers and the anonymous quota on Redis', async () => {
+    const pseudonym = randomUUID();
+    const webhookQuota = { limit: 'webhook', requests: 60, windowSeconds: 60, storeTimeoutMs: 100 };
+    const webhook = new CountWebhookRequest(
+      {
+        github: new RedisRequestCounter(client, webhookQuota),
+        gitlab: new RedisRequestCounter(client, webhookQuota),
+      },
+      { pseudonymize: () => pseudonym },
+    );
+
+    const github = await Promise.all(
+      Array.from({ length: 61 }, () => webhook.execute('203.0.113.7', 'github')),
+    );
+    expect(github.filter((answer) => answer.allowed)).toHaveLength(60);
+    expect(github.find((answer) => !answer.allowed)?.retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    await expect(webhook.execute('203.0.113.7', 'gitlab')).resolves.toMatchObject({
+      allowed: true,
+    });
+    await expect(counter.consume(`anonymous:${pseudonym}`)).resolves.toMatchObject({
+      allowed: true,
+    });
+    await expect(client.get(`rate-limit:webhook-github:${pseudonym}`)).resolves.toBe('61');
+    await expect(client.get(`rate-limit:webhook-gitlab:${pseudonym}`)).resolves.toBe('1');
   });
 
   it('keeps the counter in Redis under the id of the credential, expiring with its window', async () => {

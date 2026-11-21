@@ -8,6 +8,7 @@ import { requestCounterProvider } from './composition/providers/adapters/request
 import { checkBearerFailuresProvider } from './composition/providers/use-cases/addresses/check-bearer-failures.provider.js';
 import { countAnonymousRequestProvider } from './composition/providers/use-cases/addresses/count-anonymous-request.provider.js';
 import { countIntakeRequestProvider } from './composition/providers/use-cases/addresses/count-intake-request.provider.js';
+import { countWebhookRequestProvider } from './composition/providers/use-cases/addresses/count-webhook-request.provider.js';
 import { countBearerFailureProvider } from './composition/providers/use-cases/addresses/count-bearer-failure.provider.js';
 import { countRequestProvider } from './composition/providers/use-cases/requests/count-request.provider.js';
 import { CheckBearerFailures } from './public/addresses/check-bearer-failures.js';
@@ -17,6 +18,8 @@ import { CountBearerFailure } from './public/addresses/count-bearer-failure.js';
 import { CountRequest } from './public/requests/count-request.js';
 import { RateLimitGuard } from './public/requests/rate-limit-guard.js';
 import { IntakeRateLimitGuard } from './public/requests/intake-rate-limit-guard.js';
+import { WebhookRateLimitGuard } from './public/requests/webhook-rate-limit-guard.js';
+import { CountWebhookRequest } from './public/addresses/count-webhook-request.js';
 
 /**
  * Class RateLimitModule
@@ -40,10 +43,12 @@ import { IntakeRateLimitGuard } from './public/requests/intake-rate-limit-guard.
     countRequestProvider,
     countAnonymousRequestProvider,
     countIntakeRequestProvider,
+    countWebhookRequestProvider,
     checkBearerFailuresProvider,
     countBearerFailureProvider,
     RateLimitGuard,
     IntakeRateLimitGuard,
+    WebhookRateLimitGuard,
   ],
   exports: [
     RateLimitGuard,
@@ -51,6 +56,8 @@ import { IntakeRateLimitGuard } from './public/requests/intake-rate-limit-guard.
     CountAnonymousRequest,
     CountIntakeRequest,
     IntakeRateLimitGuard,
+    WebhookRateLimitGuard,
+    CountWebhookRequest,
     CheckBearerFailures,
     CountBearerFailure,
   ],
