@@ -3,15 +3,17 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
- * Internal UUID of a single publication, independent of its public capability key.
- * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
- */
-export type IntakePublicationId = string;
-
-/**
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
 export type AttachmentId = string;
+
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
 
 /**
  * Original Unicode basename without path separators, control characters or whitespace-padded dot segments.
@@ -20,6 +22,69 @@ export type AttachmentId = string;
  * @pattern ^(?=[\s\S]*\S)(?!\s*\.{1,2}\s*$)(?:[^/\\\x00-\x1F\x7F-\x9F\uD800-\uDFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF])+$
  */
 export type AttachmentFileName = string;
+
+export interface AttachmentSearchProjection {
+  fileId: AttachmentId;
+  taskKey: TaskKey;
+  fileName: AttachmentFileName;
+  /**
+     * Owner version of the ready attachment.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface AttachmentSearchProjectionPage {
+  /** @maxItems 100 */
+  items: AttachmentSearchProjection[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ResolveAttachmentSearchProjectionsRequest {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  fileIds: AttachmentId[];
+}
+
+export interface PresentAttachmentSearchProjection {
+  status: 'present';
+  projection: AttachmentSearchProjection;
+}
+
+export interface AbsentAttachmentSearchProjection {
+  status: 'absent';
+  fileId: AttachmentId;
+  /**
+     * Terminal attachment version when known, or null.
+     * @minimum 1
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  version: number | null;
+}
+
+export interface ResolveAttachmentSearchProjectionsResult {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: (PresentAttachmentSearchProjection | AbsentAttachmentSearchProjection)[];
+}
+
+/**
+ * Internal UUID of a single publication, independent of its public capability key.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type IntakePublicationId = string;
 
 /**
  * Concrete media type and subtype without wildcards or parameters.
@@ -93,14 +158,6 @@ export interface IntakeAttachmentCompletion {
   id: AttachmentId;
 }
 
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
-
 export interface TaskAttachment {
   id: AttachmentId;
   taskKey: TaskKey;
@@ -120,12 +177,6 @@ export interface TaskAttachment {
   /** @minimum 1 */
   version: number;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface AttachmentPage {
   items: TaskAttachment[];
@@ -251,6 +302,29 @@ export interface ProfileMediaPreparation {
   height: ProfileMediaRasterDimension;
   sizeBytes: ProfileMediaSizeBytes;
 }
+
+/**
+ * `request.invalid` for invalid input, including an invalid cursor or duplicate file IDs.
+ * `request.body-too-large` when the incoming request body exceeds the JSON body limit.
+ */
+export type SearchProjectionBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type SearchProjectionTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID, or `auth.organization-required` for an unscoped token.
+ */
+export type SearchProjectionAccessRefusedResponse = Problem;
+
+/**
+ * `storage.unavailable` when Storage cannot complete the requested snapshot.
+ * No partial page or batch is returned.
+ */
+export type SearchProjectionUnavailableResponse = Problem;
 
 /**
  * `media.not-found` for an unknown, unavailable or unrelated image or reservation.
@@ -390,6 +464,17 @@ export type GetAvatarImageInternalParams = {
 };
 
 export type ListLargestAttachmentsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListAttachmentSearchProjectionsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -966,7 +1051,105 @@ const listLargestAttachmentsInternal = async (params?: ListLargestAttachmentsInt
 
 
 
-return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl };
+const getListAttachmentSearchProjectionsInternalUrl = (params?: ListAttachmentSearchProjectionsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/attachment-search-projections?${stringifiedParams}` : `/internal/v1/attachment-search-projections`
+}
+
+/**
+ * Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+ * an organization in the signed token. Every response carries `Cache-Control: private,
+ * no-store`. The operation exports only ready task attachments in that organization. A
+ * permanent Task purge recorded by Storage excludes all attachments of that task.
+ *
+ * The first page fixes an upper file ID in its read snapshot. Each page reads an independent
+ * tenant snapshot in ascending immutable file ID order up to that inclusive upper bound. The
+ * cursor binds the tenant, the upper bound and the last returned file ID. A new page uses an
+ * exclusive lower bound at that ID. An invalid cursor or cursor for another tenant returns
+ * `400 request.invalid`. The encoded UTF-8 JSON body is at most 1,048,576 bytes. When the byte
+ * cap shortens a page, the cursor advances only past returned items. Only `nextCursor: null`
+ * marks completion.
+ *
+ * Search starts consuming durable attachment and Task invalidations before the first page,
+ * then refreshes changes against the current owner state before activating the rebuilt index.
+ * Search must prove current attachment availability and Task visibility before disclosing
+ * results derived from this metadata.
+ * @summary Export ready attachments for search
+ */
+const listAttachmentSearchProjectionsInternal = async (params?: ListAttachmentSearchProjectionsInternalParams, options?: RequestInit): Promise<listAttachmentSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getListAttachmentSearchProjectionsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listAttachmentSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listAttachmentSearchProjectionsInternalResponse
+}
+
+
+
+const getResolveAttachmentSearchProjectionsInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/attachment-search-projections/resolve`
+}
+
+/**
+ * Requires issuer `search-service`, actor `{ type: 'system', id: 'search-service' }`, and
+ * an organization in the signed token. Every response carries `Cache-Control: private,
+ * no-store`. In one tenant snapshot, returns one decision per requested file ID in request
+ * order. UUIDs are compared without regard to case. Duplicate IDs return `400 request.invalid`.
+ *
+ * A ready attachment of a task that Storage has not fenced for permanent purge yields
+ * `present`. A deleted attachment yields `absent` with the terminal version when Storage
+ * retains it. An unknown ID, a pending attachment, an ID outside the tenant, or a fenced task
+ * whose attachment terminal version is unavailable yields `absent` with `version: null`.
+ * An unavailable snapshot fails the entire batch with `503 storage.unavailable`; a consumer
+ * must not treat a failed, malformed or incomplete batch as evidence of absence.
+ * The response body is at most 1,048,576 bytes of UTF-8 JSON.
+ * @summary Read the current state of attachment search projections
+ */
+const resolveAttachmentSearchProjectionsInternal = async (resolveAttachmentSearchProjectionsRequest: ResolveAttachmentSearchProjectionsRequest, options?: RequestInit): Promise<resolveAttachmentSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getResolveAttachmentSearchProjectionsInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(resolveAttachmentSearchProjectionsRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resolveAttachmentSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resolveAttachmentSearchProjectionsInternalResponse
+}
+
+
+
+return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl, listAttachmentSearchProjectionsInternal, getListAttachmentSearchProjectionsInternalUrl, resolveAttachmentSearchProjectionsInternal, getResolveAttachmentSearchProjectionsInternalUrl };
 };
 
 export type startIntakeAttachmentUploadInternalResponse201 = {
@@ -1542,3 +1725,73 @@ export type listLargestAttachmentsInternalResponseError = (listLargestAttachment
 };
 
 export type listLargestAttachmentsInternalResponse = (listLargestAttachmentsInternalResponseSuccess | listLargestAttachmentsInternalResponseError)
+
+
+export type listAttachmentSearchProjectionsInternalResponse200 = {
+  data: AttachmentSearchProjectionPage
+  status: 200
+}
+
+export type listAttachmentSearchProjectionsInternalResponse400 = {
+  data: SearchProjectionBadRequestResponse
+  status: 400
+}
+
+export type listAttachmentSearchProjectionsInternalResponse401 = {
+  data: SearchProjectionTokenRefusedResponse
+  status: 401
+}
+
+export type listAttachmentSearchProjectionsInternalResponse403 = {
+  data: SearchProjectionAccessRefusedResponse
+  status: 403
+}
+
+export type listAttachmentSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionUnavailableResponse
+  status: 503
+}
+
+export type listAttachmentSearchProjectionsInternalResponseSuccess = (listAttachmentSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type listAttachmentSearchProjectionsInternalResponseError = (listAttachmentSearchProjectionsInternalResponse400 | listAttachmentSearchProjectionsInternalResponse401 | listAttachmentSearchProjectionsInternalResponse403 | listAttachmentSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listAttachmentSearchProjectionsInternalResponse = (listAttachmentSearchProjectionsInternalResponseSuccess | listAttachmentSearchProjectionsInternalResponseError)
+
+
+export type resolveAttachmentSearchProjectionsInternalResponse200 = {
+  data: ResolveAttachmentSearchProjectionsResult
+  status: 200
+}
+
+export type resolveAttachmentSearchProjectionsInternalResponse400 = {
+  data: SearchProjectionBadRequestResponse
+  status: 400
+}
+
+export type resolveAttachmentSearchProjectionsInternalResponse401 = {
+  data: SearchProjectionTokenRefusedResponse
+  status: 401
+}
+
+export type resolveAttachmentSearchProjectionsInternalResponse403 = {
+  data: SearchProjectionAccessRefusedResponse
+  status: 403
+}
+
+export type resolveAttachmentSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionUnavailableResponse
+  status: 503
+}
+
+export type resolveAttachmentSearchProjectionsInternalResponseSuccess = (resolveAttachmentSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type resolveAttachmentSearchProjectionsInternalResponseError = (resolveAttachmentSearchProjectionsInternalResponse400 | resolveAttachmentSearchProjectionsInternalResponse401 | resolveAttachmentSearchProjectionsInternalResponse403 | resolveAttachmentSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type resolveAttachmentSearchProjectionsInternalResponse = (resolveAttachmentSearchProjectionsInternalResponseSuccess | resolveAttachmentSearchProjectionsInternalResponseError)

@@ -3,6 +3,13 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
+ * Committed version of the document at the source.
+ * @minimum 1
+ * @maximum 9007199254740991
+ */
+export type DocumentSearchProjectionVersion = number;
+
+/**
  * A UUID version 7.
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
@@ -15,6 +22,66 @@ export type DocumentUuid = string;
  * @pattern \S
  */
 export type DocumentTitle = string;
+
+/**
+ * Ordered blocks serialized as lightweight Markdown. The editor supports paragraphs,
+ * headings 1–3, bulleted and numbered items, checkboxes, quotes, fenced code and separators.
+ * Inline marks include bold, italic, underline, strikethrough, code and links. This is
+ * source text. A consumer treats raw HTML as text and does not activate non-HTTP(S) links.
+ * An empty string represents a document without content.
+ * @maxLength 100000
+ */
+export type DocumentMarkdown = string;
+
+export interface DocumentSearchProjection {
+  documentId: DocumentUuid;
+  /** The owning space of the document. */
+  spaceId: string;
+  version: DocumentSearchProjectionVersion;
+  title: DocumentTitle;
+  body: DocumentMarkdown;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+export interface DocumentSearchProjectionPage {
+  /** @maxItems 100 */
+  items: DocumentSearchProjection[];
+  nextCursor: NextCursor | null;
+}
+
+export interface ResolveDocumentSearchProjections {
+  /**
+     * Ordered document UUIDs. Case variants of the same UUID count as duplicates.
+     * @minItems 1
+     * @maxItems 100
+     */
+  documentIds: DocumentUuid[];
+}
+
+export interface DocumentSearchProjectionPresent {
+  status: 'present';
+  projection: DocumentSearchProjection;
+}
+
+export interface DocumentSearchProjectionAbsent {
+  status: 'absent';
+  documentId: DocumentUuid;
+  /** Committed terminal version, or null when the tenant has no record for this ID. */
+  version: DocumentSearchProjectionVersion | null;
+}
+
+export interface DocumentSearchProjectionResults {
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  results: (DocumentSearchProjectionPresent | DocumentSearchProjectionAbsent)[];
+}
 
 export interface DocumentMetadata {
   id: DocumentUuid;
@@ -31,12 +98,6 @@ export interface DocumentMetadata {
      */
   version: number;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface DocumentPage {
   items: DocumentMetadata[];
@@ -67,16 +128,6 @@ export interface Problem {
   /** Members specific to the code, for example the fields that failed validation. */
   details?: ProblemDetails;
 }
-
-/**
- * Ordered blocks serialized as lightweight Markdown. The editor supports paragraphs,
- * headings 1–3, bulleted and numbered items, checkboxes, quotes, fenced code and separators.
- * Inline marks include bold, italic, underline, strikethrough, code and links. This is
- * source text. A consumer treats raw HTML as text and does not activate non-HTTP(S) links.
- * An empty string represents a document without content.
- * @maxLength 100000
- */
-export type DocumentMarkdown = string;
 
 export interface DocumentCreation {
   spaceId: string;
@@ -168,6 +219,25 @@ export type VersionMismatchResponse = Problem;
 export type UnavailableResponse = Problem;
 
 /**
+ * `request.invalid` with `details.issues` for malformed input, an invalid cursor, or
+ * duplicate document IDs. `request.body-too-large` applies when a request body exceeds
+ * the HTTP limit.
+ */
+export type SearchProjectionBadRequestResponse = Problem;
+
+/**
+ * `document.projection-batch-too-large` when the complete resolution would exceed the
+ * response byte limit. No projection is returned. Split the input and retry.
+ */
+export type SearchProjectionBatchTooLargeResponse = Problem;
+
+/**
+ * `document.unavailable` when Document cannot establish a complete and consistent
+ * source result. No page, batch result or continuation is returned.
+ */
+export type SearchProjectionUnavailableResponse = Problem;
+
+/**
  * Case-insensitive literal substring of the title or Markdown body. Leading and trailing
  * whitespace is ignored. An empty query applies no filter.
  */
@@ -197,6 +267,17 @@ export type ListDocumentsInternalParams = {
    * @maxLength 200
    */
   q?: DocumentQueryParameter;
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListDocumentSearchProjectionsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -414,7 +495,105 @@ const deleteDocumentInternal = async (documentId: string, options?: RequestInit)
 
 
 
-return { listDocumentsInternal, getListDocumentsInternalUrl, createDocumentInternal, getCreateDocumentInternalUrl, getDocumentInternal, getGetDocumentInternalUrl, updateDocumentInternal, getUpdateDocumentInternalUrl, deleteDocumentInternal, getDeleteDocumentInternalUrl };
+const getListDocumentSearchProjectionsInternalUrl = (params?: ListDocumentSearchProjectionsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/document-search-projections?${stringifiedParams}` : `/internal/v1/document-search-projections`
+}
+
+/**
+ * Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+ * `document-service`, and an organization claim. The claim scopes every read and cursor.
+ *
+ * The first page captures the highest active document UUIDv7 in its read snapshot. Each
+ * page reads active rows in ascending document UUID order up to that inclusive bound, in
+ * one read snapshot per request. A continuation is opaque, binds the tenant and upper
+ * bound, and resumes strictly after the last returned UUID. Each page has at most `limit`
+ * items and at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+ * A page shortened by the byte limit resumes after its last returned item.
+ * Only `nextCursor: null` means the scan is complete.
+ *
+ * There is no cross-page snapshot. Search starts recording document invalidations before
+ * its first page and re-resolves their IDs before activating the rebuilt index. Concurrent
+ * inserts may fall behind the cursor and updates or deletes may supersede an exported
+ * version. The event payloads supply invalidation IDs, not document content.
+ * @summary Export a page of active document projections
+ */
+const listDocumentSearchProjectionsInternal = async (params?: ListDocumentSearchProjectionsInternalParams, options?: RequestInit): Promise<listDocumentSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getListDocumentSearchProjectionsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listDocumentSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listDocumentSearchProjectionsInternalResponse
+}
+
+
+
+const getResolveDocumentSearchProjectionsInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/document-search-projections/resolve`
+}
+
+/**
+ * Requires issuer `search-service`, actor `{ type: system, id: search-service }`, audience
+ * `document-service`, and an organization claim. Resolve the whole batch in one read
+ * snapshot. Return exactly one result for each requested UUID in input order.
+ *
+ * An active document returns its current version and projection. A deleted document
+ * returns only its UUID and committed terminal version. An ID with no record in the
+ * selected organization returns an absence with a null version, regardless of whether
+ * another organization owns that ID. A source error or an incomplete or ambiguous
+ * result fails the whole batch with 503. Search keeps those IDs pending for retry.
+ *
+ * The 200 response is at most 1,048,576 bytes of compact UTF-8 JSON, excluding HTTP framing.
+ * When the complete batch would exceed that bound, return 422 without a partial result.
+ * Search can split the batch and retry. A single legal Document projection fits this bound.
+ * This action only reads data.
+ * @summary Resolve current search projections or confirmed absences
+ */
+const resolveDocumentSearchProjectionsInternal = async (resolveDocumentSearchProjections: ResolveDocumentSearchProjections, options?: RequestInit): Promise<resolveDocumentSearchProjectionsInternalResponse> => {
+
+  const res = await fetchFn(getResolveDocumentSearchProjectionsInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(resolveDocumentSearchProjections)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: resolveDocumentSearchProjectionsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as resolveDocumentSearchProjectionsInternalResponse
+}
+
+
+
+return { listDocumentsInternal, getListDocumentsInternalUrl, createDocumentInternal, getCreateDocumentInternalUrl, getDocumentInternal, getGetDocumentInternalUrl, updateDocumentInternal, getUpdateDocumentInternalUrl, deleteDocumentInternal, getDeleteDocumentInternalUrl, listDocumentSearchProjectionsInternal, getListDocumentSearchProjectionsInternalUrl, resolveDocumentSearchProjectionsInternal, getResolveDocumentSearchProjectionsInternalUrl };
 };
 
 export type listDocumentsInternalResponse200 = {
@@ -635,3 +814,78 @@ export type deleteDocumentInternalResponseError = (deleteDocumentInternalRespons
 };
 
 export type deleteDocumentInternalResponse = (deleteDocumentInternalResponseSuccess | deleteDocumentInternalResponseError)
+
+
+export type listDocumentSearchProjectionsInternalResponse200 = {
+  data: DocumentSearchProjectionPage
+  status: 200
+}
+
+export type listDocumentSearchProjectionsInternalResponse400 = {
+  data: SearchProjectionBadRequestResponse
+  status: 400
+}
+
+export type listDocumentSearchProjectionsInternalResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listDocumentSearchProjectionsInternalResponse403 = {
+  data: ReadForbiddenResponse
+  status: 403
+}
+
+export type listDocumentSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionUnavailableResponse
+  status: 503
+}
+
+export type listDocumentSearchProjectionsInternalResponseSuccess = (listDocumentSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type listDocumentSearchProjectionsInternalResponseError = (listDocumentSearchProjectionsInternalResponse400 | listDocumentSearchProjectionsInternalResponse401 | listDocumentSearchProjectionsInternalResponse403 | listDocumentSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listDocumentSearchProjectionsInternalResponse = (listDocumentSearchProjectionsInternalResponseSuccess | listDocumentSearchProjectionsInternalResponseError)
+
+
+export type resolveDocumentSearchProjectionsInternalResponse200 = {
+  data: DocumentSearchProjectionResults
+  status: 200
+}
+
+export type resolveDocumentSearchProjectionsInternalResponse400 = {
+  data: SearchProjectionBadRequestResponse
+  status: 400
+}
+
+export type resolveDocumentSearchProjectionsInternalResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type resolveDocumentSearchProjectionsInternalResponse403 = {
+  data: ReadForbiddenResponse
+  status: 403
+}
+
+export type resolveDocumentSearchProjectionsInternalResponse422 = {
+  data: SearchProjectionBatchTooLargeResponse
+  status: 422
+}
+
+export type resolveDocumentSearchProjectionsInternalResponse503 = {
+  data: SearchProjectionUnavailableResponse
+  status: 503
+}
+
+export type resolveDocumentSearchProjectionsInternalResponseSuccess = (resolveDocumentSearchProjectionsInternalResponse200) & {
+  headers: Headers;
+};
+export type resolveDocumentSearchProjectionsInternalResponseError = (resolveDocumentSearchProjectionsInternalResponse400 | resolveDocumentSearchProjectionsInternalResponse401 | resolveDocumentSearchProjectionsInternalResponse403 | resolveDocumentSearchProjectionsInternalResponse422 | resolveDocumentSearchProjectionsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type resolveDocumentSearchProjectionsInternalResponse = (resolveDocumentSearchProjectionsInternalResponseSuccess | resolveDocumentSearchProjectionsInternalResponseError)

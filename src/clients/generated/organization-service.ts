@@ -3,10 +3,16 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
- * Email address, compared without regard to case.
- * @maxLength 254
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
  */
-export type Email = string;
+export type NextCursor = string | null;
+
+export interface SearchOrganizationPage {
+  /** @maxItems 100 */
+  items: string[];
+  nextCursor: NextCursor | null;
+}
 
 /**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
@@ -21,6 +27,23 @@ export const Role = {
   member: 'member',
   guest: 'guest',
 } as const;
+
+export interface SearchMembership {
+  memberId: string;
+  role: Role;
+  /**
+     * Version of the active membership.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+}
+
+/**
+ * Email address, compared without regard to case.
+ * @maxLength 254
+ */
+export type Email = string;
 
 /**
  * A role that can be given; never `owner`.
@@ -170,12 +193,6 @@ export interface MyOrganization {
   plan: string;
   joinedAt: string;
 }
-
-/**
- * Cursor of the next page; `null` on the last page.
- * @nullable
- */
-export type NextCursor = string | null;
 
 export interface MyOrganizationPage {
   items: MyOrganization[];
@@ -398,6 +415,41 @@ export interface SetProfileMedia {
 }
 
 /**
+ * `request.invalid` for invalid input, including an invalid organization export cursor.
+ */
+export type SearchAuthorityBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type SearchAuthorityTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+ * actor type or ID, or `auth.organization-not-allowed` when the global export receives a
+ * verified token scoped to an organization. The export checks the last condition after
+ * token verification.
+ */
+export type SearchOrganizationAccessRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
+ * actor, or `auth.organization-required` for an unscoped token.
+ */
+export type SearchMembershipAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` for a missing organization or absent active membership.
+ */
+export type SearchMembershipNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the requested snapshot.
+ * No partial page or membership proof is returned.
+ */
+export type SearchAuthorityUnavailableResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
  */
 export type ProfileMediaReservationConflictResponse = Problem;
@@ -610,6 +662,17 @@ export type ListInvitationsInternalParams = {
 };
 
 export type ListReceivedInvitationsInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
+export type ListSearchOrganizationsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
   cursor?: CursorParameter;
   /**
@@ -1424,7 +1487,100 @@ const refuseInvitationInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl };
+const getListSearchOrganizationsInternalUrl = (params?: ListSearchOrganizationsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/search-organizations?${stringifiedParams}` : `/internal/v1/search-organizations`
+}
+
+/**
+ * Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
+ * no organization claim. Every response carries `Cache-Control: private, no-store`.
+ * Returns only organization IDs. Search then signs each owner's export request with the
+ * organization of that export.
+ *
+ * The first page fixes an upper organization ID in its read snapshot. Independent pages
+ * read ascending immutable IDs up to that inclusive upper bound. The opaque cursor binds
+ * this operation, the upper bound, and the last returned ID. The next page starts strictly
+ * after that ID. An invalid cursor returns `400 request.invalid`. The UTF-8 JSON body is at
+ * most 1,048,576 bytes. Only `nextCursor: null` marks completion. Before its scan, Search
+ * starts consuming durable invalidations, including `member.joined.v1`. Organization
+ * creation emits the owner's join, so Search can schedule an export of a new tenant even
+ * when its ID is outside this page sequence.
+ * @summary List organization IDs for a search rebuild
+ */
+const listSearchOrganizationsInternal = async (params?: ListSearchOrganizationsInternalParams, options?: RequestInit): Promise<listSearchOrganizationsInternalResponse> => {
+
+  const res = await fetchFn(getListSearchOrganizationsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listSearchOrganizationsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listSearchOrganizationsInternalResponse
+}
+
+
+
+const getGetSearchMembershipInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/search-membership`
+}
+
+/**
+ * Requires issuer `search-service`, an actor of type `user` and an organization in the
+ * signed token. Search signs this call for the verified user and organization of the current
+ * request. Neither value comes from search input or indexed data. Every response carries
+ * `Cache-Control: private, no-store`.
+ *
+ * Returns the active membership's ID, version and role in one current tenant snapshot.
+ * The membership ID changes after removal and rejoining. The version is the version of
+ * that membership, independent of the organization's version. An unknown organization or
+ * absent active membership yields the same `404 organization.not-found`. The caller uses
+ * the proof to check that Task evaluates candidate access against the same membership
+ * identity and version. The proof alone grants no access to search results.
+ * @summary Prove current organization membership for search
+ */
+const getSearchMembershipInternal = async ( options?: RequestInit): Promise<getSearchMembershipInternalResponse> => {
+
+  const res = await fetchFn(getGetSearchMembershipInternalUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSearchMembershipInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSearchMembershipInternalResponse
+}
+
+
+
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -2210,3 +2366,78 @@ export type refuseInvitationInternalResponseError = (refuseInvitationInternalRes
 };
 
 export type refuseInvitationInternalResponse = (refuseInvitationInternalResponseSuccess | refuseInvitationInternalResponseError)
+
+
+export type listSearchOrganizationsInternalResponse200 = {
+  data: SearchOrganizationPage
+  status: 200
+}
+
+export type listSearchOrganizationsInternalResponse400 = {
+  data: SearchAuthorityBadRequestResponse
+  status: 400
+}
+
+export type listSearchOrganizationsInternalResponse401 = {
+  data: SearchAuthorityTokenRefusedResponse
+  status: 401
+}
+
+export type listSearchOrganizationsInternalResponse403 = {
+  data: SearchOrganizationAccessRefusedResponse
+  status: 403
+}
+
+export type listSearchOrganizationsInternalResponse503 = {
+  data: SearchAuthorityUnavailableResponse
+  status: 503
+}
+
+export type listSearchOrganizationsInternalResponseSuccess = (listSearchOrganizationsInternalResponse200) & {
+  headers: Headers;
+};
+export type listSearchOrganizationsInternalResponseError = (listSearchOrganizationsInternalResponse400 | listSearchOrganizationsInternalResponse401 | listSearchOrganizationsInternalResponse403 | listSearchOrganizationsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listSearchOrganizationsInternalResponse = (listSearchOrganizationsInternalResponseSuccess | listSearchOrganizationsInternalResponseError)
+
+
+export type getSearchMembershipInternalResponse200 = {
+  data: SearchMembership
+  status: 200
+}
+
+export type getSearchMembershipInternalResponse400 = {
+  data: SearchAuthorityBadRequestResponse
+  status: 400
+}
+
+export type getSearchMembershipInternalResponse401 = {
+  data: SearchAuthorityTokenRefusedResponse
+  status: 401
+}
+
+export type getSearchMembershipInternalResponse403 = {
+  data: SearchMembershipAccessRefusedResponse
+  status: 403
+}
+
+export type getSearchMembershipInternalResponse404 = {
+  data: SearchMembershipNotFoundResponse
+  status: 404
+}
+
+export type getSearchMembershipInternalResponse503 = {
+  data: SearchAuthorityUnavailableResponse
+  status: 503
+}
+
+export type getSearchMembershipInternalResponseSuccess = (getSearchMembershipInternalResponse200) & {
+  headers: Headers;
+};
+export type getSearchMembershipInternalResponseError = (getSearchMembershipInternalResponse400 | getSearchMembershipInternalResponse401 | getSearchMembershipInternalResponse403 | getSearchMembershipInternalResponse404 | getSearchMembershipInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getSearchMembershipInternalResponse = (getSearchMembershipInternalResponseSuccess | getSearchMembershipInternalResponseError)
