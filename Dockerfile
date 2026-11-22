@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1
 
 # Node 24 on Alpine, pinned by tag and digest; Renovate updates both together.
-FROM node:24.22.3-alpine3.24@sha256:98e4e60b35fd50143e1838da2957488c25aa3a3efbd48bb679923f77d6d3d873 AS base
+FROM node:24.22.3-alpine3.24@sha256:98e4e60b35fd50143e1838da2957488c25aa3a3efbd48bb679923f77d6d3d873 AS patched-alpine
+# Apply the Alpine 3.24 security updates that postdate this image.
+RUN apk add --no-cache libcrypto3=3.5.9-r1 libssl3=3.5.9-r1 zlib=1.4-r0
+
+FROM patched-alpine AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app
 # Corepack installs the pnpm version named by `packageManager` in package.json.
@@ -24,7 +28,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
     pnpm install --prod --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 
-FROM node:24.22.3-alpine3.24@sha256:98e4e60b35fd50143e1838da2957488c25aa3a3efbd48bb679923f77d6d3d873 AS runtime
+FROM patched-alpine AS runtime
 ENV NODE_ENV=production
 ENV PORT=3000
 WORKDIR /app
