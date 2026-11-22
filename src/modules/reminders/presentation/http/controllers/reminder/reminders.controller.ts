@@ -29,6 +29,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Inject,
   Param,
@@ -108,11 +109,14 @@ export class RemindersController {
     });
   }
 
+  /** Reads a task reminder in the verified organization. */
   @Get('tasks/:taskKey/reminder')
+  @Header('Cache-Control', 'private, no-store')
   @CredentialGuard.requires({
     operationId: 'getTaskReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTask(
     @Param(new ZodValidationPipe(GetTaskReminderParams))
@@ -130,6 +134,7 @@ export class RemindersController {
     operationId: 'setTaskReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async setTask(
     @Param(new ZodValidationPipe(SetTaskReminderParams))

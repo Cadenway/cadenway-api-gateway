@@ -70,6 +70,7 @@ export const CORS_ALLOWED_METHODS: readonly string[] = [
 export const CORS_ALLOWED_HEADERS: readonly string[] = [
   'Content-Type',
   'If-Match',
+  'If-Organization-Match',
   'Idempotency-Key',
   'Intake-Draft-Key',
 ];
@@ -112,11 +113,21 @@ const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const MEMBERS_PATH = /^\/v1\/members(?:\/[^/]+)?\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
+// All routes addressed by a task key, plus the bulk actions and current-organization collections.
+const ORGANIZATION_BOUND_PATH =
+  /^\/v1\/(?:tasks\/[^/]+(?:\/[^/]+)*|organization(?:\/authentication-policy)?|archives\/(?:lists|tasks)|trash\/(?:empty|entries(?:\/[^/]+(?:\/restore)?)?))\/?$/iu;
 const ONBOARDING_PATH = /^\/v1\/me\/onboarding(?:\/(?:checklist|finish))?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
-const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
+const BILLING_PRIVATE_PATH = /^\/v1\/billing\/(?:subscription|checkout|invoices)\/?$/iu;
+const FEDERATED_AUTH_PATH =
+  /^\/v1\/auth\/sign-in\/federated\/(?:start|finish|saml\/callback|providers\/[^/]+\/callback)\/?$/iu;
+const SAML_CALLBACK_PATH = /^\/v1\/auth\/sign-in\/federated\/saml\/callback\/?$/iu;
+const FEDERATED_CALLBACK_PATH = /\/callback\/?$/iu;
 const AUTOMATIONS_PATH = /^\/v1\/(?:automations(?:\/[^/]+)?|automation-runs)\/?$/iu;
-const GIT_WEBHOOK_PATH = /^\/v1\/webhooks\/(?:github|gitlab)\/?$/iu;
+const STRIPE_WEBHOOK_PATH = '/v1/billing/webhooks/stripe';
+const SIGNED_WEBHOOK_PATH =
+  /^\/v1\/(?:webhooks\/(?:github|gitlab)|billing\/webhooks\/stripe)\/?$/iu;
+const STRIPE_WEBHOOK_ERROR_PATH = /^\/v1\/billing\/webhooks\/stripe\/?$/iu;
 const SITE_SUBMISSION_PATH = /^\/v1\/(?:contact-submissions|newsletter-subscriptions)\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
@@ -198,7 +209,7 @@ export async function createGatewayApplication(
     service: SERVICE_NAME,
     config,
     provideConfig: true,
-    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab'],
+    rawJsonPostPaths: ['/v1/webhooks/github', '/v1/webhooks/gitlab', STRIPE_WEBHOOK_PATH],
     internalToken: {
       signer: {
         issuer: config.INTERNAL_TOKEN_ISSUER,
@@ -244,12 +255,32 @@ export async function createGatewayApplication(
       next(siteFormProblem(error));
     },
   );
-  app.use(GIT_WEBHOOK_PATH, (_request: Request, response: Response, next: NextFunction): void => {
-    response.setHeader('Cache-Control', 'private, no-store');
-    next();
-  });
   app.use(
-    GIT_WEBHOOK_PATH,
+    SIGNED_WEBHOOK_PATH,
+    (_request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      next();
+    },
+  );
+  app.use(
+    STRIPE_WEBHOOK_ERROR_PATH,
+    (error: unknown, _request: Request, _response: Response, next: NextFunction): void => {
+      // The raw parser rejects encoded bodies before controller validation. The public
+      // webhook contract represents unsupported media as an opaque 400.
+      const problem = toProblem(error);
+      if (
+        !(error instanceof ProblemException) &&
+        (problem.status === 415 ||
+          (problem.status === 400 && problem.code !== 'request.body-too-large'))
+      ) {
+        next(new ProblemException({ status: 400, code: 'billing.invalid-webhook' }));
+        return;
+      }
+      next(error);
+    },
+  );
+  app.use(
+    SIGNED_WEBHOOK_PATH,
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       next(error);
@@ -265,8 +296,17 @@ export async function createGatewayApplication(
     }
     noStorePrivateResource(request, response, next, 'documentId');
   });
+  // Keep the numeric ETag available to If-Match writes. It is not a validator of a cached
+  // representation: the same URL and version can refer to different organizations.
   app.use(
-    [MEMBERS_PATH, ONBOARDING_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [
+      ORGANIZATION_BOUND_PATH,
+      MEMBERS_PATH,
+      ONBOARDING_PATH,
+      SEARCH_PATH,
+      BILLING_PRIVATE_PATH,
+      AUTOMATIONS_PATH,
+    ],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -278,12 +318,13 @@ export async function createGatewayApplication(
   );
   app.use(
     [
+      ORGANIZATION_BOUND_PATH,
       PROFILE_MEDIA_PATH,
       MEMBERS_PATH,
       DOCUMENTS_PATH,
       ONBOARDING_PATH,
       SEARCH_PATH,
-      BILLING_SUBSCRIPTION_PATH,
+      BILLING_PRIVATE_PATH,
       AUTOMATIONS_PATH,
     ],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
@@ -333,5 +374,40 @@ export async function createGatewayApplication(
   app.use(helmet());
   app.use(cookieParser());
   app.enableCors(cors);
+  app.use(FEDERATED_AUTH_PATH, (request: Request, response: Response, next: NextFunction): void => {
+    response.setHeader('Cache-Control', 'private, no-store');
+    if (FEDERATED_CALLBACK_PATH.test(request.originalUrl.split('?', 1)[0] ?? '')) {
+      response.setHeader('Referrer-Policy', 'no-referrer');
+    }
+    next();
+  });
+  app.useBodyParser('text', {
+    type: (request) =>
+      request.method === 'POST' &&
+      SAML_CALLBACK_PATH.test(request.url?.split('?', 1)[0] ?? '') &&
+      /^application\/x-www-form-urlencoded(?:\s*;|$)/iu.test(request.headers['content-type'] ?? ''),
+    limit: 790 * 1024,
+    inflate: false,
+  });
+  app.use(
+    FEDERATED_AUTH_PATH,
+    (error: unknown, request: Request, response: Response, next: NextFunction): void => {
+      response.setHeader('Cache-Control', 'private, no-store');
+      if (FEDERATED_CALLBACK_PATH.test(request.originalUrl.split('?', 1)[0] ?? '')) {
+        response.setHeader('Referrer-Policy', 'no-referrer');
+      }
+      if (error instanceof ProblemException) {
+        next(error);
+        return;
+      }
+      next(
+        new ProblemException({
+          status: 400,
+          code: 'request.invalid',
+          details: { issues: [{ in: 'body', path: '', code: 'invalid_format' }] },
+        }),
+      );
+    },
+  );
   return app;
 }

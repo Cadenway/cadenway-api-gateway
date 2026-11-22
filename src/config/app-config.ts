@@ -41,6 +41,9 @@ export interface AppConfig extends BaseConfig, InternalTokenSignerConfig, RedisC
    */
   readonly ALLOWED_ORIGINS: readonly string[];
 
+  /** Fixed browser destination after a successful federated callback. */
+  readonly FEDERATED_CONTINUATION_URL?: string | undefined;
+
   /**
    * Property IDENTITY_SERVICE_URL
    *
@@ -225,19 +228,45 @@ const allowedOriginsSchema: z.ZodType<readonly string[]> = z
  *
  * @type {z.ZodType<AppConfig>}
  */
-export const appConfigSchema: z.ZodType<AppConfig> = z.object({
-  ...baseConfigShape,
-  ...internalTokenSignerConfigShape,
-  ...redisConfigShape,
-  ALLOWED_ORIGINS: allowedOriginsSchema,
-  IDENTITY_SERVICE_URL: serviceUrlSchema,
-  ORGANIZATION_SERVICE_URL: serviceUrlSchema,
-  BILLING_SERVICE_URL: serviceUrlSchema,
-  TASK_SERVICE_URL: serviceUrlSchema,
-  DOCUMENT_SERVICE_URL: serviceUrlSchema,
-  STORAGE_SERVICE_URL: serviceUrlSchema,
-  NOTIFICATION_SERVICE_URL: serviceUrlSchema,
-  AUTOMATION_SERVICE_URL: serviceUrlSchema,
-  INTEGRATION_SERVICE_URL: serviceUrlSchema,
-  SEARCH_SERVICE_URL: serviceUrlSchema,
-});
+export const appConfigSchema: z.ZodType<AppConfig> = z
+  .object({
+    ...baseConfigShape,
+    ...internalTokenSignerConfigShape,
+    ...redisConfigShape,
+    ALLOWED_ORIGINS: allowedOriginsSchema,
+    FEDERATED_CONTINUATION_URL: z.preprocess(
+      (value: unknown) => (value === '' ? undefined : value),
+      z.url({ protocol: /^https?$/u }).optional(),
+    ),
+    IDENTITY_SERVICE_URL: serviceUrlSchema,
+    ORGANIZATION_SERVICE_URL: serviceUrlSchema,
+    BILLING_SERVICE_URL: serviceUrlSchema,
+    TASK_SERVICE_URL: serviceUrlSchema,
+    DOCUMENT_SERVICE_URL: serviceUrlSchema,
+    STORAGE_SERVICE_URL: serviceUrlSchema,
+    NOTIFICATION_SERVICE_URL: serviceUrlSchema,
+    AUTOMATION_SERVICE_URL: serviceUrlSchema,
+    INTEGRATION_SERVICE_URL: serviceUrlSchema,
+    SEARCH_SERVICE_URL: serviceUrlSchema,
+  })
+  .superRefine((config, context) => {
+    if (config.FEDERATED_CONTINUATION_URL === undefined) return;
+    const url = URL.parse(config.FEDERATED_CONTINUATION_URL);
+    const loopback =
+      url !== null &&
+      (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+        url.hostname.endsWith('.localhost'));
+    if (
+      url === null ||
+      !config.ALLOWED_ORIGINS.includes(url.origin) ||
+      (url.protocol !== 'https:' && !loopback) ||
+      url.href !== `${url.origin}/auth/federated/continue` ||
+      config.FEDERATED_CONTINUATION_URL !== url.href
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['FEDERATED_CONTINUATION_URL'],
+        message: 'Expected the fixed federation continuation path on an allowed Webapp origin.',
+      });
+    }
+  });

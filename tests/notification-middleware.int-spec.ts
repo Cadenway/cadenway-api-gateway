@@ -28,6 +28,7 @@ import {
   NotificationServiceClient,
 } from '../src/clients/notification-service.client.js';
 import {
+  ATELIER_NORD_ID,
   CAMILLE_ORGANIZATION_SESSION,
   CAMILLE_ORGANIZATION_TOKEN,
   CAMILLE_TOKEN,
@@ -117,6 +118,23 @@ describe('notification routes with gateway middleware', () => {
   });
 
   afterAll(async () => gateway.app.close());
+
+  it('keeps a task reminder read private despite the general reminder cache policy', async () => {
+    const getTaskReminder = vi.spyOn(notification, 'getTaskReminder').mockResolvedValue(reminder);
+
+    const read = await runRouteCase(gateway, identity, {
+      name: 'task reminder under the current organization',
+      method: 'get',
+      path: '/v1/tasks/{taskKey}/reminder',
+      url: '/v1/tasks/CAD-482/reminder',
+      headers: { 'If-Organization-Match': ATELIER_NORD_ID },
+      status: 200,
+    });
+
+    expect(read.headers['cache-control']).toBe('private, no-store');
+    expect(read.headers.etag).toBe('"3"');
+    expect(getTaskReminder).toHaveBeenCalledExactlyOnceWith(taskId);
+  });
 
   it('reads and updates account preferences without an organization and avoids caching', async () => {
     const read = await runRouteCase(gateway, identity, {

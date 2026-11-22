@@ -30,9 +30,14 @@ describe('WebhookRateLimitGuard', () => {
   it('uses separate provider windows keyed by the normalized proxy address', async () => {
     const github = vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
     const gitlab = vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
+    const stripe = vi.fn().mockResolvedValue({ allowed: true, retryAfterSeconds: 0 });
     const guard = new WebhookRateLimitGuard(
       new CountWebhookRequest(
-        { github: { consume: github, peek: vi.fn() }, gitlab: { consume: gitlab, peek: vi.fn() } },
+        {
+          github: { consume: github, peek: vi.fn() },
+          gitlab: { consume: gitlab, peek: vi.fn() },
+          stripe: { consume: stripe, peek: vi.fn() },
+        },
         { pseudonymize: (address) => `hashed-${address}` },
       ),
       new Reflector(),
@@ -40,11 +45,13 @@ describe('WebhookRateLimitGuard', () => {
 
     await expect(guard.canActivate(contextOf('github', new Map()))).resolves.toBe(true);
     await expect(guard.canActivate(contextOf('gitlab', new Map()))).resolves.toBe(true);
+    await expect(guard.canActivate(contextOf('stripe', new Map()))).resolves.toBe(true);
     expect(github).toHaveBeenCalledExactlyOnceWith('webhook-github:hashed-203.0.113.7');
     expect(gitlab).toHaveBeenCalledExactlyOnceWith('webhook-gitlab:hashed-203.0.113.7');
+    expect(stripe).toHaveBeenCalledExactlyOnceWith('webhook-stripe:hashed-203.0.113.7');
   });
 
-  it.each(['github', 'gitlab'] as const)(
+  it.each(['github', 'gitlab', 'stripe'] as const)(
     'returns the webhook policy and retry delay when %s is exhausted',
     async (provider) => {
       const denied = {
@@ -52,7 +59,10 @@ describe('WebhookRateLimitGuard', () => {
         peek: vi.fn(),
       };
       const guard = new WebhookRateLimitGuard(
-        new CountWebhookRequest({ github: denied, gitlab: denied }, { pseudonymize: () => 'hash' }),
+        new CountWebhookRequest(
+          { github: denied, gitlab: denied, stripe: denied },
+          { pseudonymize: () => 'hash' },
+        ),
         new Reflector(),
       );
       const headers = new Map<string, string>();
@@ -76,6 +86,7 @@ describe('WebhookRateLimitGuard', () => {
       {
         github: { consume: vi.fn(), peek: vi.fn() },
         gitlab: { consume: vi.fn(), peek: vi.fn() },
+        stripe: { consume: vi.fn(), peek: vi.fn() },
       },
       { pseudonymize: () => 'hash' },
     );

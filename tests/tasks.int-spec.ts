@@ -226,6 +226,51 @@ describe('the task core routes against task-service over HTTP', () => {
     await redis.stop();
   });
 
+  it('keeps the session cookie usable when Identity temporarily cannot verify membership', async () => {
+    let proofUnavailable = true;
+    network.use(
+      http.post(`${IDENTITY_URL}/internal/v1/tokens/introspect`, () => {
+        if (!proofUnavailable) {
+          return;
+        }
+        return HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Service Unavailable',
+            status: 503,
+            code: 'organization.unavailable',
+          },
+          { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+        );
+      }),
+    );
+
+    try {
+      const unavailable = await send('get', '/v1/tasks/{taskKey}', '/v1/tasks/CAD-482', {
+        headers: { 'If-Organization-Match': ATELIER_NORD_ID },
+      });
+      expect(unavailable.status).toBe(503);
+      expect(unavailable.body).toMatchObject({
+        code: 'upstream.unavailable',
+        details: { service: 'identity-service' },
+      });
+      expect(unavailable.headers['set-cookie']).toBeUndefined();
+      expect(unavailable.headers['cache-control']).toBe('private, no-store');
+      expect(taskCalls).toHaveLength(0);
+    } finally {
+      proofUnavailable = false;
+    }
+
+    taskService('get', '/internal/v1/tasks/CAD-482', () =>
+      HttpResponse.json(responseExample('get', '/v1/tasks/{taskKey}', 200) as JsonBodyType),
+    );
+    const recovered = await send('get', '/v1/tasks/{taskKey}', '/v1/tasks/CAD-482', {
+      headers: { 'If-Organization-Match': ATELIER_NORD_ID },
+    });
+    expect(recovered.status).toBe(200);
+    expect(taskCalls.map((call) => call.principal.organizationId)).toEqual([ATELIER_NORD_ID]);
+  });
+
   it('reads a nullable attachment author through authenticated Storage list and detail calls', async () => {
     const taskKey = 'CAD-482';
     const id = '019a7004-3b2c-7d4e-8f5a-6b7c8d9e0f15';

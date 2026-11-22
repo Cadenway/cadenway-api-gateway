@@ -31,6 +31,7 @@ import {
  * @type {string}
  */
 const PATH: string = '/v1/organization/authentication-policy';
+const STALE_ORGANIZATION_ID = '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31';
 
 /**
  * Constant POLICY
@@ -103,6 +104,30 @@ const GET_CASES: readonly RouteCase[] = [
       expect(response.body).toEqual(POLICY);
       expect(response.headers.etag).toBe('"2"');
       expect(identity.getAuthenticationPolicy).toHaveBeenCalledTimes(1);
+    },
+  },
+  {
+    name: 'GET refuses a malformed expected organization before reading its policy',
+    method: 'get',
+    path: PATH,
+    url: PATH,
+    headers: { 'If-Organization-Match': 'invalid' },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { identity }) => {
+      expect(identity.getAuthenticationPolicy).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET refuses a stale expected organization before reading its policy',
+    method: 'get',
+    path: PATH,
+    url: PATH,
+    headers: { 'If-Organization-Match': STALE_ORGANIZATION_ID },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (_response, { identity }) => {
+      expect(identity.getAuthenticationPolicy).not.toHaveBeenCalled();
     },
   },
   {
@@ -223,6 +248,19 @@ const PATCH_CASES: readonly RouteCase[] = [
         { twoStepVerificationRequiredFor: 'admins' },
         '"1"',
       );
+    },
+  },
+  {
+    name: 'PATCH refuses a stale expected organization before writing its policy',
+    method: 'patch',
+    path: PATH,
+    url: PATH,
+    body: { twoStepVerificationRequiredFor: 'admins' },
+    headers: { 'If-Match': '"1"', 'If-Organization-Match': STALE_ORGANIZATION_ID },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (_response, { identity }) => {
+      expect(identity.updateAuthenticationPolicy).not.toHaveBeenCalled();
     },
   },
   {

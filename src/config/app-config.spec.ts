@@ -79,6 +79,36 @@ function configIssues(env: Record<string, string>): readonly string[] {
 }
 
 describe('appConfigSchema', () => {
+  it('leaves federated sign-in disabled when Compose passes an empty continuation', () => {
+    const config = loadConfig(
+      appConfigSchema,
+      validEnvironment({ FEDERATED_CONTINUATION_URL: '' }),
+    );
+    expect(config.FEDERATED_CONTINUATION_URL).toBeUndefined();
+  });
+
+  it('allows the fixed continuation on the local Webapp origin', () => {
+    const url = 'http://app.cadenway.localhost/auth/federated/continue';
+    const config = loadConfig(
+      appConfigSchema,
+      validEnvironment({
+        ALLOWED_ORIGINS: 'http://app.cadenway.localhost',
+        FEDERATED_CONTINUATION_URL: url,
+      }),
+    );
+    expect(config.FEDERATED_CONTINUATION_URL).toBe(url);
+  });
+
+  it.each([
+    'https://different.example.test/auth/federated/continue',
+    'https://app.cadenway.test/auth/federated/continue?next=/',
+    'https://app.cadenway.test/other',
+  ])('refuses an unmatched or noncanonical federation continuation', (url) => {
+    expect(configIssues(validEnvironment({ FEDERATED_CONTINUATION_URL: url }))).toEqual([
+      expect.stringMatching(/^FEDERATED_CONTINUATION_URL: /u),
+    ]);
+  });
+
   it('reads a complete environment with the defaults of the kit', () => {
     const config: Readonly<AppConfig> = loadConfig(appConfigSchema, validEnvironment());
 

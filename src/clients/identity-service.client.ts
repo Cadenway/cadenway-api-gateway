@@ -20,6 +20,12 @@ import type {
   EmailChangeCodeSent,
   EmailChangeConfirmation,
   EmailChangeRequest,
+  FederatedFlowStarted,
+  FederatedOAuthCallback,
+  FederatedReceipt,
+  FederatedSamlCallback,
+  FederatedSignInFinish,
+  FederatedSignInStart,
   ListApiTokensInternalParams,
   ListUserSessionsInternalParams,
   OpenSessionPage,
@@ -62,11 +68,14 @@ import {
   AnswerSignInChallengeWithBackupCodeInternalResponse,
   AnswerSignInChallengeWithSecurityKeyInternalResponse,
   ChangePasswordInternalResponse,
+  CompleteOAuthSignInInternalResponse,
+  CompleteSamlSignInInternalResponse,
   ConfirmAuthenticatorAppSetupInternalResponse,
   ConfirmEmailChangeInternalResponse,
   ConfirmPasswordResetInternalResponse,
   CreateApiTokenInternalResponse,
   DiscoverSignInMethodsInternalResponse,
+  FinishFederatedSignInInternalResponse,
   GetAuthenticationPolicyInternalResponse,
   GetAvatarReferenceInternalResponse,
   GetAvatarUploadStateInternalResponse,
@@ -93,6 +102,7 @@ import {
   SignInWithPasswordInternalResponse,
   SignUpInternalResponse,
   StartAuthenticatorAppSetupInternalResponse,
+  StartFederatedSignInInternalResponse,
   StartSecurityKeyRegistrationInternalResponse,
   SwitchSessionOrganizationResponse,
   UpdateAuthenticationPolicyInternalResponse,
@@ -568,6 +578,49 @@ export class IdentityServiceClient {
         this.routes.signInWithPasswordInternal(request, callerClaims('anonymous')),
       ),
       SignInWithPasswordInternalResponse,
+    );
+  }
+
+  /** Starts an anonymous federated flow and returns the internal browser binding. */
+  public async startFederatedSignIn(request: FederatedSignInStart): Promise<FederatedFlowStarted> {
+    const operation = 'startFederatedSignInInternal';
+    const response = await answered(
+      operation,
+      this.routes.startFederatedSignInInternal(request, callerClaims('anonymous')),
+    );
+    return expectBody(operation, response, 200, StartFederatedSignInInternalResponse);
+  }
+
+  /** Exchanges an OAuth callback once for an opaque continuation receipt. */
+  public async completeOAuthSignIn(request: FederatedOAuthCallback): Promise<FederatedReceipt> {
+    const operation = 'completeOAuthSignInInternal';
+    const response = await answered(
+      operation,
+      this.routes.completeOAuthSignInInternal(request, callerClaims('anonymous')),
+    );
+    return expectBody(operation, response, 200, CompleteOAuthSignInInternalResponse);
+  }
+
+  /** Exchanges a SAML callback once for an opaque continuation receipt. */
+  public async completeSamlSignIn(request: FederatedSamlCallback): Promise<FederatedReceipt> {
+    const operation = 'completeSamlSignInInternal';
+    const response = await answered(
+      operation,
+      this.routes.completeSamlSignInInternal(request, callerClaims('anonymous')),
+    );
+    return expectBody(operation, response, 200, CompleteSamlSignInInternalResponse);
+  }
+
+  /** Redeems the receipt once and returns the ordinary Identity sign-in outcome. */
+  public async finishFederatedSignIn(request: FederatedSignInFinish): Promise<IdentitySignIn> {
+    const operation = 'finishFederatedSignInInternal';
+    return signInOf(
+      operation,
+      await answered(
+        operation,
+        this.routes.finishFederatedSignInInternal(request, callerClaims('anonymous')),
+      ),
+      FinishFederatedSignInInternalResponse,
     );
   }
 

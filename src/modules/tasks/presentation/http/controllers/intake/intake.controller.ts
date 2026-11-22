@@ -103,7 +103,7 @@ const PUBLIC_SUBMIT: AcceptedProblems = {
 const RELEASE_ATTACHMENT: AcceptedProblems = { ...PUBLIC_READ, 400: ['request.invalid'] };
 const START_ATTACHMENT: AcceptedProblems = {
   ...RELEASE_ATTACHMENT,
-  409: ['idempotency.request-in-progress'],
+  409: ['idempotency.request-in-progress', 'attachment.storage-quota-exceeded'],
   422: [
     'attachment.file-too-large',
     'attachment.upload-metadata-mismatch',
@@ -299,6 +299,7 @@ export class IntakeController {
     operationId: 'getTaskIntakeContact',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async contact(
     @Param(new ZodValidationPipe(GetTaskIntakeContactParams))

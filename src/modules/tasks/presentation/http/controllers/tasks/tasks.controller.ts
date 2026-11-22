@@ -798,6 +798,7 @@ export class TasksController {
     operationId: 'getTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTask(
     @Param(new ZodValidationPipe(GetTaskParams)) params: z.output<typeof GetTaskParams>,
@@ -826,6 +827,7 @@ export class TasksController {
     operationId: 'updateTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateTask(
     @Param(new ZodValidationPipe(UpdateTaskParams)) params: z.output<typeof UpdateTaskParams>,
@@ -857,6 +859,7 @@ export class TasksController {
     operationId: 'getTaskDetail',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTaskDetail(
     @Param(new ZodValidationPipe(GetTaskDetailParams)) params: z.output<typeof GetTaskDetailParams>,
@@ -894,6 +897,7 @@ export class TasksController {
     operationId: 'listSubtasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listSubtasks(
     @Param(new ZodValidationPipe(ListSubtasksParams)) params: z.output<typeof ListSubtasksParams>,
@@ -927,6 +931,7 @@ export class TasksController {
     operationId: 'createSubtask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createSubtask(
     @Param(new ZodValidationPipe(CreateSubtaskParams)) params: z.output<typeof CreateSubtaskParams>,
@@ -968,6 +973,7 @@ export class TasksController {
     operationId: 'addChecklistItem',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async addChecklistItem(
     @Param(new ZodValidationPipe(AddChecklistItemParams))
@@ -1013,6 +1019,7 @@ export class TasksController {
     operationId: 'updateChecklistItem',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateChecklistItem(
     @Param(new ZodValidationPipe(UpdateChecklistItemParams))
@@ -1047,6 +1054,7 @@ export class TasksController {
     operationId: 'assignTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async assignTask(
     @Param(new ZodValidationPipe(AssignTaskParams)) params: z.output<typeof AssignTaskParams>,
@@ -1080,6 +1088,7 @@ export class TasksController {
     operationId: 'unassignTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async unassignTask(
     @Param(new ZodValidationPipe(UnassignTaskParams)) params: z.output<typeof UnassignTaskParams>,
@@ -1109,6 +1118,7 @@ export class TasksController {
     operationId: 'addTaskLabel',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async addTaskLabel(
     @Param(new ZodValidationPipe(AddTaskLabelParams)) params: z.output<typeof AddTaskLabelParams>,
@@ -1142,6 +1152,7 @@ export class TasksController {
     operationId: 'removeTaskLabel',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async removeTaskLabel(
     @Param(new ZodValidationPipe(RemoveTaskLabelParams))
@@ -1174,6 +1185,7 @@ export class TasksController {
     operationId: 'listTaskActivity',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskActivity(
     @Param(new ZodValidationPipe(ListTaskActivityParams))

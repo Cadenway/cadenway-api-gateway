@@ -84,6 +84,7 @@ export class WatchersController {
     operationId: 'listTaskWatchers',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskWatchers(
     @Param(new ZodValidationPipe(ListTaskWatchersParams))
@@ -105,6 +106,7 @@ export class WatchersController {
     operationId: 'followTaskWatcher',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async followTaskWatcher(
     @Param(new ZodValidationPipe(FollowTaskWatcherParams))
@@ -133,6 +135,7 @@ export class WatchersController {
     operationId: 'unfollowTaskWatcher',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async unfollowTaskWatcher(
     @Param(new ZodValidationPipe(UnfollowTaskWatcherParams))

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  ATELIER_NORD_ID,
   CAMILLE,
   CAMILLE_ORGANIZATION_TOKEN,
   createFakeIdentity,
@@ -21,6 +22,7 @@ import {
   taskRouteCases,
   type TaskRoute,
 } from '../../../../../../../tests/support/task-route-matrix.js';
+import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
 
 import { attachVerifiedCredential } from '../../../../../../presentation/http/session/request-session.js';
 import { GetOnboarding } from '../../../../application/use-cases/queries/onboarding/get-onboarding/get-onboarding.use-case.js';
@@ -214,4 +216,56 @@ describe('onboarding HTTP routes', () => {
     expect(revalidated.body).toEqual(first.body);
     expect(application.task.getOnboarding).toHaveBeenCalledTimes(2);
   });
+
+  describe.each(routes.filter((route) => route.method !== 'get'))(
+    '$method $path organization precondition',
+    (route) => {
+      it('accepts the selected organization and forwards the original version', async () => {
+        const response = await request(application.server)
+          [route.method](route.url)
+          .set({
+            ...route.headers,
+            Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
+            Origin: ALLOWED_ORIGIN,
+            'If-Organization-Match': ATELIER_NORD_ID.toUpperCase(),
+          })
+          .send(route.body as object);
+
+        expect(response.status).toBe(route.status);
+        expect(application.task[route.call]).toHaveBeenCalledWith(...route.calledWith);
+      });
+
+      it('rejects a stale organization before calling task-service', async () => {
+        const response = await request(application.server)
+          [route.method](route.url)
+          .set({
+            ...route.headers,
+            Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
+            Origin: ALLOWED_ORIGIN,
+            'If-Organization-Match': '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31',
+          })
+          .send(route.body as object);
+
+        expect(response.status).toBe(412);
+        expect(response.body).toMatchObject({ code: 'organization.context-changed' });
+        expect(application.task[route.call]).not.toHaveBeenCalled();
+      });
+
+      it('rejects a malformed organization before calling task-service', async () => {
+        const response = await request(application.server)
+          [route.method](route.url)
+          .set({
+            ...route.headers,
+            Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
+            Origin: ALLOWED_ORIGIN,
+            'If-Organization-Match': 'invalid',
+          })
+          .send(route.body as object);
+
+        expect(response.status).toBe(400);
+        expect(response.body).toMatchObject({ code: 'request.invalid' });
+        expect(application.task[route.call]).not.toHaveBeenCalled();
+      });
+    },
+  );
 });

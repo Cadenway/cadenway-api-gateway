@@ -350,6 +350,7 @@ export class ArchivesController {
     operationId: 'archiveTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async archiveTask(
     @Param(new ZodValidationPipe(ArchiveTaskParams)) params: z.output<typeof ArchiveTaskParams>,
@@ -385,6 +386,7 @@ export class ArchivesController {
     operationId: 'unarchiveTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async unarchiveTask(
     @Param(new ZodValidationPipe(UnarchiveTaskParams)) params: z.output<typeof UnarchiveTaskParams>,
@@ -416,6 +418,7 @@ export class ArchivesController {
     operationId: 'listArchivedLists',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listArchivedLists(
     @Query(new ZodValidationPipe(ListArchivedListsQueryParams))
@@ -444,6 +447,7 @@ export class ArchivesController {
     operationId: 'listArchivedTasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listArchivedTasks(
     @Query(new ZodValidationPipe(ListArchivedTasksQueryParams))

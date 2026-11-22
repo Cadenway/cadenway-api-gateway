@@ -213,6 +213,7 @@ export class ProfileMediaController {
     operationId: 'startOrganizationLogoUpload',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async startLogo(
     @RequiredBody(DECLARATION) body: z.output<typeof DECLARATION>,
@@ -257,6 +258,7 @@ export class ProfileMediaController {
     operationId: 'setOrganizationLogo',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async setLogo(
     @RequiredBody(SetOrganizationLogoBody) body: z.output<typeof SetOrganizationLogoBody>,
@@ -283,6 +285,7 @@ export class ProfileMediaController {
     operationId: 'deleteOrganizationLogo',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteLogo(
     @Headers('if-match') header: string | undefined,

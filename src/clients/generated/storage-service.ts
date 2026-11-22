@@ -132,6 +132,31 @@ export interface ResolveAttachmentSearchProjectionsResult {
 }
 
 /**
+ * Members specific to the code, for example the fields that failed validation.
+ */
+export type ProblemDetails = { [key: string]: unknown };
+
+/**
+ * RFC 9457 problem with the Cadenway extensions `code` and `details`.
+ */
+export interface Problem {
+  /** URI reference that identifies the problem type. */
+  type: string;
+  /** Short summary of the problem type, the same for every occurrence. */
+  title: string;
+  /** HTTP status of the response. */
+  status: number;
+  /** Explanation specific to this occurrence. */
+  detail?: string;
+  /** URI reference that identifies this occurrence. */
+  instance?: string;
+  /** Stable machine code, `<domain>.<reason>`. */
+  code: string;
+  /** Members specific to the code, for example the fields that failed validation. */
+  details?: ProblemDetails;
+}
+
+/**
  * Internal UUID of a single publication, independent of its public capability key.
  * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
  */
@@ -175,31 +200,6 @@ export interface AttachmentUpload {
   /** Signed form fields to append unchanged before the file part. */
   fields: AttachmentUploadFields;
   expiresAt: string;
-}
-
-/**
- * Members specific to the code, for example the fields that failed validation.
- */
-export type ProblemDetails = { [key: string]: unknown };
-
-/**
- * RFC 9457 problem with the Cadenway extensions `code` and `details`.
- */
-export interface Problem {
-  /** URI reference that identifies the problem type. */
-  type: string;
-  /** Short summary of the problem type, the same for every occurrence. */
-  title: string;
-  /** HTTP status of the response. */
-  status: number;
-  /** Explanation specific to this occurrence. */
-  detail?: string;
-  /** URI reference that identifies this occurrence. */
-  instance?: string;
-  /** Stable machine code, `<domain>.<reason>`. */
-  code: string;
-  /** Members specific to the code, for example the fields that failed validation. */
-  details?: ProblemDetails;
 }
 
 /**
@@ -461,7 +461,9 @@ export type AttachmentNotFoundResponse = Problem;
 export type IntakeAttachmentNotFoundResponse = Problem;
 
 /**
- * `idempotency.request-in-progress` while the equivalent upload reservation is running.
+ * `idempotency.request-in-progress` while the equivalent upload reservation is running,
+ * or `attachment.storage-quota-exceeded` when the organization cannot reserve the
+ * declared bytes for a temporary upload. The refusal omits plan, limit and usage.
  */
 export type UploadReservationConflictResponse = Problem;
 
@@ -528,6 +530,16 @@ export type LimitParameter = number;
  * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
  */
 export type BillingCursorParameter = Schema & string;
+
+export type ReceiveUploadTransferInternalBody = {
+  /**
+     * Opaque bearer credential in the reservation's returned form fields.
+     * @minLength 1
+     */
+  ticket: string;
+  /** The file as the final part with the media type of the reservation. */
+  file: Blob | File | string;
+};
 
 export type ListTaskAttachmentsInternalParams = {
   /** Opaque cursor taken from the `nextCursor` of the previous page. */
@@ -606,6 +618,57 @@ const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string 
 };
 
 export const getStorageServiceInternalRoutes = (fetchFn: typeof globalThis.fetch = fetch) => {
+const getReceiveUploadTransferInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/upload-transfers`
+}
+
+/**
+ * Available on the configured upload origin when Storage issues ticket-based capabilities.
+ * Only the opaque URL and fields returned by the reservation authorize the transfer. Send
+ * the `ticket` form field unchanged, followed by exactly one file part. Send no application
+ * cookies, personal API token or internal token. The file part must match the exact byte
+ * length and media type of the reservation. The maximum is 25 MiB for an attachment or
+ * intake file and 5 MiB for an avatar or logo. The ticket expires at the original expiry,
+ * at most five minutes after issuance.
+ *
+ * Storage durably claims the ticket before sending one write to its object store. The claim
+ * cannot be reopened, including after an interrupted or uncertain write. Another request with
+ * a consumed ticket does not write any bytes. If the transfer result is uncertain, the caller
+ * can verify through the same reservation's completion or image update. A new transfer needs
+ * a new reservation. Restarting Storage also invalidates outstanding tickets, including when
+ * restarting after a restore. Upload URLs, ticket values and file data are omitted from logs
+ * and traces.
+ *
+ * This transfer alone does not publish an attachment or update the current image.
+ * @summary Consume a temporary upload ticket
+ */
+const receiveUploadTransferInternal = async (receiveUploadTransferInternalBody: ReceiveUploadTransferInternalBody, options?: RequestInit): Promise<receiveUploadTransferInternalResponse> => {
+    const formData = new FormData();
+formData.append(`ticket`, receiveUploadTransferInternalBody.ticket);
+formData.append(`file`, receiveUploadTransferInternalBody.file instanceof Blob ? receiveUploadTransferInternalBody.file : new Blob([receiveUploadTransferInternalBody.file], { type: '*/*' }));
+
+  const res = await fetchFn(getReceiveUploadTransferInternalUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: receiveUploadTransferInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as receiveUploadTransferInternalResponse
+}
+
+
+
 const getStartIntakeAttachmentUploadInternalUrl = (publicationId: string,) => {
 
 
@@ -621,12 +684,13 @@ const getStartIntakeAttachmentUploadInternalUrl = (publicationId: string,) => {
  * The body supplies the trusted allocated ID, expiry and file declaration.
  *
  * Issue one multipart upload capability for the same tenant, publication and allocated
- * ID. Only the first declaration for that binding can be reserved. The staging
- * destination exposed in the signed form is opaque and contains no organization,
- * list or publication identifiers. The capability is valid for at most five minutes
- * and never after the supplied draft expiry. A retry of the same reservation replays
- * the original signed response and expiry. A terminal release already recorded for
- * the allocation prevents issuance.
+ * ID. Only the first declaration for that binding can be reserved. The destination is
+ * opaque and contains no organization, list or publication identifiers. A `ticket` form
+ * field selects the transfer accepted by `receiveUploadTransferInternal`, with one durable
+ * claim for the declared length and media type. The capability is valid for at most five
+ * minutes and never after the supplied draft expiry. A retry of the same reservation
+ * replays the original response and expiry. A terminal release already recorded for the
+ * allocation prevents issuance.
  * @summary Sign an upload previously allocated by task-service
  */
 const startIntakeAttachmentUploadInternal = async (publicationId: string,
@@ -753,8 +817,9 @@ const getStartTaskAttachmentUploadInternalUrl = (taskKey: string,) => {
  * Reserves one upload for the verified editor of the active task. The file-size limit is
  * 26,214,400 bytes (25 MiB). A larger declared size answers `422 attachment.file-too-large`
  * before a URL is issued. The media type must match the registered type of the final file
- * extension, ignoring case. The response authorizes a five-minute multipart POST to a temporary
- * object, restricted to that object, the declared media type and 1 to 26,214,400 file bytes.
+ * extension, ignoring case. The response authorizes a five-minute multipart POST to the opaque
+ * URL returned by the server. A `ticket` form field selects the transfer accepted by
+ * `receiveUploadTransferInternal`, with one durable claim for the declared length and media type.
  * Append all returned form fields unchanged to FormData, then append the file as its final
  * part named `file`. Complete the upload before the expiry instant.
  * Keep the URL and form fields out of logs. While authorization still holds, an equivalent
@@ -951,13 +1016,15 @@ const getSignProfileMediaTransferInternalUrl = (uploadId: ProfileMediaId,) => {
 
 /**
  * The gateway calls only after the owning service allocated this id for the verified actor,
- * scope, declaration and expiry. The signed multipart POST is restricted to one staging key,
- * an exact media type and a size range up to 5,242,880 bytes. The capability expires at the
- * owner's original expiry, at most five minutes after reservation. An authorized repeat for
- * the same reservation and declaration returns the original signed response, never a renewed
- * capability. If there is no signed response and the reserved expiry has passed, the
- * operation refuses to sign it. Do not log the destination or form fields. The issuer is api-gateway with actor
- * user. An avatar uses the account id with no organization scope, while a logo uses the
+ * scope, declaration and expiry. The multipart POST is restricted to one staging key,
+ * the declared media type and at most 5,242,880 bytes. A `ticket` form field selects the
+ * transfer accepted by `receiveUploadTransferInternal`, with one durable claim for the exact
+ * declared length and media type. The capability expires at the owner's original expiry,
+ * at most five minutes after reservation. An authorized repeat for the same reservation and
+ * declaration returns the original response with the same expiry. If there is no issued
+ * response and the reserved expiry has passed, the operation refuses to issue the transfer.
+ * Do not log the destination or form fields. The issuer is api-gateway with actor user.
+ * An avatar uses the account id with no organization scope, while a logo uses the
  * organization in the token and the id of the verified uploader.
  * @summary Sign a reserved profile image transfer
  */
@@ -1316,8 +1383,38 @@ const resolveAttachmentSearchProjectionsInternal = async (resolveAttachmentSearc
 
 
 
-return { startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl, listBillingAttachmentUsageInternal, getListBillingAttachmentUsageInternalUrl, listAttachmentSearchProjectionsInternal, getListAttachmentSearchProjectionsInternalUrl, resolveAttachmentSearchProjectionsInternal, getResolveAttachmentSearchProjectionsInternalUrl };
+return { receiveUploadTransferInternal, getReceiveUploadTransferInternalUrl, startIntakeAttachmentUploadInternal, getStartIntakeAttachmentUploadInternalUrl, completeIntakeAttachmentUploadInternal, getCompleteIntakeAttachmentUploadInternalUrl, listTaskAttachmentsInternal, getListTaskAttachmentsInternalUrl, startTaskAttachmentUploadInternal, getStartTaskAttachmentUploadInternalUrl, getTaskAttachmentInternal, getGetTaskAttachmentInternalUrl, deleteTaskAttachmentInternal, getDeleteTaskAttachmentInternalUrl, completeTaskAttachmentUploadInternal, getCompleteTaskAttachmentUploadInternalUrl, getTaskAttachmentDownloadInternal, getGetTaskAttachmentDownloadInternalUrl, signProfileMediaTransferInternal, getSignProfileMediaTransferInternalUrl, prepareProfileMediaInternal, getPrepareProfileMediaInternalUrl, getAvatarImageInternal, getGetAvatarImageInternalUrl, getOrganizationLogoImageInternal, getGetOrganizationLogoImageInternalUrl, listLargestAttachmentsInternal, getListLargestAttachmentsInternalUrl, listBillingAttachmentUsageInternal, getListBillingAttachmentUsageInternalUrl, listAttachmentSearchProjectionsInternal, getListAttachmentSearchProjectionsInternalUrl, resolveAttachmentSearchProjectionsInternal, getResolveAttachmentSearchProjectionsInternalUrl };
 };
+
+export type receiveUploadTransferInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type receiveUploadTransferInternalResponse400 = {
+  data: Problem
+  status: 400
+}
+
+export type receiveUploadTransferInternalResponse409 = {
+  data: Problem
+  status: 409
+}
+
+export type receiveUploadTransferInternalResponse503 = {
+  data: Problem
+  status: 503
+}
+
+export type receiveUploadTransferInternalResponseSuccess = (receiveUploadTransferInternalResponse204) & {
+  headers: Headers;
+};
+export type receiveUploadTransferInternalResponseError = (receiveUploadTransferInternalResponse400 | receiveUploadTransferInternalResponse409 | receiveUploadTransferInternalResponse503) & {
+  headers: Headers;
+};
+
+export type receiveUploadTransferInternalResponse = (receiveUploadTransferInternalResponseSuccess | receiveUploadTransferInternalResponseError)
+
 
 export type startIntakeAttachmentUploadInternalResponse201 = {
   data: AttachmentUpload

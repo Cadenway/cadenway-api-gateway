@@ -54,6 +54,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ],
   ['rate-limit.exceeded', 'Trop de requêtes : réessayez dans un instant.'],
   ['organization.not-selected', 'Choisissez une organisation pour continuer.'],
+  ['organization.context-changed', 'L’organisation active a changé.'],
   ['organization.role-forbidden', 'Votre rôle ne permet pas cette action.'],
   ['organization.seat-quota-exceeded', 'La limite de sièges du forfait est atteinte.'],
   ['organization.not-found', 'Organisation introuvable.'],
@@ -92,6 +93,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['auth.reset-link-expired', 'Ce lien a expiré'],
   ['auth.password-incorrect', 'Mot de passe incorrect.'],
   ['auth.reauthentication-required', 'Confirmez votre identité pour continuer.'],
+  ['auth.federated-sign-in-refused', 'La connexion via ce fournisseur a échoué.'],
   ['auth.email-unchanged', 'C’est déjà votre adresse actuelle : saisissez la nouvelle.'],
   [
     'account.organization-owner',
@@ -228,6 +230,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['watcher.recipient-invalid', 'Ce destinataire est indisponible.'],
   ['watcher.limit-reached', 'La limite des abonnements est atteinte.'],
   ['trash-entry.not-found', 'Cet élément n’est plus dans la corbeille.'],
+  ['trash.tree-too-large', 'L’arborescence contient trop de tâches pour être mise à la corbeille.'],
   ['notification.not-found', 'Notification introuvable.'],
   ['reminder.not-found', 'Rappel introuvable.'],
   ['reminder.already-completed', 'Ce rappel est déjà terminé.'],

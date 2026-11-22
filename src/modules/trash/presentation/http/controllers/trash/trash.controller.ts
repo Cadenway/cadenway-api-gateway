@@ -66,7 +66,7 @@ const TRASH_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   403: ['access.role-insufficient'],
   404: ['task.not-found', 'task.trashed', 'organization.not-found'],
-  409: ['task.archived'],
+  409: ['task.archived', 'trash.tree-too-large'],
   412: ['request.version-mismatch'],
 };
 
@@ -290,6 +290,7 @@ export class TrashController {
     operationId: 'trashTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async trashTask(
     @Param(new ZodValidationPipe(TrashTaskParams)) params: z.output<typeof TrashTaskParams>,
@@ -320,6 +321,7 @@ export class TrashController {
     operationId: 'listTrash',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTrash(
     @Query(new ZodValidationPipe(ListTrashQueryParams))
@@ -349,6 +351,7 @@ export class TrashController {
     operationId: 'restoreTrashEntry',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async restoreTrashEntry(
     @Param(new ZodValidationPipe(RestoreTrashEntryParams))
@@ -383,6 +386,7 @@ export class TrashController {
     operationId: 'purgeTrashEntry',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async purgeTrashEntry(
     @Param(new ZodValidationPipe(PurgeTrashEntryParams))
@@ -406,6 +410,7 @@ export class TrashController {
     operationId: 'emptyTrash',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async emptyTrash(
     @RequiredBody(EMPTY_TRASH_BODY) body: z.output<typeof EMPTY_TRASH_BODY>,

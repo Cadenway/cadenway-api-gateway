@@ -234,6 +234,36 @@ function problemCodes(spec: PublicSpec, pointer: string): readonly string[] {
 }
 
 /**
+ * Detects the optional organization precondition in the installed public spec.
+ *
+ * @param spec - Published contract containing the parameter or its local reference.
+ * @param parameters - Path-level or operation-level parameters.
+ * @returns Whether the parameters declare If-Organization-Match.
+ */
+function declaresOrganizationPrecondition(spec: PublicSpec, parameters: unknown): boolean {
+  if (!Array.isArray(parameters)) return false;
+  return parameters.some((parameter: unknown) => {
+    if (!isNode(parameter)) return false;
+    const reference: unknown = parameter.$ref;
+    const definition =
+      typeof reference === 'string' && reference.startsWith('#/')
+        ? resolveNode(spec, reference.slice(1)).node
+        : parameter;
+    if (
+      definition.in !== 'header' ||
+      typeof definition.name !== 'string' ||
+      definition.name.toLowerCase() !== 'if-organization-match'
+    ) {
+      return false;
+    }
+    if (definition.required === true) {
+      throw new Error(`${spec.name} declared a required If-Organization-Match header.`);
+    }
+    return true;
+  });
+}
+
+/**
  * Function contractOperations
  *
  * @description
@@ -269,6 +299,9 @@ function contractOperations(): readonly ContractOperation[] {
             ? [...problemCodes(spec, forbiddenPointer), ...describedCodes(spec, forbiddenPointer)]
             : [];
         const bodylessPost = BODYLESS_POSTS.has(operationId);
+        const organizationPrecondition =
+          declaresOrganizationPrecondition(spec, item.parameters) ||
+          declaresOrganizationPrecondition(spec, operation.parameters);
         if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
           throw new Error(`${operationId} no longer has a bodyless POST contract.`);
         }
@@ -279,6 +312,7 @@ function contractOperations(): readonly ContractOperation[] {
             security: security as OperationSecurity['security'],
             organization: forbidden.includes('organization.not-selected'),
             ...(bodylessPost ? { allowBodylessPost: true } : {}),
+            ...(organizationPrecondition ? { organizationPrecondition: true } : {}),
           },
         });
       }
@@ -295,7 +329,10 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(230);
+    expect(operations).toHaveLength(237);
+    expect(
+      operations.filter((operation) => operation.security.organizationPrecondition),
+    ).toHaveLength(66);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

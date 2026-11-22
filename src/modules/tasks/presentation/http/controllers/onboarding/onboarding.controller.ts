@@ -108,6 +108,7 @@ export class OnboardingController {
     operationId: 'updateOnboarding',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Req() request: Request,
@@ -137,6 +138,7 @@ export class OnboardingController {
     operationId: 'updateOnboardingChecklist',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateChecklist(
     @Req() request: Request,
@@ -168,6 +170,7 @@ export class OnboardingController {
     operationId: 'finishOnboarding',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async finish(
     @Req() request: Request,

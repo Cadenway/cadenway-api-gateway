@@ -79,6 +79,9 @@ export interface OperationSecurity {
    */
   readonly organization: boolean;
 
+  /** Checks an optional If-Organization-Match against the verified organization. */
+  readonly organizationPrecondition?: true;
+
   /** Allows a POST with no request body in its contract to omit Content-Type. */
   readonly allowBodylessPost?: true;
   // #endregion

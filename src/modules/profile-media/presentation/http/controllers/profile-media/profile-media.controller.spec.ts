@@ -135,15 +135,59 @@ describe('profile media HTTP routes', () => {
       .put('/v1/organization/logo')
       .set('Cookie', orgSession)
       .set('Origin', ALLOWED_ORIGIN)
+      .set('If-Organization-Match', ATELIER_NORD.id)
+      .set('If-Match', '"4"')
       .send({ uploadId });
     expect(updated.status).toBe(204);
     expect(updated.headers.etag).toBe('"5"');
+    expect(app.organization.setOrganizationLogo).toHaveBeenCalledWith(uploadId, '"4"');
     const removed = await request(app.server)
       .delete('/v1/organization/logo')
       .set('Cookie', orgSession)
       .set('Origin', ALLOWED_ORIGIN);
     expect(removed.status).toBe(204);
     expect(removed.headers.etag).toBe('"6"');
+  });
+
+  it('refuses stale organization context on every logo write before Organization or Storage', async () => {
+    const staleOrganization = '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b99';
+    const organizationAndStorageCalls = [
+      app.organization.reserveOrganizationLogoUpload,
+      app.organization.getOrganizationLogoUploadState,
+      app.organization.setOrganizationLogo,
+      app.organization.deleteOrganizationLogo,
+      storage.signProfileMediaTransfer,
+      storage.prepareProfileMedia,
+    ];
+    const before = organizationAndStorageCalls.map((mock) => mock.mock.calls.length);
+
+    const started = await request(app.server)
+      .post('/v1/organization/logo/uploads')
+      .set('Cookie', orgSession)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('If-Organization-Match', staleOrganization)
+      .send({ contentType: 'image/svg+xml', sizeBytes: 100 });
+    const updated = await request(app.server)
+      .put('/v1/organization/logo')
+      .set('Cookie', orgSession)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('If-Organization-Match', staleOrganization)
+      .set('If-Match', '"4"')
+      .send({ uploadId });
+    const removed = await request(app.server)
+      .delete('/v1/organization/logo')
+      .set('Cookie', orgSession)
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('If-Organization-Match', staleOrganization)
+      .set('If-Match', '"5"');
+
+    for (const response of [started, updated, removed]) {
+      expect(response.status).toBe(412);
+      expect(response.body as unknown).toMatchObject({ code: 'organization.context-changed' });
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers.etag).toBeUndefined();
+    }
+    expect(organizationAndStorageCalls.map((mock) => mock.mock.calls.length)).toEqual(before);
   });
 
   it('checks the live member and current avatar before reading private bytes', async () => {

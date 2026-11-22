@@ -376,6 +376,28 @@ describe('anonymous intake HTTP protections', () => {
     }
   });
 
+  it('relays an upload start quota refusal without exposing usage or a signed capability', async () => {
+    startStorage.mockRejectedValueOnce(
+      new ProblemException({
+        status: 409,
+        code: 'attachment.storage-quota-exceeded',
+        details: { used: 123, limit: 456, plan: 'free' },
+      }),
+    );
+    const response = await request(application.server)
+      .post(`/v1/intake-forms/${key}/attachments`)
+      .set('Intake-Draft-Key', draftKey)
+      .set('Idempotency-Key', 'fixture-quota')
+      .send(declaration);
+
+    expectPublicResponse('post', '/v1/intake-forms/{publicKey}/attachments', response);
+    expect(response.status).toBe(409);
+    expect(response.body as unknown).toMatchObject({ code: 'attachment.storage-quota-exceeded' });
+    expect(response.body as unknown).not.toHaveProperty('details');
+    expect(response.headers.location).toBeUndefined();
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
   it('relays the storage quota refusal without exposing usage to the applicant', async () => {
     completeStorage.mockRejectedValueOnce(
       new ProblemException({
