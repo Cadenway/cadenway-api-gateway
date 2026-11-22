@@ -113,7 +113,7 @@ Comments and participants, watchers and dependencies are served by their respect
   The gateway uses two export slots per process, at most one per organization. Each slot uses up
   to 1 GiB of writable disk while preparing and transferring its file. The download has a
   30-second idle timeout and a two-minute transfer deadline.
-  Preparation has a 120-second budget. Download closes after 30 seconds without progress.
+  Preparation has a 120-second budget.
 - The five authenticated intake operations in `openapi/public/intake.yaml` relay the verified
   organization and actor. Anonymous operations use independent per-address windows for form reads,
   submissions, and attachment mutations. They call Task as the unscoped Gateway system actor.
