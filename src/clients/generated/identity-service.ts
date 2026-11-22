@@ -161,6 +161,17 @@ export interface RealtimeTicketRedemption {
 }
 
 /**
+ * The active membership that authorized the SAML sign-in. Present in every successful
+ * redemption for a SAML session. It can differ from the connection's current
+ * organization membership. Realtime verifies both for the authenticated user and
+ * closes the socket if either membership ceases to grant access.
+ */
+export type RealtimeSessionSamlSourceMembership = {
+  organizationId: string;
+  memberId: string;
+};
+
+/**
  * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
  * ("Membre") or `guest` ("Invité").
  */
@@ -199,6 +210,13 @@ export interface RealtimeSession {
      * @pattern Z$
      */
   sessionExpiresAt: string;
+  /**
+     * The active membership that authorized the SAML sign-in. Present in every successful
+     * redemption for a SAML session. It can differ from the connection's current
+     * organization membership. Realtime verifies both for the authenticated user and
+     * closes the socket if either membership ceases to grant access.
+     */
+  samlSourceMembership?: RealtimeSessionSamlSourceMembership;
 }
 
 /**
@@ -211,6 +229,10 @@ export type Email = string;
  * BCP 47 language tag of the account, used for its emails. `fr` by default.
  */
 export type Language = string;
+
+export interface VerifiedEmail {
+  email: Email;
+}
 
 export interface NotificationRecipient {
   email: Email;
@@ -1406,6 +1428,20 @@ export type FederatedSignInRefusedResponse = Problem;
 export type FederatedAuthorityUnavailableResponse = Problem;
 
 /**
+ * `organization.unavailable` when Identity cannot verify the required membership with
+ * Organization. No success or authorization proof is produced. A temporary failure of
+ * introspection does not invalidate the credential.
+ */
+export type MembershipAuthorityUnavailableResponse = Problem;
+
+/**
+ * `auth.federated-unavailable` when a provider or sign-in authority is unavailable, or
+ * `organization.unavailable` when Identity cannot verify the originating SAML membership.
+ * No receipt, challenge or session can be issued without the required verification.
+ */
+export type SamlAuthorityUnavailableResponse = Problem;
+
+/**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
  */
 export type ProfileMediaReservationConflictResponse = Problem;
@@ -1588,8 +1624,9 @@ export type RealtimeTicketSessionNotFoundResponse = Problem;
 export type RealtimeTicketRedemptionRefusedResponse = Problem;
 
 /**
- * `realtime-ticket.not-found`: no usable ticket was found. There is no detail identifying
- * its state, session, organization or former holder.
+ * `realtime-ticket.not-found`: no usable ticket was found. This includes a SAML ticket
+ * when the caller did not negotiate source membership revalidation. The response gives no
+ * detail about the reason, ticket state, session, organization or former holder.
  */
 export type RealtimeTicketNotFoundResponse = Problem;
 
@@ -1944,8 +1981,9 @@ const getCompleteSamlSignInInternalUrl = () => {
  * issuer, SP audience, destination and recipient, validity window, response and bearer
  * InResponseTo, and the uniqueness of the accepted assertion ID for its validity window.
  * Process bounded XML without resolving external resources. Select the stable linked
- * subject from this verified issuer and assertion. No assertion attribute links accounts
- * by email. Success returns only a receipt; no Cadenway session is created.
+ * subject from this verified issuer and assertion and verify its current membership with
+ * Organization. No assertion attribute links accounts by email. Success returns only a
+ * receipt; no Cadenway session is created.
  * Internal token: actor `anonymous`, no organization.
  * @summary Validate a SAML assertion and issue a continuation receipt
  */
@@ -1980,11 +2018,14 @@ const getFinishFederatedSignInInternalUrl = () => {
 /**
  * Consumes the unexpired receipt once and proves the account through the existing link for
  * the verified provider, issuer and subject. SAML additionally requires an active
- * membership in the organization bound to the flow. A revoked link, disabled account or
+ * membership in the organization bound to the flow, verified with Organization before
+ * issuing a challenge or opening a session. A revoked link, disabled account or
  * now-disallowed method cannot open a session. The receipt preserves the chosen
  * `rememberMe` and never substitutes for Cadenway's applicable two-step challenge.
  * A previously trusted Cadenway device keeps its existing behavior. Any session that opens
- * uses the usual token, lifetime, organization policy and new-device reporting.
+ * uses the usual token, lifetime, organization policy and new-device reporting. An opened
+ * SAML session retains the originating membership as an authorization requirement even
+ * when it acts on a different organization.
  * Internal token: actor `anonymous`, no organization.
  * @summary Redeem a federated receipt using the ordinary session and two-step flow
  */
@@ -2312,6 +2353,8 @@ const getAnswerSignInChallengeWithAuthenticatorAppInternalUrl = () => {
  * `details.remainingAttempts`; the fifth wrong answer in a row of the account, and every
  * answer during the lockout, `429 auth.two-step-locked` with `details.lockedUntil`. A
  * challenge no longer usable answers `422 auth.challenge-expired` and counts nothing.
+ * For a SAML challenge, Identity verifies the current originating membership with
+ * Organization before opening the session.
  * Internal token: actor `anonymous`, no organization.
  * @summary Answer a two-step challenge with a code of the app
  */
@@ -2466,9 +2509,16 @@ const getIntrospectTokenUrl = () => {
  *
  * A token that is unknown, expired, revoked or malformed answers `200` with
  * `active: false`, never an error; so does a personal API token, introspected by
- * `POST /internal/v1/api-tokens/introspect`. An active answer counts as activity: the
- * inactivity period of the session starts again, the one the authentication policy of its
- * current organization sets (12 hours by default and without an organization); a session
+ * `POST /internal/v1/api-tokens/introspect`. For a locally valid session with a selected
+ * organization, Identity verifies the active membership with organization-service. A
+ * confirmed absence or a replacement membership ID yields an active session with no
+ * organization or role. The current role from Organization applies to the policy and
+ * returned context.
+ * If the proof is unavailable the call returns `503 organization.unavailable`.
+ *
+ * An active answer counts as activity: the inactivity period of the session starts again,
+ * the one the authentication policy of its current organization sets (12 hours by default
+ * and without an organization); a session
  * idle for longer is inactive. A current organization withheld for want of two-step
  * verification gives `withheldOrganization` and no organization (see "Withheld
  * organization"); the inactivity of the policy of that organization still applies to the
@@ -2854,8 +2904,8 @@ const getRequestPasswordResetInternalUrl = () => {
  * Issues a reset link (`password-reset-link.issued.v1`, restricted) when a verified account
  * uses the address, and makes the previous link of the account stop working; answers `202`
  * the same way otherwise, an unverified account included, without a difference of time an
- * observer could measure. The link works once, for 30 minutes, from any browser. Throttled
- * per address, account or not, apart from the codes: 45 seconds between two requests and at
+ * observer could measure. The link works once, for 30 minutes, from any browser.
+ * An authenticated password change invalidates any open reset link. Throttled per address, account or not, apart from the codes: 45 seconds between two requests and at
  * most 5 in an hour (`ResetThrottled`). The `client` is the browser that asked, shown in the
  * email. Internal token: actor `anonymous`, no organization.
  * @summary Issue a password reset link
@@ -2891,7 +2941,8 @@ const getInspectPasswordResetLinkInternalUrl = () => {
 /**
  * Returns the address of the account of a usable link, when it expires and how many open
  * sessions the account has, without using the link. A link that expired, was used, was
- * replaced or is unknown, and a malformed token, answer `422 auth.reset-link-expired`.
+ * replaced, was invalidated by a password or address change, or is unknown answers
+ * `422 auth.reset-link-expired`. A malformed token also returns that error.
  * Internal token: actor `anonymous`, no organization.
  * @summary Read the account of a password reset link
  */
@@ -2927,7 +2978,8 @@ const getConfirmPasswordResetInternalUrl = () => {
  * Sets the new password of the account of the link and uses the link up, as
  * `POST /v1/auth/password-reset/confirmation` says. Never opens a session.
  *
- * - The link first: `422 auth.reset-link-expired`. Then the new password:
+ * - The link first: `422 auth.reset-link-expired`, including after an authenticated
+ *   password change. Then the new password:
  *   `422 auth.password-too-short` or `422 auth.password-compromised`, which leave the link
  *   usable.
  * - `closeOtherSessions` (`true` by default) revokes every open session of the account, each
@@ -3090,6 +3142,49 @@ const getNotificationRecipientInternal = async (userId: string, options?: Reques
 
 
 
+const getGetVerifiedEmailInternalUrl = (userId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/verified-email`
+}
+
+/**
+ * Returns the account's current verified email address. A missing account, an unverified
+ * current address or an account scheduled for deletion answers `404 user.not-found`.
+ * A pending email change does not change the result until confirmation.
+ *
+ * Organization is the only caller. Its internal token has issuer `organization-service`,
+ * audience `identity-service` and actor `{ type: 'system', id: 'organization-service' }`,
+ * with no organization, role or scopes. The path must use the authenticated actor's account
+ * ID from the invitation operation. This operation takes no query parameters or body.
+ *
+ * Organization uses the result for the current invitation operation only, refuses the
+ * operation if verification is unavailable and keeps the address out of logs, traces,
+ * problems and public responses. No result is cached. This operation emits no event.
+ * @summary Read the current verified address for invitation authorization
+ */
+const getVerifiedEmailInternal = async (userId: string, options?: RequestInit): Promise<getVerifiedEmailInternalResponse> => {
+
+  const res = await fetchFn(getGetVerifiedEmailInternalUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getVerifiedEmailInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getVerifiedEmailInternalResponse
+}
+
+
+
 const getListUserSessionsInternalUrl = (userId: string,
     params: ListUserSessionsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -3153,7 +3248,8 @@ const getChangePasswordInternalUrl = (userId: string,) => {
  * with the failed sign-ins; `429 auth.account-locked`). For an account without two-step
  * verification, a right current password records a recent authentication of `sessionId`;
  * for an account with it, it records none. Every session stays open, but a pending change of
- * address is dropped, the recent authentication of the other sessions ends with their
+ * address is dropped and any open password reset link is invalidated in the same
+ * transaction. The recent authentication of the other sessions ends with their
  * pending two-step setups and key registrations, the open challenge of the account is voided,
  * and every trusted device of the account is forgotten. Answers the account with
  * the next `version` and its `passwordChangedAt`, and emits `user.password-changed.v1` with
@@ -3287,12 +3383,14 @@ const getScheduleAccountDeletionInternalUrl = (userId: string,) => {
  * is revoked (`session.revoked.v1` each), every personal API token is revoked, every trusted
  * device is forgotten, a pending change of address is dropped, and
  * `user.deletion-scheduled.v1` is emitted. The two-step verification stays. The gateway
- * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. At
- * `deleteAt`, identity-service checks the copy of the memberships again: an account that owns
- * an organization then (one whose creation reached the copy after the scheduling) is not
- * deleted and stays scheduled until it no longer owns one or signs in; otherwise it is
- * deleted and `user.deleted.v1` is emitted. Another user id, or an unknown one, answers
- * `404 user.not-found`; a `sessionId` that is not an open session of the actor,
+ * then clears the session cookie. A sign-in before `deleteAt` cancels the deletion. Once
+ * the deadline is reached, Identity durably claims a deletion attempt and asks
+ * organization-service to reserve the account for that attempt. An account that still owns
+ * an organization stays scheduled until it no longer owns one or signs in. Identity only
+ * deletes the account and emits `user.deleted.v1` after Organization confirms the same
+ * reservation. Identity retries a temporary failure with the same attempt ID. Another user
+ * ID, or an unknown one, answers `404 user.not-found`; a `sessionId` that is not an open
+ * session of the actor answers
  * `404 session.not-found`. Internal token: actor `user`, no organization.
  * @summary Schedule the deletion of a user
  */
@@ -3702,8 +3800,9 @@ const getUpdateAuthenticationPolicyInternalUrl = (params: UpdateAuthenticationPo
 /**
  * Applies a JSON Merge Patch to the authentication policy of the organization of the token,
  * as `PATCH /v1/organization/authentication-policy` says. The checks run in this order: the
- * role of the actor in the copy of the memberships (`403 organization.role-forbidden`, or
- * `404 organization.not-found`), `If-Match` (`412 request.version-mismatch`), when the patch
+ * current role of the actor verified with Organization (`403 organization.role-forbidden`,
+ * `404 organization.not-found` or `503 organization.unavailable`), `If-Match`
+ * (`412 request.version-mismatch`), when the patch
  * requires two-step verification for a role the actor has, the two-step verification of the
  * actor (`409 auth.two-step-not-enabled`), then the recent authentication of `sessionId`
  * (`403 auth.reauthentication-required`; `404 session.not-found` for a session that is not
@@ -3787,12 +3886,23 @@ const getRedeemRealtimeTicketInternalUrl = () => {
  * The realtime gateway checks the socket's Origin before forwarding its ticket. The
  * organization, session, user and active membership come from Identity's records.
  *
- * In one transaction, revalidate the active session, its bound version and organization,
- * current membership and its authentication policy, and consume the unexpired ticket atomically.
+ * Verify the current membership with Organization. Then in one transaction, revalidate
+ * the active session, its bound version and organization, the membership binding and the
+ * authentication policy, and consume the unexpired ticket atomically.
  * At most one concurrent redemption succeeds. A ticket that is absent, expired, already
  * consumed or whose binding no longer authorizes the session answers the same `404`.
  * Neither a success nor a refusal exposes a ticket in logs, traces or events.
  * Do not retry redemption after an ambiguous result. A new handshake needs a fresh ticket.
+ *
+ * A caller sends `Prefer: cadenway-saml-source-membership` to confirm it can revalidate
+ * the origin of a SAML session. Identity refuses to redeem a SAML session's ticket
+ * without this preference, using the same `404 realtime-ticket.not-found` as other
+ * unusable tickets. On success Identity confirms the preference with
+ * `Preference-Applied: cadenway-saml-source-membership` even for a non-SAML session,
+ * which omits the source membership field. Without the preference, non-SAML sessions
+ * retain their existing response with neither the field nor the confirmation header.
+ * Realtime revalidates any source membership alongside the current organization
+ * membership while the connection is active.
  * @summary Redeem a realtime ticket once
  */
 const redeemRealtimeTicketInternal = async (realtimeTicketRedemption: RealtimeTicketRedemption, options?: RequestInit): Promise<redeemRealtimeTicketInternalResponse> => {
@@ -3947,12 +4057,13 @@ const getIntrospectApiTokenUrl = () => {
  * on every request that carries a bearer token, never caches the answer, and gives the request
  * its context from it, as for a session.
  *
- * A token is active when it is known by its hash, neither revoked nor expired, and its user
- * belongs to its organization in the copy of the memberships. A token of a removed member is
- * inactive while the person is not a member, and active again, until revoked or expired, once
- * they join the organization again with a new membership. Any other token,
+ * A token is active when it is known by its hash, neither revoked nor expired, and
+ * organization-service confirms its user's current membership and role. A token of a removed
+ * member is inactive while the person is not a member, and active again, until revoked or
+ * expired, once they join the organization again with a new membership. Any other token,
  * malformed ones and session tokens included, answers `200` with `active: false`, never an
- * error. While the authentication policy of its organization requires two-step verification
+ * error. An unavailable membership proof answers `503 organization.unavailable`.
+ * While the authentication policy of its organization requires two-step verification
  * for the role of its user, who has none, the token stays active but acts on nothing:
  * `withheldOrganization` names the organization and `scopes` is empty (see "Withheld
  * organization"). An active answer records the last use of the token, at most once a
@@ -3981,7 +4092,7 @@ const introspectApiToken = async (apiTokenIntrospectionRequest: ApiTokenIntrospe
 
 
 
-return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, startFederatedSignInInternal, getStartFederatedSignInInternalUrl, completeOAuthSignInInternal, getCompleteOAuthSignInInternalUrl, completeSamlSignInInternal, getCompleteSamlSignInInternalUrl, finishFederatedSignInInternal, getFinishFederatedSignInInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, inspectSignInChallengeInternal, getInspectSignInChallengeInternalUrl, answerSignInChallengeWithAuthenticatorAppInternal, getAnswerSignInChallengeWithAuthenticatorAppInternalUrl, answerSignInChallengeWithBackupCodeInternal, getAnswerSignInChallengeWithBackupCodeInternalUrl, getSignInChallengeSecurityKeyOptionsInternal, getGetSignInChallengeSecurityKeyOptionsInternalUrl, answerSignInChallengeWithSecurityKeyInternal, getAnswerSignInChallengeWithSecurityKeyInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, reserveAvatarUploadInternal, getReserveAvatarUploadInternalUrl, getAvatarUploadStateInternal, getGetAvatarUploadStateInternalUrl, setAvatarInternal, getSetAvatarInternalUrl, deleteAvatarInternal, getDeleteAvatarInternalUrl, getAvatarReferenceInternal, getGetAvatarReferenceInternalUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, getNotificationRecipientInternal, getGetNotificationRecipientInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, getTwoStepVerificationInternal, getGetTwoStepVerificationInternalUrl, disableTwoStepVerificationInternal, getDisableTwoStepVerificationInternalUrl, startAuthenticatorAppSetupInternal, getStartAuthenticatorAppSetupInternalUrl, confirmAuthenticatorAppSetupInternal, getConfirmAuthenticatorAppSetupInternalUrl, regenerateBackupCodesInternal, getRegenerateBackupCodesInternalUrl, startSecurityKeyRegistrationInternal, getStartSecurityKeyRegistrationInternalUrl, addSecurityKeyInternal, getAddSecurityKeyInternalUrl, removeSecurityKeyInternal, getRemoveSecurityKeyInternalUrl, getAuthenticationPolicyInternal, getGetAuthenticationPolicyInternalUrl, updateAuthenticationPolicyInternal, getUpdateAuthenticationPolicyInternalUrl, issueRealtimeTicketInternal, getIssueRealtimeTicketInternalUrl, redeemRealtimeTicketInternal, getRedeemRealtimeTicketInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
+return { discoverSignInMethodsInternal, getDiscoverSignInMethodsInternalUrl, startFederatedSignInInternal, getStartFederatedSignInInternalUrl, completeOAuthSignInInternal, getCompleteOAuthSignInInternalUrl, completeSamlSignInInternal, getCompleteSamlSignInInternalUrl, finishFederatedSignInInternal, getFinishFederatedSignInInternalUrl, signUpInternal, getSignUpInternalUrl, resendSignUpCodeInternal, getResendSignUpCodeInternalUrl, verifySignUpInternal, getVerifySignUpInternalUrl, signInWithPasswordInternal, getSignInWithPasswordInternalUrl, requestSignInCodeInternal, getRequestSignInCodeInternalUrl, signInWithCodeInternal, getSignInWithCodeInternalUrl, inspectSignInChallengeInternal, getInspectSignInChallengeInternalUrl, answerSignInChallengeWithAuthenticatorAppInternal, getAnswerSignInChallengeWithAuthenticatorAppInternalUrl, answerSignInChallengeWithBackupCodeInternal, getAnswerSignInChallengeWithBackupCodeInternalUrl, getSignInChallengeSecurityKeyOptionsInternal, getGetSignInChallengeSecurityKeyOptionsInternalUrl, answerSignInChallengeWithSecurityKeyInternal, getAnswerSignInChallengeWithSecurityKeyInternalUrl, introspectToken, getIntrospectTokenUrl, revokeSession, getRevokeSessionUrl, reserveAvatarUploadInternal, getReserveAvatarUploadInternalUrl, getAvatarUploadStateInternal, getGetAvatarUploadStateInternalUrl, setAvatarInternal, getSetAvatarInternalUrl, deleteAvatarInternal, getDeleteAvatarInternalUrl, getAvatarReferenceInternal, getGetAvatarReferenceInternalUrl, getUser, getGetUserUrl, updateUser, getUpdateUserUrl, switchSessionOrganization, getSwitchSessionOrganizationUrl, requestPasswordResetInternal, getRequestPasswordResetInternalUrl, inspectPasswordResetLinkInternal, getInspectPasswordResetLinkInternalUrl, confirmPasswordResetInternal, getConfirmPasswordResetInternalUrl, reauthenticateInternal, getReauthenticateInternalUrl, revokeOtherSessionsInternal, getRevokeOtherSessionsInternalUrl, getNotificationRecipientInternal, getGetNotificationRecipientInternalUrl, getVerifiedEmailInternal, getGetVerifiedEmailInternalUrl, listUserSessionsInternal, getListUserSessionsInternalUrl, changePasswordInternal, getChangePasswordInternalUrl, requestEmailChangeInternal, getRequestEmailChangeInternalUrl, confirmEmailChangeInternal, getConfirmEmailChangeInternalUrl, scheduleAccountDeletionInternal, getScheduleAccountDeletionInternalUrl, getTwoStepVerificationInternal, getGetTwoStepVerificationInternalUrl, disableTwoStepVerificationInternal, getDisableTwoStepVerificationInternalUrl, startAuthenticatorAppSetupInternal, getStartAuthenticatorAppSetupInternalUrl, confirmAuthenticatorAppSetupInternal, getConfirmAuthenticatorAppSetupInternalUrl, regenerateBackupCodesInternal, getRegenerateBackupCodesInternalUrl, startSecurityKeyRegistrationInternal, getStartSecurityKeyRegistrationInternalUrl, addSecurityKeyInternal, getAddSecurityKeyInternalUrl, removeSecurityKeyInternal, getRemoveSecurityKeyInternalUrl, getAuthenticationPolicyInternal, getGetAuthenticationPolicyInternalUrl, updateAuthenticationPolicyInternal, getUpdateAuthenticationPolicyInternalUrl, issueRealtimeTicketInternal, getIssueRealtimeTicketInternalUrl, redeemRealtimeTicketInternal, getRedeemRealtimeTicketInternalUrl, createApiTokenInternal, getCreateApiTokenInternalUrl, listApiTokensInternal, getListApiTokensInternalUrl, revokeApiTokenInternal, getRevokeApiTokenInternalUrl, introspectApiToken, getIntrospectApiTokenUrl };
 };
 
 export type discoverSignInMethodsInternalResponse200 = {
@@ -4120,7 +4231,7 @@ export type completeSamlSignInInternalResponse422 = {
 }
 
 export type completeSamlSignInInternalResponse503 = {
-  data: FederatedAuthorityUnavailableResponse
+  data: SamlAuthorityUnavailableResponse
   status: 503
 }
 
@@ -4165,7 +4276,7 @@ export type finishFederatedSignInInternalResponse422 = {
 }
 
 export type finishFederatedSignInInternalResponse503 = {
-  data: FederatedAuthorityUnavailableResponse
+  data: SamlAuthorityUnavailableResponse
   status: 503
 }
 
@@ -4479,10 +4590,15 @@ export type answerSignInChallengeWithAuthenticatorAppInternalResponse429 = {
   status: 429
 }
 
+export type answerSignInChallengeWithAuthenticatorAppInternalResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type answerSignInChallengeWithAuthenticatorAppInternalResponseSuccess = (answerSignInChallengeWithAuthenticatorAppInternalResponse200) & {
   headers: Headers;
 };
-export type answerSignInChallengeWithAuthenticatorAppInternalResponseError = (answerSignInChallengeWithAuthenticatorAppInternalResponse400 | answerSignInChallengeWithAuthenticatorAppInternalResponse401 | answerSignInChallengeWithAuthenticatorAppInternalResponse403 | answerSignInChallengeWithAuthenticatorAppInternalResponse422 | answerSignInChallengeWithAuthenticatorAppInternalResponse429) & {
+export type answerSignInChallengeWithAuthenticatorAppInternalResponseError = (answerSignInChallengeWithAuthenticatorAppInternalResponse400 | answerSignInChallengeWithAuthenticatorAppInternalResponse401 | answerSignInChallengeWithAuthenticatorAppInternalResponse403 | answerSignInChallengeWithAuthenticatorAppInternalResponse422 | answerSignInChallengeWithAuthenticatorAppInternalResponse429 | answerSignInChallengeWithAuthenticatorAppInternalResponse503) & {
   headers: Headers;
 };
 
@@ -4519,10 +4635,15 @@ export type answerSignInChallengeWithBackupCodeInternalResponse429 = {
   status: 429
 }
 
+export type answerSignInChallengeWithBackupCodeInternalResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type answerSignInChallengeWithBackupCodeInternalResponseSuccess = (answerSignInChallengeWithBackupCodeInternalResponse200) & {
   headers: Headers;
 };
-export type answerSignInChallengeWithBackupCodeInternalResponseError = (answerSignInChallengeWithBackupCodeInternalResponse400 | answerSignInChallengeWithBackupCodeInternalResponse401 | answerSignInChallengeWithBackupCodeInternalResponse403 | answerSignInChallengeWithBackupCodeInternalResponse422 | answerSignInChallengeWithBackupCodeInternalResponse429) & {
+export type answerSignInChallengeWithBackupCodeInternalResponseError = (answerSignInChallengeWithBackupCodeInternalResponse400 | answerSignInChallengeWithBackupCodeInternalResponse401 | answerSignInChallengeWithBackupCodeInternalResponse403 | answerSignInChallengeWithBackupCodeInternalResponse422 | answerSignInChallengeWithBackupCodeInternalResponse429 | answerSignInChallengeWithBackupCodeInternalResponse503) & {
   headers: Headers;
 };
 
@@ -4599,10 +4720,15 @@ export type answerSignInChallengeWithSecurityKeyInternalResponse429 = {
   status: 429
 }
 
+export type answerSignInChallengeWithSecurityKeyInternalResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type answerSignInChallengeWithSecurityKeyInternalResponseSuccess = (answerSignInChallengeWithSecurityKeyInternalResponse200) & {
   headers: Headers;
 };
-export type answerSignInChallengeWithSecurityKeyInternalResponseError = (answerSignInChallengeWithSecurityKeyInternalResponse400 | answerSignInChallengeWithSecurityKeyInternalResponse401 | answerSignInChallengeWithSecurityKeyInternalResponse403 | answerSignInChallengeWithSecurityKeyInternalResponse422 | answerSignInChallengeWithSecurityKeyInternalResponse429) & {
+export type answerSignInChallengeWithSecurityKeyInternalResponseError = (answerSignInChallengeWithSecurityKeyInternalResponse400 | answerSignInChallengeWithSecurityKeyInternalResponse401 | answerSignInChallengeWithSecurityKeyInternalResponse403 | answerSignInChallengeWithSecurityKeyInternalResponse422 | answerSignInChallengeWithSecurityKeyInternalResponse429 | answerSignInChallengeWithSecurityKeyInternalResponse503) & {
   headers: Headers;
 };
 
@@ -4629,10 +4755,15 @@ export type introspectTokenResponse403 = {
   status: 403
 }
 
+export type introspectTokenResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type introspectTokenResponseSuccess = (introspectTokenResponse200) & {
   headers: Headers;
 };
-export type introspectTokenResponseError = (introspectTokenResponse400 | introspectTokenResponse401 | introspectTokenResponse403) & {
+export type introspectTokenResponseError = (introspectTokenResponse400 | introspectTokenResponse401 | introspectTokenResponse403 | introspectTokenResponse503) & {
   headers: Headers;
 };
 
@@ -5217,6 +5348,46 @@ export type getNotificationRecipientInternalResponseError = (getNotificationReci
 };
 
 export type getNotificationRecipientInternalResponse = (getNotificationRecipientInternalResponseSuccess | getNotificationRecipientInternalResponseError)
+
+
+export type getVerifiedEmailInternalResponse200 = {
+  data: VerifiedEmail
+  status: 200
+}
+
+export type getVerifiedEmailInternalResponse400 = {
+  data: Problem
+  status: 400
+}
+
+export type getVerifiedEmailInternalResponse401 = {
+  data: Problem
+  status: 401
+}
+
+export type getVerifiedEmailInternalResponse403 = {
+  data: Problem
+  status: 403
+}
+
+export type getVerifiedEmailInternalResponse404 = {
+  data: Problem
+  status: 404
+}
+
+export type getVerifiedEmailInternalResponse503 = {
+  data: Problem
+  status: 503
+}
+
+export type getVerifiedEmailInternalResponseSuccess = (getVerifiedEmailInternalResponse200) & {
+  headers: Headers;
+};
+export type getVerifiedEmailInternalResponseError = (getVerifiedEmailInternalResponse400 | getVerifiedEmailInternalResponse401 | getVerifiedEmailInternalResponse403 | getVerifiedEmailInternalResponse404 | getVerifiedEmailInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getVerifiedEmailInternalResponse = (getVerifiedEmailInternalResponseSuccess | getVerifiedEmailInternalResponseError)
 
 
 export type listUserSessionsInternalResponse200 = {
@@ -5814,10 +5985,15 @@ export type updateAuthenticationPolicyInternalResponse412 = {
   status: 412
 }
 
+export type updateAuthenticationPolicyInternalResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type updateAuthenticationPolicyInternalResponseSuccess = (updateAuthenticationPolicyInternalResponse200) & {
   headers: Headers;
 };
-export type updateAuthenticationPolicyInternalResponseError = (updateAuthenticationPolicyInternalResponse400 | updateAuthenticationPolicyInternalResponse401 | updateAuthenticationPolicyInternalResponse403 | updateAuthenticationPolicyInternalResponse404 | updateAuthenticationPolicyInternalResponse409 | updateAuthenticationPolicyInternalResponse412) & {
+export type updateAuthenticationPolicyInternalResponseError = (updateAuthenticationPolicyInternalResponse400 | updateAuthenticationPolicyInternalResponse401 | updateAuthenticationPolicyInternalResponse403 | updateAuthenticationPolicyInternalResponse404 | updateAuthenticationPolicyInternalResponse409 | updateAuthenticationPolicyInternalResponse412 | updateAuthenticationPolicyInternalResponse503) & {
   headers: Headers;
 };
 
@@ -5884,10 +6060,15 @@ export type redeemRealtimeTicketInternalResponse404 = {
   status: 404
 }
 
+export type redeemRealtimeTicketInternalResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type redeemRealtimeTicketInternalResponseSuccess = (redeemRealtimeTicketInternalResponse200) & {
   headers: Headers;
 };
-export type redeemRealtimeTicketInternalResponseError = (redeemRealtimeTicketInternalResponse400 | redeemRealtimeTicketInternalResponse401 | redeemRealtimeTicketInternalResponse403 | redeemRealtimeTicketInternalResponse404) & {
+export type redeemRealtimeTicketInternalResponseError = (redeemRealtimeTicketInternalResponse400 | redeemRealtimeTicketInternalResponse401 | redeemRealtimeTicketInternalResponse403 | redeemRealtimeTicketInternalResponse404 | redeemRealtimeTicketInternalResponse503) & {
   headers: Headers;
 };
 
@@ -6014,10 +6195,15 @@ export type introspectApiTokenResponse403 = {
   status: 403
 }
 
+export type introspectApiTokenResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type introspectApiTokenResponseSuccess = (introspectApiTokenResponse200) & {
   headers: Headers;
 };
-export type introspectApiTokenResponseError = (introspectApiTokenResponse400 | introspectApiTokenResponse401 | introspectApiTokenResponse403) & {
+export type introspectApiTokenResponseError = (introspectApiTokenResponse400 | introspectApiTokenResponse401 | introspectApiTokenResponse403 | introspectApiTokenResponse503) & {
   headers: Headers;
 };
 

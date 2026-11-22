@@ -4248,8 +4248,11 @@ export type IntakeAttachmentSubmissionConflictResponse = Problem;
 /**
  * `attachment.file-too-large` above 26,214,400 bytes,
  * `intake-form.attachments-disabled` if the form disallows attachments,
- * `intake-form.attachment-limit-exceeded` if the draft holds five active
- * reservations, or `idempotency.key-reused` on a mismatched declaration for this key.
+ * `intake-form.attachment-limit-exceeded` if the draft holds five active reservations
+ * or a new draft would exceed the publication's limit of 10,000 distinct attachment
+ * drafts. Only a new publication key starts a new allowance. Releasing a reservation
+ * does not restore this allowance. Existing drafts keep their original lifetime and
+ * replay rules. `idempotency.key-reused` on a mismatched declaration for this key.
  */
 export type IntakeAttachmentAllocationRefusedResponse = Problem;
 
@@ -4554,7 +4557,8 @@ export type RoleForbiddenResponse = Problem;
 
 /**
  * - `space.visibility-forbidden`: only the owner of the space, and the owner and the admins
- *   of the organization, change its visibility;
+ *   of the organization, change its visibility. The space also stays private if widening
+ *   visibility could expose a template from an unavailable or restricted source list.
  * - `access.role-insufficient`: the actor sees the space without `edit` on it;
  *   `details.role` is their role there (`null` for a space they see only through some of its
  *   lists), `details.requiredRole` is `edit`;
@@ -4737,6 +4741,13 @@ export type OwnerUnchangeableResponse = Problem;
  * `task.archived`: the task, or the parent a patch names, is archived; `details.key` names it.
  */
 export type TaskArchivedResponse = Problem;
+
+/**
+ * `task.archived` (the root is archived, named by `details.key`) or
+ * `trash.tree-too-large` (the tree or the cumulative lock budget exceeds `details.limit`,
+ * currently 1000 tasks).
+ */
+export type TaskTrashConflictResponse = Problem;
 
 /**
  * `task.archived` (`details.key`): the task that would hold the new subtask or checklist item
@@ -6058,7 +6069,8 @@ const getUpdateSpaceInternalUrl = (spaceId: string,) => {
  * Applies a JSON Merge Patch to a space the actor has `edit` on, as
  * `PATCH /v1/spaces/{spaceId}` says: `403 access.role-insufficient` without it,
  * `403 space.visibility-forbidden` for a change of the visibility by an actor who does not
- * manage the space, `409 space.prefix-taken`, `412 request.version-mismatch`,
+ * manage the space or when widening a private space could expose a template from an
+ * unavailable or restricted source list, `409 space.prefix-taken`, `412 request.version-mismatch`,
  * `422 space.status-required`. Emits `space.updated.v1` when something changed. Internal
  * token: actor `user`, organization required.
  * @summary Change a space
@@ -7016,10 +7028,12 @@ const getApplyGitTaskStatusActionInternalUrl = (taskKey: string,) => {
  * `task-service` audience and organization. Integration verifies the original provider
  * delivery, resolves its current active repository mapping and status rule, and binds the
  * request to the normalized delivery, verified provider and mapped space before calling Task.
- * The mapping carries the user who authorized it. Task verifies the task, list and space are
+ * The mapping carries the user who authorized it. Task reads that user's current membership
+ * from Organization before acting or returning a replay and verifies the task, list and space are
  * active in the signed organization, rechecks that the task is currently in that mapped space
- * and that the authorizing user still has edit permission on it, in the transaction that
- * locks and changes the task. The mapping author supplies permission evidence only.
+ * and that the matching local membership still gives the authorizing user edit permission on
+ * it, in the transaction that locks and changes the task. The mapping author supplies
+ * permission evidence only.
  *
  * The default rules map a branch or first commit to `progress`, an opened PR or MR to
  * `review` (for example, PR #214 for CAD-482), and a merged PR or MR to `done`.
@@ -7074,9 +7088,11 @@ const getApplyAutomationTaskActionInternalUrl = (taskKey: string,) => {
  * recorded at rule creation. It ignores `task.status-changed.v1` events from `automation`
  * actors.
  *
- * In the tenant transaction, Task locks the target, verifies that the task and its parents
- * are active, and rechecks the rule author's current membership and effective edit permission
- * on the task. The rule ID remains the actor for all activity and events. Assignment also
+ * Before applying or replaying an action, Task reads the current membership of its rule
+ * author and any assignee from Organization. In the tenant transaction, Task locks the target,
+ * verifies that the task and its parents are active, and checks that the matching local
+ * membership still gives the author effective edit permission on the task. The rule ID remains
+ * the actor for all activity and events. Assignment also
  * applies Task's current recipient eligibility and assignee limit. An unchanged priority or
  * an existing eligible assignee yields `no_op`. A change commits the command receipt, write,
  * activity and usual task outbox entries together.
@@ -7123,9 +7139,10 @@ const getApplyAutomationTaskCommentInternalUrl = (taskKey: string,) => {
  * `task.status-changed.v1` event, ignores automation-authored status events, and selects
  * the action and recorded author of its current enabled rule in that organization.
  *
- * Task uses the signed organization only. It checks current rule-author membership and
- * effective `edit` access on the active task and its active parent scope before any
- * receipt lookup or replay. The write transaction locks and rechecks those conditions.
+ * Task uses the signed organization only. It reads the rule author's current membership
+ * from Organization and checks the matching local membership and effective `edit` access
+ * on the active task and its active parent scope before receipt lookup or replay. The
+ * write transaction locks and rechecks those local conditions.
  * The signed rule is the author of the comment, its activity and its event. On ordinary
  * comment reads, it has `actor.type: automation`, `mentions: []` and
  * `replyToCommentId: null`. The rule author's account ID serves only as authorization
@@ -7171,9 +7188,10 @@ const getAuthorizeAutomationNotificationInternalUrl = (taskKey: string,) => {
  * Requires signed issuer `notification-service`, audience `task-service`, organization
  * and actor `{type: system, id: notification-service}`. The token supplies the tenant.
  * Notification calls for the exact task key, rule author and recipient in its validated
- * automation command. In one current tenant snapshot, Task checks that the task and its
- * parent scope are active, both accounts are current members, the author has effective
- * `edit` access and the recipient can read the task at its current placement.
+ * automation command. Task reads current membership for both accounts from Organization.
+ * In one current tenant snapshot, Task checks that the task and its parent scope are active,
+ * both memberships match the local state, the author has effective `edit` access and the
+ * recipient can read the task at its current placement.
  *
  * Notification requests a fresh decision on each attempt before creating a notification
  * or acknowledging a replay. A denial or unavailable decision authorizes no delivery.
@@ -7368,8 +7386,9 @@ const getDuplicateTaskInternalUrl = (taskKey: string,) => {
  * dependencies, recurrence, files, time or approvals. A copy in done gets its own completedAt.
  * Requires edit on the list; an archived task refuses changes. If-Match checks the source
  * task version. An optional Idempotency-Key replays the original 201 and Location for 24
- * hours; changed payload and concurrent replay use the standard idempotency problems. Emits
- * the ordinary task creation and assignment facts in the creation transaction.
+ * hours. Replaying requires current visibility of the original list and both tasks.
+ * Changed payload and concurrent replay use the standard idempotency problems. Emits the
+ * ordinary task creation and assignment facts in the creation transaction.
  * Internal token: issuer api-gateway, actor user and organization required.
  * @summary Duplicate a task
  */
@@ -9502,9 +9521,11 @@ const getTrashTaskInternalUrl = (taskKey: string,) => {
 /**
  * Moves a task and its subtasks at every level to the trash as one entry, as
  * `POST /v1/tasks/{taskKey}/trash` says: `edit` on its list (`403 access.role-insufficient`),
- * `409 task.archived`, `404 task.trashed` for a task in the trash already. Emits
- * `task.trashed.v1` for each task of the entry, the root first. Internal token: actor `user`,
- * organization required.
+ * `409 task.archived`, `404 task.trashed` for a task in the trash already. Trees of more
+ * than 1000 tasks, including archived descendants, return `409 trash.tree-too-large`
+ * before moving any task. Concurrent changes can also exhaust the cumulative 1000-task
+ * lock budget. Emits `task.trashed.v1` for each task of the entry, the root first. Internal
+ * token: actor `user`, organization required.
  * @summary Delete a task with its subtasks
  */
 const trashTaskInternal = async (taskKey: string,
@@ -15252,7 +15273,7 @@ export type trashTaskInternalResponse404 = {
 }
 
 export type trashTaskInternalResponse409 = {
-  data: TaskArchivedResponse
+  data: TaskTrashConflictResponse
   status: 409
 }
 

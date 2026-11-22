@@ -95,6 +95,40 @@ export interface BillingMembershipPage {
   nextCursor: BillingUsageNextCursor | null;
 }
 
+export interface IdentityActiveMembership {
+  memberId: string;
+  userId: string;
+  role: Role;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @nullable */
+  removedAt: null;
+}
+
+export interface IdentityRemovedMembership {
+  memberId: string;
+  userId: string;
+  /** @nullable */
+  role: null;
+  /**
+     * Terminal version of this membership.
+     * @minimum 2
+     * @maximum 9007199254740991
+     */
+  version: number;
+  removedAt: string;
+}
+
+export interface IdentityMembershipPage {
+  /** @maxItems 100 */
+  items: (IdentityActiveMembership | IdentityRemovedMembership)[];
+  /** @nullable */
+  nextCursor: string | null;
+}
+
 /**
  * Cursor of the next page; `null` on the last page.
  * @nullable
@@ -584,15 +618,16 @@ export type SearchAuthorityTokenRefusedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
- * actor type or ID, or `auth.organization-not-allowed` when the global export receives a
- * verified token scoped to an organization. The export checks the last condition after
- * token verification.
+ * actor type or ID or for delegated Identity role or scopes, or
+ * `auth.organization-not-allowed` when the global export receives a verified token scoped
+ * to an organization. The export checks the last condition after token verification.
  */
 export type SearchOrganizationAccessRefusedResponse = Problem;
 
 /**
  * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for a non-user
- * actor, or `auth.organization-required` for an unscoped token.
+ * actor or for a delegated role or scope from Identity, Task or Realtime, or
+ * `auth.organization-required` for an unscoped token.
  */
 export type SearchMembershipAccessRefusedResponse = Problem;
 
@@ -606,6 +641,52 @@ export type SearchMembershipNotFoundResponse = Problem;
  * No partial page or membership proof is returned.
  */
 export type SearchAuthorityUnavailableResponse = Problem;
+
+/**
+ * `request.invalid` for invalid input, including an invalid membership export cursor.
+ */
+export type IdentityAuthorityBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid`.
+ */
+export type IdentityAuthorityTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another
+ * actor type or ID or for a delegated role or scopes, or `auth.organization-required`
+ * for an unscoped token.
+ */
+export type IdentityMembershipExportAccessRefusedResponse = Problem;
+
+/**
+ * `organization.not-found` when the signed organization does not exist.
+ */
+export type IdentityMembershipExportNotFoundResponse = Problem;
+
+/**
+ * `organization.unavailable` when Organization cannot complete the snapshot or reservation.
+ */
+export type IdentityAuthorityUnavailableResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type or ID or for a delegated role or scopes, or `auth.organization-not-allowed` for an
+ * organization-scoped token.
+ */
+export type AccountDeletionReservationAccessRefusedResponse = Problem;
+
+/**
+ * `user.not-found` when there is no account directory record available for reservation.
+ */
+export type AccountDeletionReservationNotFoundResponse = Problem;
+
+/**
+ * `account.organization-owner` when the account still owns an organization, with
+ * `details.organizationIds` listing the owned organizations.
+ * `account.deletion-reservation-conflict` when another attempt has already reserved the account.
+ */
+export type AccountDeletionReservationConflictResponse = Problem;
 
 /**
  * `idempotency.request-in-progress` when the equivalent signing or owner reservation is running.
@@ -662,6 +743,11 @@ export type InternalAccessRefusedResponse = Problem;
 export type RoleForbiddenResponse = Problem;
 
 /**
+ * `upstream.unavailable` when Organization cannot verify the current address with Identity.
+ */
+export type InvitationAuthorityUnavailableResponse = Problem;
+
+/**
  * - `invitation.email-mismatch`: the invitation was sent to another address than the verified
  *   address of the actor;
  * - `auth.issuer-not-allowed`, `auth.actor-not-allowed`: see the internal token.
@@ -714,19 +800,20 @@ export type InvitationAnsweredResponse = Problem;
 export type InvitationClosedResponse = Problem;
 
 /**
- * `invitation.daily-limit-reached`: the addresses that would be invited need more invitation
- * emails than the organization has left of its 100 in any 24 hours; `details.remaining` is
- * what it has left, and nothing was created, sent or emitted. `details.nextAvailableAt` is
- * when the oldest email counted leaves the 24 hours and `Retry-After` the seconds until then.
+ * `invitation.daily-limit-reached` when the requested emails exceed the sender's or
+ * organization's rolling allowance. `details.remaining` is the smaller allowance
+ * remaining. `details.nextAvailableAt` reports when the limiting allowance next grows or
+ * when both will have grown if they are equal. `Retry-After` is the delay in seconds.
+ * Nothing was created, sent or emitted.
  */
 export type InvitationBatchLimitedResponse = Problem;
 
 /**
  * - `invitation.resend-throttled`: the email of the invitation went out less than an hour
  *   ago; `details.resendAvailableAt` is `sentAt` plus one hour;
- * - `invitation.daily-limit-reached`: the organization has no invitation email left of its
- *   100 in any 24 hours; `details.remaining` is `0` and `details.nextAvailableAt` says when
- *   the oldest email counted leaves the 24 hours.
+ * - `invitation.daily-limit-reached` when the organization or sender has no invitation
+ *   email left in their rolling allowance. `details.remaining` is `0` and
+ *   `details.nextAvailableAt` reports when both allowances permit another email.
  *
  * `Retry-After` is the seconds until the resend can succeed. Nothing changed and nothing was
  * emitted.
@@ -770,6 +857,11 @@ export type SlugInvalidResponse = Problem;
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
  */
 export type VersionMismatchResponse = Problem;
+
+/**
+ * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
+ */
+export type IdentityMembershipCursorParameter = Schema & string;
 
 /**
  * `"<version>"` the change was made from.
@@ -891,6 +983,17 @@ export type ListQuotaNotificationRecipientsInternalParams = {
   limit?: LimitParameter;
 };
 
+export type ListIdentityMembershipsInternalParams = {
+  /** Opaque authenticated cursor returned as `nextCursor` by the preceding page. */
+  cursor?: IdentityMembershipCursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
+};
+
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
 export type HTTPStatusCode2xx = 200 | 201 | 202 | 203 | 204 | 205 | 206 | 207;
 export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
@@ -931,9 +1034,11 @@ const getCreateOrganizationInternalUrl = () => {
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
  * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address. These invitations take their emails from the
- * daily allowance of the new organization (`POST /internal/v1/invitations`), which a
- * creation, 50 addresses at most, never exceeds.
+ * `invitation.issued.v1` per invited address. The actor's invitation emails count toward
+ * their rolling 24-hour allowance of 100 across all organizations. They also count toward
+ * the new organization's allowance. If the actor cannot send all requested emails, return
+ * `429 invitation.daily-limit-reached` and create nothing. An address that sends no email
+ * consumes no allowance.
  *
  * An actor that is not in the user directory yet answers `404 user.not-synchronized` and
  * creates nothing. Internal token: actor `user`, no organization.
@@ -1459,16 +1564,15 @@ const getInviteMembersInternalUrl = () => {
  * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
  * `invited` address. Internal token: actor `user`, organization required.
  *
- * **Daily allowance.** organization-service counts the invitation emails of each
- * organization over a rolling 24 hours: every `invitation.issued.v1`, from this route, from
- * the creation of the organization or from a resend, takes one, and the organization has
- * 100. Once the body and the role are accepted, a batch whose addresses that would be
- * `invited` need more emails than remain is refused as a whole with
- * `429 invitation.daily-limit-reached`: nothing is created, sent or emitted.
- * `details.remaining` is what remains, `0` or more; `details.nextAvailableAt` is when the
- * allowance grows again, the oldest email counted plus 24 hours; `Retry-After` is the
- * seconds until then, rounded up. A batch whose addresses are all members or already invited
- * needs none and is never refused.
+ * **Daily allowances.** Organization-service allows at most 100 invitation emails per
+ * organization and 100 per sender across all organizations in any rolling 24 hours.
+ * Each email from this route, organization creation or resend uses both allowances.
+ * Once the body and role are accepted, a batch that would exceed either allowance returns
+ * `429 invitation.daily-limit-reached`. Nothing is created, sent or emitted.
+ * `details.remaining` is the smaller allowance remaining. `details.nextAvailableAt` is
+ * when the limiting allowance next grows. If both remaining allowances are equal, it is
+ * when both will have grown. `Retry-After` is the delay in seconds rounded up.
+ * A batch whose addresses are all members or already invited uses neither allowance.
  * @summary Invite people
  */
 const inviteMembersInternal = async (invitationBatch: InvitationBatch, options?: RequestInit): Promise<inviteMembersInternalResponse> => {
@@ -1586,8 +1690,8 @@ const getResendInvitationInternalUrl = (invitationId: string,) => {
  *    (the invitation itself or the previous resend), answers
  *    `429 invitation.resend-throttled` with `details.resendAvailableAt`, `sentAt` plus one
  *    hour, and `Retry-After`, the seconds until then, rounded up.
- * 2. A resend takes one email of the daily allowance of the organization (see
- *    `POST /internal/v1/invitations`): with none left, it answers
+ * 2. A resend takes one email from both the organization and sender daily allowances
+ *    (see `POST /internal/v1/invitations`). When either is empty, it answers
  *    `429 invitation.daily-limit-reached` with `details.remaining: 0`,
  *    `details.nextAvailableAt` and `Retry-After`.
  *
@@ -1632,11 +1736,11 @@ const getListReceivedInvitationsInternalUrl = (userId: string,
 }
 
 /**
- * Lists the pending invitations, not expired, addressed to the verified address the user
- * directory holds for the actor, from every organization, the most recently sent first.
- * Reads across organizations with a filter on that address. Without a verified address in the
- * directory yet, the list is empty. A `userId` other than the actor answers
- * `404 user.not-found`. Internal token: actor `user`, no organization.
+ * Lists the pending invitations, not expired, addressed to the actor's current verified
+ * address from Identity, from every organization, the most recently sent first. Reads across
+ * organizations with a filter on that address. Without a current verified address the list
+ * is empty. If Identity is unavailable the list fails. A `userId` other than the actor
+ * answers `404 user.not-found`. Internal token: actor `user`, no organization.
  * @summary List the invitations addressed to the actor
  */
 const listReceivedInvitationsInternal = async (userId: string,
@@ -1671,11 +1775,11 @@ const getAcceptInvitationInternalUrl = (userId: string,
 
 /**
  * Makes the actor a member of the organization of the invitation, with its role, in the
- * tenant transaction of that organization. Checks, in this order: the invitation exists
- * (`404 invitation.not-found`, also while the directory holds no verified address for the
- * actor); its address is the verified address of the actor (`403 invitation.email-mismatch`);
- * it is pending (`409 invitation.revoked`, `409 invitation.answered`,
- * `409 invitation.expired`). If acceptance would add a seat beyond the organization's
+ * tenant transaction of that organization. First resolves the actor's current verified
+ * address from Identity. Checks that the invitation exists and the actor has a current
+ * verified address (`404 invitation.not-found`); the two addresses match
+ * (`403 invitation.email-mismatch`); the invitation is pending (`409 invitation.revoked`,
+ * `409 invitation.answered`, `409 invitation.expired`). If acceptance would add a seat beyond the organization's
  * plan limit, `409 organization.seat-quota-exceeded` leaves the invitation pending. Guests
  * and existing active memberships do not add a seat. Emits `member.joined.v1`. A `userId`
  * other than the actor answers `404 user.not-found`. Internal token: actor `user`, no
@@ -1714,9 +1818,9 @@ const getRefuseInvitationInternalUrl = (userId: string,
 }
 
 /**
- * Refuses an invitation addressed to the actor. Checks that the invitation exists, is
- * addressed to the actor's verified address and is still pending. Emits nothing. Internal
- * token: actor `user`, no organization.
+ * Refuses an invitation addressed to the actor. First resolves the actor's current verified
+ * address from Identity. Checks that the invitation exists, is addressed to that verified
+ * address and is still pending. Emits nothing. Internal token: actor `user`, no organization.
  * @summary Refuse an invitation
  */
 const refuseInvitationInternal = async (userId: string,
@@ -1757,9 +1861,10 @@ const getListSearchOrganizationsInternalUrl = (params?: ListSearchOrganizationsI
 }
 
 /**
- * Requires issuer `search-service` and actor `{ type: 'system', id: 'search-service' }`, with
- * no organization claim. Every response carries `Cache-Control: private, no-store`.
- * Returns only organization IDs. Search then signs each owner's export request with the
+ * Requires issuer `search-service` or `identity-service` and a system actor whose ID is
+ * the issuer. The internal token has no organization claim. Identity carries no delegated
+ * role or scopes. Every response carries `Cache-Control: private, no-store`.
+ * Returns only organization IDs. Both callers sign each owner's export request with the
  * organization of that export.
  *
  * The first page fixes an upper organization ID in its read snapshot. Independent pages
@@ -1770,7 +1875,7 @@ const getListSearchOrganizationsInternalUrl = (params?: ListSearchOrganizationsI
  * starts consuming durable invalidations, including `member.joined.v1`. Organization
  * creation emits the owner's join, so Search can schedule an export of a new tenant even
  * when its ID is outside this page sequence.
- * @summary List organization IDs for a search rebuild
+ * @summary List organization IDs for projection rebuilds
  */
 const listSearchOrganizationsInternal = async (params?: ListSearchOrganizationsInternalParams, options?: RequestInit): Promise<listSearchOrganizationsInternalResponse> => {
 
@@ -2019,18 +2124,24 @@ const getGetSearchMembershipInternalUrl = () => {
 }
 
 /**
- * Requires issuer `search-service`, an actor of type `user` and an organization in the
- * signed token. Search signs this call for the verified user and organization of the current
- * request. Neither value comes from search input or indexed data. Every response carries
- * `Cache-Control: private, no-store`.
+ * Requires issuer `search-service`, `identity-service`, `task-service` or `realtime-gateway`,
+ * an actor of type `user` and an organization in the signed token. Search delegates the user
+ * and organization of the authenticated search request. Identity signs the account and
+ * organization bound to a locally verified credential. Task signs the author or recipient
+ * and organization from an authorized Git or Automation action. Realtime signs the account
+ * and organization of an authenticated connection. Identity, Task and Realtime send no
+ * delegated role or scopes. Every response carries `Cache-Control: private, no-store`.
  *
  * Returns the active membership's ID, version and role in one current tenant snapshot.
  * The membership ID changes after removal and rejoining. The version is the version of
  * that membership, independent of the organization's version. An unknown organization or
- * absent active membership yields the same `404 organization.not-found`. The caller uses
- * the proof to check that Task evaluates candidate access against the same membership
- * identity and version. The proof alone grants no access to search results.
- * @summary Prove current organization membership for search
+ * absent active membership yields the same `404 organization.not-found`. Search uses this
+ * proof to check that Task evaluates candidate access against the same membership identity
+ * and version. Identity uses the current role and compares the membership ID before exposing
+ * a session's selected organization. Task checks the current membership before applying
+ * delegated actions. Realtime uses it to revalidate membership for an admitted connection.
+ * The proof alone grants no access to a task or search result.
+ * @summary Prove current organization membership
  */
 const getSearchMembershipInternal = async ( options?: RequestInit): Promise<getSearchMembershipInternalResponse> => {
 
@@ -2052,7 +2163,116 @@ const getSearchMembershipInternal = async ( options?: RequestInit): Promise<getS
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl };
+const getListIdentityMembershipsInternalUrl = (params?: ListIdentityMembershipsInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/identity-memberships?${stringifiedParams}` : `/internal/v1/identity-memberships`
+}
+
+/**
+ * Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+ * with the organization in the verified token and no delegated role or scopes. Identity
+ * enumerates organization IDs through `GET /internal/v1/search-organizations` and signs
+ * each tenant export separately. Every response carries `Cache-Control: private, no-store`.
+ *
+ * Returns all active memberships and retained removals. Every row includes the membership
+ * and account IDs and source version. An active row contains the role and a null removal
+ * time. A removed row contains the removal time and a null role. A removal is terminal
+ * for its membership ID, including when an older event arrives later. The export includes
+ * removals for as long as an older event can still arrive, including through a delayed outbox.
+ * Rejoining allocates a different membership ID. The page contains membership states only.
+ *
+ * The first page fixes an inclusive upper membership ID in one read snapshot. Every
+ * page reads ascending immutable IDs in that tenant above the last returned ID and at or
+ * below the upper bound. The authenticated cursor binds the operation, tenant, upper bound
+ * and last returned ID. A cursor has 1 to 1,024 characters. Only `nextCursor: null` marks
+ * completion. The UTF-8 JSON body is at most 1,048,576 bytes.
+ *
+ * Identity applies states by membership ID and source version and persists the checkpoint
+ * after committing the page. A scan requires durable event coverage from before the first
+ * page through catch-up after the last page. An empty page or a failed scan provides no
+ * evidence of membership removal. Identity restarts the rebuild after a confirmed coverage gap.
+ * @summary Export one tenant's membership states for Identity
+ */
+const listIdentityMembershipsInternal = async (params?: ListIdentityMembershipsInternalParams, options?: RequestInit): Promise<listIdentityMembershipsInternalResponse> => {
+
+  const res = await fetchFn(getListIdentityMembershipsInternalUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listIdentityMembershipsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listIdentityMembershipsInternalResponse
+}
+
+
+
+const getReserveAccountDeletionInternalUrl = (userId: string,
+    attemptId: string,) => {
+
+
+
+
+  return `/internal/v1/users/${userId}/account-deletion-reservations/${attemptId}`
+}
+
+/**
+ * Requires issuer `identity-service` and actor `{ type: 'system', id: 'identity-service' }`
+ * with no organization, delegated role or scopes. Identity calls this operation only after
+ * the scheduled deadline and after durably claiming the same deletion attempt. Every
+ * response carries `Cache-Control: private, no-store`.
+ *
+ * Organization checks current ownership and creates a durable reservation in one
+ * transaction, serialized with operations that give the account ownership or a new
+ * membership. A confirmed owner keeps their account. A reserved account cannot become
+ * an owner or gain a new membership. The reservation persists through retry and until
+ * the account deletion event is applied. Expiration or absence of an HTTP response does
+ * not release it. An equivalent retry of a stored attempt confirms the same reservation.
+ * A different attempt cannot replace a reservation.
+ *
+ * Only a successful response for the same attempt authorizes Identity to finish deletion.
+ * If a response is lost, Identity retries the same request. A conflict or temporary
+ * failure does not authorize deletion.
+ * @summary Reserve an account for final deletion
+ */
+const reserveAccountDeletionInternal = async (userId: string,
+    attemptId: string, options?: RequestInit): Promise<reserveAccountDeletionInternalResponse> => {
+
+  const res = await fetchFn(getReserveAccountDeletionInternalUrl(userId,attemptId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reserveAccountDeletionInternalResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as reserveAccountDeletionInternalResponse
+}
+
+
+
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -2090,10 +2310,15 @@ export type createOrganizationInternalResponse422 = {
   status: 422
 }
 
+export type createOrganizationInternalResponse429 = {
+  data: InvitationBatchLimitedResponse
+  status: 429
+}
+
 export type createOrganizationInternalResponseSuccess = (createOrganizationInternalResponse201) & {
   headers: Headers;
 };
-export type createOrganizationInternalResponseError = (createOrganizationInternalResponse400 | createOrganizationInternalResponse401 | createOrganizationInternalResponse403 | createOrganizationInternalResponse404 | createOrganizationInternalResponse409 | createOrganizationInternalResponse422) & {
+export type createOrganizationInternalResponseError = (createOrganizationInternalResponse400 | createOrganizationInternalResponse401 | createOrganizationInternalResponse403 | createOrganizationInternalResponse404 | createOrganizationInternalResponse409 | createOrganizationInternalResponse422 | createOrganizationInternalResponse429) & {
   headers: Headers;
 };
 
@@ -2795,10 +3020,15 @@ export type listReceivedInvitationsInternalResponse404 = {
   status: 404
 }
 
+export type listReceivedInvitationsInternalResponse503 = {
+  data: InvitationAuthorityUnavailableResponse
+  status: 503
+}
+
 export type listReceivedInvitationsInternalResponseSuccess = (listReceivedInvitationsInternalResponse200) & {
   headers: Headers;
 };
-export type listReceivedInvitationsInternalResponseError = (listReceivedInvitationsInternalResponse400 | listReceivedInvitationsInternalResponse401 | listReceivedInvitationsInternalResponse403 | listReceivedInvitationsInternalResponse404) & {
+export type listReceivedInvitationsInternalResponseError = (listReceivedInvitationsInternalResponse400 | listReceivedInvitationsInternalResponse401 | listReceivedInvitationsInternalResponse403 | listReceivedInvitationsInternalResponse404 | listReceivedInvitationsInternalResponse503) & {
   headers: Headers;
 };
 
@@ -2835,10 +3065,15 @@ export type acceptInvitationInternalResponse409 = {
   status: 409
 }
 
+export type acceptInvitationInternalResponse503 = {
+  data: InvitationAuthorityUnavailableResponse
+  status: 503
+}
+
 export type acceptInvitationInternalResponseSuccess = (acceptInvitationInternalResponse200) & {
   headers: Headers;
 };
-export type acceptInvitationInternalResponseError = (acceptInvitationInternalResponse400 | acceptInvitationInternalResponse401 | acceptInvitationInternalResponse403 | acceptInvitationInternalResponse404 | acceptInvitationInternalResponse409) & {
+export type acceptInvitationInternalResponseError = (acceptInvitationInternalResponse400 | acceptInvitationInternalResponse401 | acceptInvitationInternalResponse403 | acceptInvitationInternalResponse404 | acceptInvitationInternalResponse409 | acceptInvitationInternalResponse503) & {
   headers: Headers;
 };
 
@@ -2875,10 +3110,15 @@ export type refuseInvitationInternalResponse409 = {
   status: 409
 }
 
+export type refuseInvitationInternalResponse503 = {
+  data: InvitationAuthorityUnavailableResponse
+  status: 503
+}
+
 export type refuseInvitationInternalResponseSuccess = (refuseInvitationInternalResponse204) & {
   headers: Headers;
 };
-export type refuseInvitationInternalResponseError = (refuseInvitationInternalResponse400 | refuseInvitationInternalResponse401 | refuseInvitationInternalResponse403 | refuseInvitationInternalResponse404 | refuseInvitationInternalResponse409) & {
+export type refuseInvitationInternalResponseError = (refuseInvitationInternalResponse400 | refuseInvitationInternalResponse401 | refuseInvitationInternalResponse403 | refuseInvitationInternalResponse404 | refuseInvitationInternalResponse409 | refuseInvitationInternalResponse503) & {
   headers: Headers;
 };
 
@@ -3113,3 +3353,93 @@ export type getSearchMembershipInternalResponseError = (getSearchMembershipInter
 };
 
 export type getSearchMembershipInternalResponse = (getSearchMembershipInternalResponseSuccess | getSearchMembershipInternalResponseError)
+
+
+export type listIdentityMembershipsInternalResponse200 = {
+  data: IdentityMembershipPage
+  status: 200
+}
+
+export type listIdentityMembershipsInternalResponse400 = {
+  data: IdentityAuthorityBadRequestResponse
+  status: 400
+}
+
+export type listIdentityMembershipsInternalResponse401 = {
+  data: IdentityAuthorityTokenRefusedResponse
+  status: 401
+}
+
+export type listIdentityMembershipsInternalResponse403 = {
+  data: IdentityMembershipExportAccessRefusedResponse
+  status: 403
+}
+
+export type listIdentityMembershipsInternalResponse404 = {
+  data: IdentityMembershipExportNotFoundResponse
+  status: 404
+}
+
+export type listIdentityMembershipsInternalResponse503 = {
+  data: IdentityAuthorityUnavailableResponse
+  status: 503
+}
+
+export type listIdentityMembershipsInternalResponseSuccess = (listIdentityMembershipsInternalResponse200) & {
+  headers: Headers;
+};
+export type listIdentityMembershipsInternalResponseError = (listIdentityMembershipsInternalResponse400 | listIdentityMembershipsInternalResponse401 | listIdentityMembershipsInternalResponse403 | listIdentityMembershipsInternalResponse404 | listIdentityMembershipsInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listIdentityMembershipsInternalResponse = (listIdentityMembershipsInternalResponseSuccess | listIdentityMembershipsInternalResponseError)
+
+
+export type reserveAccountDeletionInternalResponse201 = {
+  data: void
+  status: 201
+}
+
+export type reserveAccountDeletionInternalResponse204 = {
+  data: void
+  status: 204
+}
+
+export type reserveAccountDeletionInternalResponse400 = {
+  data: IdentityAuthorityBadRequestResponse
+  status: 400
+}
+
+export type reserveAccountDeletionInternalResponse401 = {
+  data: IdentityAuthorityTokenRefusedResponse
+  status: 401
+}
+
+export type reserveAccountDeletionInternalResponse403 = {
+  data: AccountDeletionReservationAccessRefusedResponse
+  status: 403
+}
+
+export type reserveAccountDeletionInternalResponse404 = {
+  data: AccountDeletionReservationNotFoundResponse
+  status: 404
+}
+
+export type reserveAccountDeletionInternalResponse409 = {
+  data: AccountDeletionReservationConflictResponse
+  status: 409
+}
+
+export type reserveAccountDeletionInternalResponse503 = {
+  data: IdentityAuthorityUnavailableResponse
+  status: 503
+}
+
+export type reserveAccountDeletionInternalResponseSuccess = (reserveAccountDeletionInternalResponse201 | reserveAccountDeletionInternalResponse204) & {
+  headers: Headers;
+};
+export type reserveAccountDeletionInternalResponseError = (reserveAccountDeletionInternalResponse400 | reserveAccountDeletionInternalResponse401 | reserveAccountDeletionInternalResponse403 | reserveAccountDeletionInternalResponse404 | reserveAccountDeletionInternalResponse409 | reserveAccountDeletionInternalResponse503) & {
+  headers: Headers;
+};
+
+export type reserveAccountDeletionInternalResponse = (reserveAccountDeletionInternalResponseSuccess | reserveAccountDeletionInternalResponseError)
