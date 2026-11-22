@@ -1696,9 +1696,10 @@ export type SessionNotFoundResponse = Problem;
 export type UserNotFoundResponse = Problem;
 
 /**
- * - `session.not-found`: no session with this id belongs to the actor;
- * - `organization.not-found`: the copy of the memberships holds no membership of the actor in
- *   this organization, also for a few seconds after a creation or an acceptance.
+ * - `session.not-found`: no active session with this id belongs to the actor, or its
+ *   originating SAML membership is no longer active.
+ * - `organization.not-found`: the actor has no active membership in the target organization,
+ *   or the identifier or role in Identity's copy does not match the authoritative proof.
  */
 export type SessionOrOrganizationNotFoundResponse = Problem;
 
@@ -2848,11 +2849,13 @@ const getSwitchSessionOrganizationUrl = (sessionId: string,) => {
 
 /**
  * Makes an organization the current organization of a session of the actor, and the one the
- * next sessions of the actor start in. The membership is checked against the copy of the
- * memberships: an organization the actor does not belong to, or one whose
- * `member.joined.v1` has not arrived yet, answers `404 organization.not-found`. A session of
- * another user, or an unknown id, answers `404 session.not-found`, which the gateway answers
- * as `401 auth.session-expired`: the session ended since its introspection. Choosing the
+ * next sessions of the actor start in. Organization must confirm the target membership, and
+ * its identifier and role must agree with Identity's copy. A missing or out-of-sync
+ * membership answers `404 organization.not-found`. A SAML-bound session whose originating
+ * membership is no longer active answers `404 session.not-found`, as does a session of
+ * another user or an unknown id. The gateway maps that problem to `401 auth.session-expired`.
+ * If Identity cannot obtain either required membership proof, it answers
+ * `503 organization.unavailable`; the session and last choice remain unchanged. Choosing the
  * current organization of the session again answers `200` and leaves the session as it is,
  * but records the organization as the last choice of the actor again, the one their next
  * sessions start in, also when another session of theirs chose another organization since.
@@ -5110,10 +5113,15 @@ export type switchSessionOrganizationResponse404 = {
   status: 404
 }
 
+export type switchSessionOrganizationResponse503 = {
+  data: MembershipAuthorityUnavailableResponse
+  status: 503
+}
+
 export type switchSessionOrganizationResponseSuccess = (switchSessionOrganizationResponse200) & {
   headers: Headers;
 };
-export type switchSessionOrganizationResponseError = (switchSessionOrganizationResponse400 | switchSessionOrganizationResponse401 | switchSessionOrganizationResponse403 | switchSessionOrganizationResponse404) & {
+export type switchSessionOrganizationResponseError = (switchSessionOrganizationResponse400 | switchSessionOrganizationResponse401 | switchSessionOrganizationResponse403 | switchSessionOrganizationResponse404 | switchSessionOrganizationResponse503) & {
   headers: Headers;
 };
 

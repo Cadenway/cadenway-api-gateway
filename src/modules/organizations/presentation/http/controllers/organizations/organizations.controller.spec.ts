@@ -362,6 +362,18 @@ const CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'GET /v1/organization refuses a malformed expected organization before reading it',
+    method: 'get',
+    path: '/v1/organization',
+    url: '/v1/organization',
+    headers: { 'If-Organization-Match': 'invalid' },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { organization }) => {
+      expect(organization.getOrganization).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'GET /v1/organization refuses a stale expected organization before reading it',
     method: 'get',
     path: '/v1/organization',

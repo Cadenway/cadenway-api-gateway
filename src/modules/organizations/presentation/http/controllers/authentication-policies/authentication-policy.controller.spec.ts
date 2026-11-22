@@ -107,6 +107,18 @@ const GET_CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'GET refuses a malformed expected organization before reading its policy',
+    method: 'get',
+    path: PATH,
+    url: PATH,
+    headers: { 'If-Organization-Match': 'invalid' },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { identity }) => {
+      expect(identity.getAuthenticationPolicy).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'GET refuses a stale expected organization before reading its policy',
     method: 'get',
     path: PATH,
