@@ -49,6 +49,7 @@ function organizationProblem(
 }
 
 const CREATION_INVITE_RETRY_AT = new Date(Date.now() + 3_600_000).toISOString();
+const STALE_ORGANIZATION_ID = '019a5f3c-9e1f-7b2a-8c3d-4e5f6a7b8c31';
 
 /**
  * Constant CREATION
@@ -361,6 +362,18 @@ const CASES: readonly RouteCase[] = [
     },
   },
   {
+    name: 'GET /v1/organization refuses a stale expected organization before reading it',
+    method: 'get',
+    path: '/v1/organization',
+    url: '/v1/organization',
+    headers: { 'If-Organization-Match': STALE_ORGANIZATION_ID },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (_response, { organization }) => {
+      expect(organization.getOrganization).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'GET /v1/organization answers 429 beyond the quota',
     method: 'get',
     path: '/v1/organization',
@@ -490,6 +503,19 @@ const CASES: readonly RouteCase[] = [
       ),
     status: 412,
     code: 'request.version-mismatch',
+  },
+  {
+    name: 'PATCH /v1/organization refuses a stale expected organization before writing',
+    method: 'patch',
+    path: '/v1/organization',
+    url: '/v1/organization',
+    body: { defaultLanguage: 'en' },
+    headers: { 'If-Match': '"3"', 'If-Organization-Match': STALE_ORGANIZATION_ID },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (_response, { organization }) => {
+      expect(organization.updateOrganization).not.toHaveBeenCalled();
+    },
   },
   {
     name: 'PATCH /v1/organization answers 429 beyond the quota',

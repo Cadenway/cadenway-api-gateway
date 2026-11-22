@@ -43,16 +43,6 @@ const BODYLESS_POSTS = new Set([
   'completeReminder',
 ]);
 
-// Include the context checks from the matching contract worktree while the installed contract
-// only declares If-Organization-Match on task update and detail.
-const ORGANIZATION_PRECONDITION_PATH =
-  /^\/v1\/(?:tasks\/(?:\{taskKey\}(?:\/[^/]+)*|bulk-actions)|organization(?:\/authentication-policy|\/logo\/uploads)?|archives\/(?:lists|tasks)|trash\/[^/]+(?:\/[^/]+)*)$/u;
-const ONBOARDING_PRECONDITION_OPERATIONS = new Set([
-  'updateOnboarding',
-  'updateOnboardingChecklist',
-  'finishOnboarding',
-]);
-
 /**
  * Interface ServedRoute
  *
@@ -244,6 +234,36 @@ function problemCodes(spec: PublicSpec, pointer: string): readonly string[] {
 }
 
 /**
+ * Detects the optional organization precondition in the installed public spec.
+ *
+ * @param spec - Published contract containing the parameter or its local reference.
+ * @param parameters - Path-level or operation-level parameters.
+ * @returns Whether the parameters declare If-Organization-Match.
+ */
+function declaresOrganizationPrecondition(spec: PublicSpec, parameters: unknown): boolean {
+  if (!Array.isArray(parameters)) return false;
+  return parameters.some((parameter: unknown) => {
+    if (!isNode(parameter)) return false;
+    const reference: unknown = parameter.$ref;
+    const definition =
+      typeof reference === 'string' && reference.startsWith('#/')
+        ? resolveNode(spec, reference.slice(1)).node
+        : parameter;
+    if (
+      definition.in !== 'header' ||
+      typeof definition.name !== 'string' ||
+      definition.name.toLowerCase() !== 'if-organization-match'
+    ) {
+      return false;
+    }
+    if (definition.required === true) {
+      throw new Error(`${spec.name} declared a required If-Organization-Match header.`);
+    }
+    return true;
+  });
+}
+
+/**
  * Function contractOperations
  *
  * @description
@@ -279,8 +299,9 @@ function contractOperations(): readonly ContractOperation[] {
             ? [...problemCodes(spec, forbiddenPointer), ...describedCodes(spec, forbiddenPointer)]
             : [];
         const bodylessPost = BODYLESS_POSTS.has(operationId);
-        const logoMutation =
-          path === '/v1/organization/logo' && (method === 'put' || method === 'delete');
+        const organizationPrecondition =
+          declaresOrganizationPrecondition(spec, item.parameters) ||
+          declaresOrganizationPrecondition(spec, operation.parameters);
         if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
           throw new Error(`${operationId} no longer has a bodyless POST contract.`);
         }
@@ -291,11 +312,7 @@ function contractOperations(): readonly ContractOperation[] {
             security: security as OperationSecurity['security'],
             organization: forbidden.includes('organization.not-selected'),
             ...(bodylessPost ? { allowBodylessPost: true } : {}),
-            ...(ORGANIZATION_PRECONDITION_PATH.test(path) ||
-            logoMutation ||
-            ONBOARDING_PRECONDITION_OPERATIONS.has(operationId)
-              ? { organizationPrecondition: true }
-              : {}),
+            ...(organizationPrecondition ? { organizationPrecondition: true } : {}),
           },
         });
       }

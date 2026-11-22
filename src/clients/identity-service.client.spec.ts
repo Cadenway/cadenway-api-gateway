@@ -818,6 +818,34 @@ describe('IdentityServiceClient', () => {
       });
     });
 
+    it('maps an unavailable organization authority during a switch to an Identity outage', async () => {
+      answer.mockImplementation(() =>
+        json(
+          503,
+          {
+            type: 'about:blank',
+            title: 'Organization authority is unavailable.',
+            status: 503,
+            code: 'organization.unavailable',
+          },
+          'application/problem+json',
+        ),
+      );
+
+      await expect(
+        runWithOrganizationContext(owner, () =>
+          client.switchSessionOrganization(CAMILLE_SESSION.sessionId, String(owner.organizationId)),
+        ),
+      ).rejects.toMatchObject({
+        problem: {
+          status: 503,
+          code: 'upstream.unavailable',
+          details: { service: 'identity-service' },
+        },
+      });
+      expect(calls).toHaveLength(2);
+    });
+
     it('creates, lists and revokes tokens in the organization of the context', async () => {
       answer
         .mockReturnValueOnce(
