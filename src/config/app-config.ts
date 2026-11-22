@@ -234,7 +234,10 @@ export const appConfigSchema: z.ZodType<AppConfig> = z
     ...internalTokenSignerConfigShape,
     ...redisConfigShape,
     ALLOWED_ORIGINS: allowedOriginsSchema,
-    FEDERATED_CONTINUATION_URL: z.url({ protocol: /^https?$/u }).optional(),
+    FEDERATED_CONTINUATION_URL: z.preprocess(
+      (value: unknown) => (value === '' ? undefined : value),
+      z.url({ protocol: /^https?$/u }).optional(),
+    ),
     IDENTITY_SERVICE_URL: serviceUrlSchema,
     ORGANIZATION_SERVICE_URL: serviceUrlSchema,
     BILLING_SERVICE_URL: serviceUrlSchema,

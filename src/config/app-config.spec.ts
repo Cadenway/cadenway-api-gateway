@@ -79,6 +79,14 @@ function configIssues(env: Record<string, string>): readonly string[] {
 }
 
 describe('appConfigSchema', () => {
+  it('leaves federated sign-in disabled when Compose passes an empty continuation', () => {
+    const config = loadConfig(
+      appConfigSchema,
+      validEnvironment({ FEDERATED_CONTINUATION_URL: '' }),
+    );
+    expect(config.FEDERATED_CONTINUATION_URL).toBeUndefined();
+  });
+
   it('allows the fixed continuation on the local Webapp origin', () => {
     const url = 'http://app.cadenway.localhost/auth/federated/continue';
     const config = loadConfig(

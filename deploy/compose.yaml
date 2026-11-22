@@ -18,6 +18,8 @@ services:
       REDIS_URL: ${REDIS_URL}
       # The web application and the website, the only origins CORS and the CSRF check accept.
       ALLOWED_ORIGINS: ${PUBLIC_SCHEME:-https}://app.${DOMAIN},${PUBLIC_SCHEME:-https}://${DOMAIN}
+      # Enable after the Webapp serves the continuation route on its configured origin.
+      FEDERATED_CONTINUATION_URL: ${FEDERATED_CONTINUATION_URL:-}
       INTERNAL_TOKEN_ISSUER: api-gateway
       INTERNAL_TOKEN_PRIVATE_JWK: ${API_GATEWAY_INTERNAL_TOKEN_PRIVATE_JWK}
       IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL}
