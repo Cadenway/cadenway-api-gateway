@@ -1,8 +1,10 @@
 import type { Request, Response } from 'express';
+import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMILLE,
+  CAMILLE_ORGANIZATION_TOKEN,
   createFakeIdentity,
   type FakeIdentity,
 } from '../../../../../../../tests/support/fake-identity.js';
@@ -192,5 +194,24 @@ describe('onboarding HTTP routes', () => {
   });
   it.each(cases.map((item) => [item.name, item] as const))('%s', async (_name, item) => {
     await runRouteCase(application, identity, item);
+  });
+
+  it('returns the current onboarding body when a prior ETag matches', async () => {
+    const cookie = `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`;
+    const first = await request(application.server).get('/v1/me/onboarding').set('Cookie', cookie);
+    expect(first.status).toBe(200);
+    expect(first.headers['cache-control']).toBe('private, no-store');
+    expect(first.headers.etag).toMatch(/^"\d+"$/u);
+
+    const revalidated = await request(application.server)
+      .get('/v1/me/onboarding')
+      .set('Cookie', cookie)
+      .set('If-None-Match', String(first.headers.etag));
+
+    expect(revalidated.status).toBe(200);
+    expect(revalidated.headers['cache-control']).toBe('private, no-store');
+    expect(revalidated.headers.etag).toBe(first.headers.etag);
+    expect(revalidated.body).toEqual(first.body);
+    expect(application.task.getOnboarding).toHaveBeenCalledTimes(2);
   });
 });

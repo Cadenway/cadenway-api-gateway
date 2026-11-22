@@ -54,6 +54,7 @@ const EXPORT: AcceptedProblems = {
   422: ['list.export-row-limit-reached'],
 };
 const EXPORT_IDLE_TIMEOUT_MS = 30_000;
+const EXPORT_TRANSFER_TIMEOUT_MS = 120_000;
 const EXPORT_QUERY = ExportListTasksQueryParams.extend({
   status: z.preprocess(toQueryList, ExportListTasksQueryParams.shape.status),
   priority: z.preprocess(toQueryList, ExportListTasksQueryParams.shape.priority),
@@ -225,7 +226,7 @@ export class TaskReportingController {
     return body;
   }
 
-  /** Prepares the complete CSV before sending headers, then streams it under an idle timeout. */
+  /** Prepares the complete CSV before streaming it under idle and total transfer limits. */
   @Get('lists/:listId/tasks/export')
   @CredentialGuard.requires({
     operationId: 'exportListTasks',
@@ -239,15 +240,21 @@ export class TaskReportingController {
     @Res() response: Response,
   ): Promise<void> {
     if (response.destroyed) return;
+    const organizationId = getOrganizationContext()?.organizationId;
+    if (organizationId === undefined || organizationId === null) {
+      throw new Error('The export route requires a verified organization.');
+    }
     const lifetime = new AbortController();
     const disconnect = (): void => {
       if (!response.writableFinished) lifetime.abort();
     };
     response.once('close', disconnect);
     let file: ListTaskCsv | undefined;
+    let transferTimer: ReturnType<typeof setTimeout> | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     try {
       file = await this.exportTasks.execute(
+        organizationId,
         params.listId,
         query,
         remainingBudgetMs(),
@@ -266,6 +273,9 @@ export class TaskReportingController {
         lifetime.abort();
       }, EXPORT_IDLE_TIMEOUT_MS);
       idleTimer = timer;
+      transferTimer = setTimeout(() => {
+        lifetime.abort();
+      }, EXPORT_TRANSFER_TIMEOUT_MS);
       content.on('data', () => {
         timer.refresh();
       });
@@ -283,6 +293,7 @@ export class TaskReportingController {
       throw toPublicProblem(error, EXPORT);
     } finally {
       clearTimeout(idleTimer);
+      clearTimeout(transferTimer);
       response.off('close', disconnect);
       await file?.dispose();
     }

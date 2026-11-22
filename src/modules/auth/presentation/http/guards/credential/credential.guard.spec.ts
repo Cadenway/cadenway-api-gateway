@@ -144,6 +144,33 @@ describe('CredentialGuard and the organization withheld for want of two-step ver
     await application.app.close();
   });
 
+  it.each(['session', 'members-token'] as const)(
+    'applies the pre-introspection rate limit before verifying a %s',
+    async (credential) => {
+      application.introspectionCounter.consume.mockResolvedValueOnce({
+        allowed: false,
+        retryAfterSeconds: 12,
+      });
+      const response = await runRouteCase(application, identity, {
+        name: 'pre-introspection admission',
+        method: 'get',
+        path: '/v1/members',
+        url: '/v1/members',
+        credential,
+        status: 429,
+        code: 'rate-limit.exceeded',
+      });
+
+      expect(response.headers['retry-after']).toBe('12');
+      expect(identity.introspect).not.toHaveBeenCalled();
+      expect(identity.introspectApiToken).not.toHaveBeenCalled();
+      expect(application.counter.consume).not.toHaveBeenCalled();
+      expect(application.introspectionCounter.consume).toHaveBeenCalledWith(
+        expect.stringMatching(/^introspection:[A-Za-z0-9_-]{22}$/u),
+      );
+    },
+  );
+
   describe('a withheld session', () => {
     it.each(
       ORGANIZATION_ROUTES.map((routeCase: RouteCase) => [routeCase.name, routeCase] as const),

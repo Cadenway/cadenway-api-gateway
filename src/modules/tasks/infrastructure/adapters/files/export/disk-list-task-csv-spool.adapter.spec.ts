@@ -3,9 +3,28 @@ import { describe, expect, it } from 'vitest';
 import { DiskListTaskCsvSpoolFactory } from './disk-list-task-csv-spool.adapter.js';
 
 describe('DiskListTaskCsvSpoolFactory', () => {
+  it('keeps one slot per organization and bounds the process-wide allocation', async () => {
+    const factory = new DiskListTaskCsvSpoolFactory();
+    const first = await factory.open('first-organization');
+    const second = await factory.open('second-organization');
+    try {
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      expect(await factory.open('FIRST-ORGANIZATION')).toBeNull();
+      expect(await factory.open('third-organization')).toBeNull();
+      await first?.dispose();
+      const third = await factory.open('third-organization');
+      expect(third).not.toBeNull();
+      await third?.dispose();
+    } finally {
+      await first?.dispose();
+      await second?.dispose();
+    }
+  });
+
   it('streams indexed UTF-8 rows in the requested order and holds one slot until disposal', async () => {
     const factory = new DiskListTaskCsvSpoolFactory();
-    const spool = await factory.open();
+    const spool = await factory.open('organization-id');
     if (spool === null) throw new Error('The first export did not acquire the spool.');
     const { signal } = new AbortController();
     try {
@@ -13,7 +32,7 @@ describe('DiskListTaskCsvSpoolFactory', () => {
       await spool.writeRows(['"Zoé"\r\n', '"Élodie"\r\n'], signal);
       await spool.writeRows(['"Léa"\r\n'], signal);
       const file = spool.finish('sprint.csv', [2, 1, 0]);
-      expect(await factory.open()).toBeNull();
+      expect(await factory.open('organization-id')).toBeNull();
       let bytes = 0;
       let result = '';
       for await (const chunk of file.stream()) {
@@ -22,19 +41,19 @@ describe('DiskListTaskCsvSpoolFactory', () => {
       }
       expect(bytes).toBe(file.byteLength);
       expect(result).toBe('"Nom"\r\n"Léa"\r\n"Élodie"\r\n"Zoé"\r\n');
-      expect(await factory.open()).toBeNull();
+      expect(await factory.open('organization-id')).toBeNull();
       await file.dispose();
     } finally {
       await spool.dispose();
     }
-    const next = await factory.open();
+    const next = await factory.open('organization-id');
     expect(next).not.toBeNull();
     await next?.dispose();
   });
 
   it('keeps the slot reusable after a download stops reading a prepared file', async () => {
     const factory = new DiskListTaskCsvSpoolFactory();
-    const spool = await factory.open();
+    const spool = await factory.open('organization-id');
     if (spool === null) throw new Error('The first export did not acquire the spool.');
     const { signal } = new AbortController();
     try {
@@ -50,14 +69,14 @@ describe('DiskListTaskCsvSpoolFactory', () => {
     } finally {
       await spool.dispose();
     }
-    const next = await factory.open();
+    const next = await factory.open('organization-id');
     expect(next).not.toBeNull();
     await next?.dispose();
   });
 
   it('does not append a batch when its signal has already been aborted', async () => {
     const factory = new DiskListTaskCsvSpoolFactory();
-    const spool = await factory.open();
+    const spool = await factory.open('organization-id');
     if (spool === null) throw new Error('The first export did not acquire the spool.');
     try {
       const controller = new AbortController();

@@ -1,9 +1,9 @@
 import type { ListTaskCsvSpool } from './list-task-csv-spool.port.js';
 
-/** Allocates the application a bounded private spool for one export at a time. */
+/** Allocates a bounded private spool for an organization. */
 export interface ListTaskCsvSpoolFactory {
   // #region Methods
-  /** Opens a new private file or returns null when capacity is already occupied. */
-  open(): Promise<ListTaskCsvSpool | null>;
+  /** Opens a private file while capacity is available, with at most one per organization. */
+  open(organizationId: string): Promise<ListTaskCsvSpool | null>;
   // #endregion
 }

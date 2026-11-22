@@ -110,7 +110,9 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 // A capture-free path prevents Express decoding an invalid member ID before setting the header.
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
+const MEMBERS_PATH = /^\/v1\/members(?:\/[^/]+)?\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
+const ONBOARDING_PATH = /^\/v1\/me\/onboarding(?:\/(?:checklist|finish))?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_SUBSCRIPTION_PATH = /^\/v1\/billing\/subscription\/?$/iu;
 const AUTOMATIONS_PATH = /^\/v1\/(?:automations(?:\/[^/]+)?|automation-runs)\/?$/iu;
@@ -264,7 +266,7 @@ export async function createGatewayApplication(
     noStorePrivateResource(request, response, next, 'documentId');
   });
   app.use(
-    [SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [MEMBERS_PATH, ONBOARDING_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -275,7 +277,15 @@ export async function createGatewayApplication(
     },
   );
   app.use(
-    [PROFILE_MEDIA_PATH, DOCUMENTS_PATH, SEARCH_PATH, BILLING_SUBSCRIPTION_PATH, AUTOMATIONS_PATH],
+    [
+      PROFILE_MEDIA_PATH,
+      MEMBERS_PATH,
+      DOCUMENTS_PATH,
+      ONBOARDING_PATH,
+      SEARCH_PATH,
+      BILLING_SUBSCRIPTION_PATH,
+      AUTOMATIONS_PATH,
+    ],
     (error: unknown, _request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       const problem = toProblem(error);
