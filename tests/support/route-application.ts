@@ -14,6 +14,7 @@ import { createGatewayApplication } from '../../src/gateway-application.js';
 import type { RequestCounter } from '../../src/modules/rate-limit/application/ports/outbound/counters/requests/request-counter.port.js';
 import { ANONYMOUS_REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/addresses/anonymous-request-counter.token.js';
 import { BEARER_FAILURE_COUNTER } from '../../src/modules/rate-limit/composition/tokens/addresses/bearer-failure-counter.token.js';
+import { INTROSPECTION_COUNTER } from '../../src/modules/rate-limit/composition/providers/use-cases/addresses/admit-introspection.provider.js';
 import { REQUEST_COUNTER } from '../../src/modules/rate-limit/composition/tokens/requests/request-counter.token.js';
 import type { FakeIdentity } from './fake-identity.js';
 import { createFakeOrganization, type FakeOrganization } from './fake-organization.js';
@@ -57,6 +58,8 @@ export interface RouteApplication {
   readonly anonymousCounter: FakeCounter;
   /** The fake of the counters of the failed bearer-token authentications, per client address. */
   readonly bearerFailureCounter: FakeCounter;
+  /** The fake of the per-network pre-introspection budget. */
+  readonly introspectionCounter: FakeCounter;
 }
 
 /**
@@ -103,6 +106,7 @@ export async function createRouteApplication(
   };
   const anonymousCounter: FakeCounter = createFakeCounter();
   const bearerFailureCounter: FakeCounter = createFakeCounter();
+  const introspectionCounter = createFakeCounter();
   const app: NestExpressApplication = await createGatewayApplication(testConfig(), sink, root);
   Object.assign(app.get(IdentityServiceClient), fake);
   Object.assign(app.get(OrganizationServiceClient), organization);
@@ -110,6 +114,7 @@ export async function createRouteApplication(
   Object.assign(app.get<symbol, RequestCounter>(REQUEST_COUNTER), counter);
   Object.assign(app.get<symbol, RequestCounter>(ANONYMOUS_REQUEST_COUNTER), anonymousCounter);
   Object.assign(app.get<symbol, RequestCounter>(BEARER_FAILURE_COUNTER), bearerFailureCounter);
+  Object.assign(app.get<symbol, RequestCounter>(INTROSPECTION_COUNTER), introspectionCounter);
   await app.init();
   return {
     app,
@@ -120,5 +125,6 @@ export async function createRouteApplication(
     counter,
     anonymousCounter,
     bearerFailureCounter,
+    introspectionCounter,
   };
 }

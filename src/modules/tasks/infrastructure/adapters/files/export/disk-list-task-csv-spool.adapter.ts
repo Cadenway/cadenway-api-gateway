@@ -7,6 +7,7 @@ import type { ListTaskCsvSpoolFactory } from '../../../../application/ports/outb
 import type { ListTaskCsvSpool } from '../../../../application/ports/outbound/files/export/list-task-csv-spool.port.js';
 
 const FILE_CAPACITY = 1024 ** 3;
+const MAX_OPEN_EXPORTS = 2;
 
 interface FileRange {
   // #region Properties
@@ -21,15 +22,18 @@ interface FileRange {
 /** One private export file, unlinked as soon as supported by the platform. */
 export class DiskListTaskCsvSpoolFactory implements ListTaskCsvSpoolFactory {
   // #region Properties
-  /** Holds the single export slot through preparation and download. */
-  private occupied = false;
+  /** Organizations already holding one of the shared slots for preparation or download. */
+  private readonly organizations = new Set<string>();
   // #endregion
 
   // #region Methods
-  /** Acquires the process's export slot before any filesystem or upstream work. */
-  public async open(): Promise<ListTaskCsvSpool | null> {
-    if (this.occupied) return null;
-    this.occupied = true;
+  /** Reserves one slot for the organization before filesystem or upstream work. */
+  public async open(organizationId: string): Promise<ListTaskCsvSpool | null> {
+    const key = organizationId.toLowerCase();
+    if (this.organizations.has(key) || this.organizations.size >= MAX_OPEN_EXPORTS) {
+      return null;
+    }
+    this.organizations.add(key);
     let directory: string | undefined;
     let filename: string | undefined;
     let handle: FileHandle | undefined;
@@ -44,13 +48,13 @@ export class DiskListTaskCsvSpoolFactory implements ListTaskCsvSpoolFactory {
         directory = undefined;
       }
       return new DiskListTaskCsvSpool(handle, filename, directory, () => {
-        this.occupied = false;
+        this.organizations.delete(key);
       });
     } catch (error) {
       try {
         await releaseFile(handle, filename, directory);
       } finally {
-        this.occupied = false;
+        this.organizations.delete(key);
       }
       throw error;
     }

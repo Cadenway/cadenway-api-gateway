@@ -110,7 +110,9 @@ Comments and participants, watchers and dependencies are served by their respect
   Organization requests, escapes them and writes the CSV to a private temporary file. For people
   sorting it stores names and row offsets in memory and uses French ordering. It sends the
   download headers only after the internal stream is complete and the CSV is ready.
-  The gateway uses one export slot per process and up to 1 GiB of writable disk for that slot.
+  The gateway uses two export slots per process, at most one per organization. Each slot uses up
+  to 1 GiB of writable disk while preparing and transferring its file. The download has a
+  30-second idle timeout and a two-minute transfer deadline.
   Preparation has a 120-second budget. Download closes after 30 seconds without progress.
 - The five authenticated intake operations in `openapi/public/intake.yaml` relay the verified
   organization and actor. Anonymous operations use independent per-address windows for form reads,

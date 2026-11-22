@@ -45,6 +45,7 @@ export class ExportListTasks {
   // #region Methods
   /** Prepares the entire document within one budget and releases failed or cancelled exports. */
   public async execute(
+    organizationId: string,
     listId: string,
     query: ListTaskExportQuery,
     budgetMs: number = REQUEST_BUDGET_MS,
@@ -69,7 +70,7 @@ export class ExportListTasks {
     let ready = false;
 
     try {
-      const fileSpool = await this.openSpool();
+      const fileSpool = await this.openSpool(organizationId);
       spool = fileSpool;
       signal.throwIfAborted();
       service = 'task-service';
@@ -146,10 +147,10 @@ export class ExportListTasks {
   }
 
   /** Translates failure to acquire or create a private export file into the public unavailable code. */
-  private async openSpool(): Promise<ListTaskCsvSpool> {
+  private async openSpool(organizationId: string): Promise<ListTaskCsvSpool> {
     let spool: ListTaskCsvSpool | null;
     try {
-      spool = await this.files.open();
+      spool = await this.files.open(organizationId);
     } catch {
       throw new ListTaskExportUnavailable('api-gateway', 'upstream.unavailable');
     }

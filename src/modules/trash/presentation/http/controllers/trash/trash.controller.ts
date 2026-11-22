@@ -66,7 +66,7 @@ const TRASH_TASK_PROBLEMS: AcceptedProblems = {
   400: ['request.invalid'],
   403: ['access.role-insufficient'],
   404: ['task.not-found', 'task.trashed', 'organization.not-found'],
-  409: ['task.archived'],
+  409: ['task.archived', 'trash.tree-too-large'],
   412: ['request.version-mismatch'],
 };
 

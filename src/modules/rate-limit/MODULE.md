@@ -14,6 +14,7 @@ rate-limiter-flexible, and `429 rate-limit.exceeded` with `Retry-After` beyond e
 | GitLab webhook deliveries                | 60 per minute      | `rate-limit:webhook-gitlab:<pseudonym>`                               |
 | Public site contact submissions          | 5 per minute       | `rate-limit:site-contact:<pseudonym>`                                 |
 | Public site newsletter submissions       | 10 per minute      | `rate-limit:site-newsletter:<pseudonym>`                              |
+| Candidate credentials before Identity    | 1,200 per minute   | `rate-limit:introspection:<pseudonym>`                                |
 | Per client address, failed bearer tokens | 10 failures/minute | `rate-limit:bearer-failures:<pseudonym>`                              |
 
 The first is decision 8 of the integration plan; the two others are decision 2 of the P2b security
@@ -35,6 +36,7 @@ else; the connection belongs to the technical `RedisModule`.
 | public/addresses/count-intake-request    | tasks                                                                                                                                                                                                                                                                                                                                                                  |
 | public/requests/count-request            | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites, realtime-tickets                                                                                                                           |
 | public/addresses/count-anonymous-request | auth-routes, me, sessions, two-step-verification, organizations, members, invitations, api-tokens, spaces, lists, tasks, access, archives, trash, comments, watchers, dependencies, task-templates, saved-views, favorites, realtime-tickets                                                                                                                           |
+| public/addresses/admit-introspection     | auth                                                                                                                                                                                                                                                                                                                                                                   |
 | public/addresses/check-bearer-failures   | auth                                                                                                                                                                                                                                                                                                                                                                   |
 | public/addresses/count-bearer-failure    | auth                                                                                                                                                                                                                                                                                                                                                                   |
 
@@ -67,6 +69,11 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
 - **Public site forms.** `SiteRateLimitGuard` counts contact and newsletter submissions in
   separate windows by the pseudonymized client address. It counts requests before validation
   and returns a `429` with `Retry-After`, `RateLimit` and `RateLimit-Policy`.
+- **Identity admission.** Candidate opaque sessions and well-formed personal API tokens share a
+  per-network window before Identity is called. The gateway allows 128 such verifications per
+  process and at most 32 per network concurrently, including upstream retries. Exhaustion returns
+  the existing 429 and Retry-After before verification. Anonymous operations and CSRF rejections
+  do not consume slots. Verified credentials retain their own quota and per-request verification.
 - **Failed bearer tokens.** The credential guard of `auth` reads the failures of the address
   (`CheckBearerFailures`, which counts nothing) before it looks at a bearer token, and answers
   `429` without an introspection once the address has 10 in the window, whatever the token: only
@@ -76,8 +83,8 @@ the operations behind the `BearerFailureLimit` port of `auth`, which verifies be
   (`503`) counts none. The check and the count are two steps around the introspection, so the
   tokens of requests sent concurrently before the tenth failure is counted are all introspected:
   a burst can pass the 10 by as many requests as it keeps in flight, once per window. From then on
-  the address waits for the end of the window. Bounding the requests in flight instead would also
-  refuse an integration that sends more than 10 valid requests at once.
+  the address waits for the end of the window. The pre-Identity limiter also bounds these
+  concurrent requests, independently of the bearer failure counter.
 - **Client address.** `toClientAddress` of `src/presentation/http/mappers/`: `request.ip` with
   `trust proxy` set to one hop, the address Traefik saw, the same address identity-service records
   with a session. An IPv4 address is limited alone, an IPv6 address with its whole `/64`, which

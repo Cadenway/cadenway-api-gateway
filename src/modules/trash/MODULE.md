@@ -47,6 +47,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   `403 access.role-insufficient` of the restoration, the erasure and the emptying is not declared
   by their internal operations (an entry the caller may not manage is not found), so it is never
   relayed there: task-service answering it would be `503 upstream.failed`.
+- The single-task trash route relays `409 trash.tree-too-large` if the tree exceeds the Task
+  service limit of 1000 tasks, including archived descendants.
 - task-service serves the trash routes, and the deletion of a list or a space that sends their
   tasks here, only once its PR 3 (trash and deletion) is merged and deployed. Until then these
   routes answer `503 upstream.failed`: task-service answers its unknown route with a `404` whose

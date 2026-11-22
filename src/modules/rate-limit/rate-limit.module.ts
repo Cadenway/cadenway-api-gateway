@@ -5,6 +5,10 @@ import { addressPseudonymizerProvider } from './composition/providers/adapters/a
 import { anonymousRequestCounterProvider } from './composition/providers/adapters/addresses/anonymous-request-counter.provider.js';
 import { bearerFailureCounterProvider } from './composition/providers/adapters/addresses/bearer-failure-counter.provider.js';
 import { requestCounterProvider } from './composition/providers/adapters/requests/request-counter.provider.js';
+import {
+  admitIntrospectionProvider,
+  introspectionCounterProvider,
+} from './composition/providers/use-cases/addresses/admit-introspection.provider.js';
 import { checkBearerFailuresProvider } from './composition/providers/use-cases/addresses/check-bearer-failures.provider.js';
 import { countAnonymousRequestProvider } from './composition/providers/use-cases/addresses/count-anonymous-request.provider.js';
 import { countIntakeRequestProvider } from './composition/providers/use-cases/addresses/count-intake-request.provider.js';
@@ -12,6 +16,7 @@ import { countWebhookRequestProvider } from './composition/providers/use-cases/a
 import { countSiteRequestProvider } from './composition/providers/use-cases/addresses/count-site-request.provider.js';
 import { countBearerFailureProvider } from './composition/providers/use-cases/addresses/count-bearer-failure.provider.js';
 import { countRequestProvider } from './composition/providers/use-cases/requests/count-request.provider.js';
+import { AdmitIntrospection } from './public/addresses/admit-introspection.js';
 import { CheckBearerFailures } from './public/addresses/check-bearer-failures.js';
 import { CountAnonymousRequest } from './public/addresses/count-anonymous-request.js';
 import { CountIntakeRequest } from './public/addresses/count-intake-request.js';
@@ -42,6 +47,8 @@ import { CountSiteRequest } from './public/addresses/count-site-request.js';
     requestCounterProvider,
     anonymousRequestCounterProvider,
     bearerFailureCounterProvider,
+    introspectionCounterProvider,
+    admitIntrospectionProvider,
     addressPseudonymizerProvider,
     countRequestProvider,
     countAnonymousRequestProvider,
@@ -56,6 +63,7 @@ import { CountSiteRequest } from './public/addresses/count-site-request.js';
     SiteRateLimitGuard,
   ],
   exports: [
+    AdmitIntrospection,
     RateLimitGuard,
     CountRequest,
     CountAnonymousRequest,

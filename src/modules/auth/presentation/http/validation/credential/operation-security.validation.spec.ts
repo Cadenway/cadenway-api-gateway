@@ -47,6 +47,11 @@ const BODYLESS_POSTS = new Set([
 // only declares If-Organization-Match on task update and detail.
 const ORGANIZATION_PRECONDITION_PATH =
   /^\/v1\/(?:tasks\/(?:\{taskKey\}(?:\/[^/]+)*|bulk-actions)|organization(?:\/authentication-policy|\/logo\/uploads)?|archives\/(?:lists|tasks)|trash\/[^/]+(?:\/[^/]+)*)$/u;
+const ONBOARDING_PRECONDITION_OPERATIONS = new Set([
+  'updateOnboarding',
+  'updateOnboardingChecklist',
+  'finishOnboarding',
+]);
 
 /**
  * Interface ServedRoute
@@ -286,7 +291,9 @@ function contractOperations(): readonly ContractOperation[] {
             security: security as OperationSecurity['security'],
             organization: forbidden.includes('organization.not-selected'),
             ...(bodylessPost ? { allowBodylessPost: true } : {}),
-            ...(ORGANIZATION_PRECONDITION_PATH.test(path) || logoMutation
+            ...(ORGANIZATION_PRECONDITION_PATH.test(path) ||
+            logoMutation ||
+            ONBOARDING_PRECONDITION_OPERATIONS.has(operationId)
               ? { organizationPrecondition: true }
               : {}),
           },
@@ -308,7 +315,7 @@ describe('the security of every route against the public contracts', () => {
     expect(operations).toHaveLength(237);
     expect(
       operations.filter((operation) => operation.security.organizationPrecondition),
-    ).toHaveLength(63);
+    ).toHaveLength(66);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

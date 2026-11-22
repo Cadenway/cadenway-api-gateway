@@ -31,6 +31,7 @@ import { z } from 'zod';
 import { sessionExpiredProblem } from '../../../../../../problems/session-problems.js';
 import {
   isUpstreamProblem,
+  relayUpstream,
   toPublicProblem,
   type AcceptedProblems,
 } from '../../../../../../problems/upstream-problem.js';
@@ -78,6 +79,7 @@ const CREATE_PROBLEMS: AcceptedProblems = {
   404: ['user.not-synchronized'],
   409: ['organization.slug-taken'],
   422: ['organization.slug-invalid'],
+  429: ['invitation.daily-limit-reached'],
 };
 
 /**
@@ -303,7 +305,7 @@ export class OrganizationsController {
     body: z.output<typeof CreateOrganizationBody>,
     @Res({ passthrough: true }) response: Response,
   ): Promise<OrganizationCreated> {
-    const created: CreateOrganizationOutput = await this.relay(CREATE_PROBLEMS, () =>
+    const created: CreateOrganizationOutput = await relayUpstream(response, CREATE_PROBLEMS, () =>
       this.creation.execute({
         name: body.name,
         ...(body.slug === undefined ? {} : { slug: body.slug }),

@@ -226,6 +226,22 @@ describe('attachment HTTP guards', () => {
     expect(removed.status).toBe(204);
   });
 
+  it('relays the storage quota refusal before returning a signed upload', async () => {
+    storage.startTaskAttachmentUpload.mockRejectedValueOnce(
+      new ProblemException({ status: 409, code: 'attachment.storage-quota-exceeded' }),
+    );
+    const response = await request(application.server)
+      .post(base)
+      .set('Cookie', session)
+      .set('Origin', ALLOWED_ORIGIN)
+      .send({ fileName: 'capture.png', contentType: 'image/png', sizeBytes: 100 });
+
+    expectPublicResponse('post', '/v1/tasks/{taskKey}/attachments', response);
+    expect(response.status).toBe(409);
+    expect(response.body as unknown).toMatchObject({ code: 'attachment.storage-quota-exceeded' });
+    expect(response.headers.location).toBeUndefined();
+  });
+
   it('relays the storage quota refusal during authenticated completion', async () => {
     storage.completeTaskAttachmentUpload.mockRejectedValueOnce(
       new ProblemException({ status: 409, code: 'attachment.storage-quota-exceeded' }),

@@ -131,7 +131,7 @@ describe('ExportListTasks', () => {
       sheetSortColumn: 'priority',
       sheetSortDirection: 'desc',
     } as const;
-    const csv = await exportList.execute('list-id', query);
+    const csv = await exportList.execute('organization-id', 'list-id', query);
 
     expect(read).toHaveBeenCalledWith('list-id', query, expect.any(AbortSignal));
     expect(lookup).toHaveBeenCalledExactlyOnceWith(
@@ -170,7 +170,7 @@ describe('ExportListTasks', () => {
         ],
       });
 
-      const csv = await exportList.execute('list-id', {
+      const csv = await exportList.execute('organization-id', 'list-id', {
         sheetSortColumn: 'people',
         sheetSortDirection: direction,
       });
@@ -182,14 +182,14 @@ describe('ExportListTasks', () => {
 
   it('returns a header-only file without consulting the directory for an empty list', async () => {
     const { lookup, exportList } = setup([]);
-    const csv = await exportList.execute('list-id', {});
+    const csv = await exportList.execute('organization-id', 'list-id', {});
     expect(await contentOf(csv)).toBe(`${HEADER}\r\n`);
     expect(lookup).not.toHaveBeenCalled();
   });
 
   it('looks up assignees in bounded batches before reading the next set of rows', async () => {
     const { lookup, writeRows, exportList } = setup(manyRows(5201));
-    await exportList.execute('list-id', {});
+    await exportList.execute('organization-id', 'list-id', {});
     expect(lookup.mock.calls.map(([ids]) => ids.length)).toEqual([2560, 2560, 81]);
     expect(writeRows.mock.calls.map(([lines]) => lines.length)).toEqual([128, 128, 5]);
     expect(new Set(lookup.mock.calls.flatMap(([ids]) => ids)).size).toBe(5201);
@@ -201,7 +201,7 @@ describe('ExportListTasks', () => {
       .mockResolvedValueOnce({ items: [] })
       .mockRejectedValueOnce(new Error('Directory failure'));
 
-    await expect(exportList.execute('list-id', {})).rejects.toMatchObject({
+    await expect(exportList.execute('organization-id', 'list-id', {})).rejects.toMatchObject({
       service: 'organization-service',
       code: 'upstream.unavailable',
     });
@@ -231,7 +231,7 @@ describe('ExportListTasks', () => {
           );
         }),
     );
-    const pending = exportList.execute('list-id', {}, 100);
+    const pending = exportList.execute('organization-id', 'list-id', {}, 100);
     const assertion = expect(pending).rejects.toMatchObject({
       service: 'organization-service',
       code: 'upstream.deadline-exceeded',
@@ -249,9 +249,9 @@ describe('ExportListTasks', () => {
     const taskFailure = new Error('Task refused access');
     const { read, lookup, exportList } = setup([]);
     read.mockRejectedValue(taskFailure);
-    await expect(exportList.execute('list-id', {})).rejects.toBe(taskFailure);
+    await expect(exportList.execute('organization-id', 'list-id', {})).rejects.toBe(taskFailure);
     expect(lookup).not.toHaveBeenCalled();
-    await expect(exportList.execute('list-id', {}, 0)).rejects.toBeInstanceOf(
+    await expect(exportList.execute('organization-id', 'list-id', {}, 0)).rejects.toBeInstanceOf(
       ListTaskExportUnavailable,
     );
     expect(read).toHaveBeenCalledTimes(1);
@@ -265,14 +265,16 @@ describe('ExportListTasks', () => {
       header: HEADER,
     };
     read.mockResolvedValue(readSequentially([metadata]));
-    await expect(exportList.execute('list-id', {})).rejects.toMatchObject({
+    await expect(exportList.execute('organization-id', 'list-id', {})).rejects.toMatchObject({
       service: 'task-service',
     });
     expect(dispose).toHaveBeenCalledOnce();
 
     read.mockClear();
     const busy = new ExportListTasks({ read }, { lookup }, { open: () => Promise.resolve(null) });
-    await expect(busy.execute('list-id', {})).rejects.toMatchObject({ service: 'api-gateway' });
+    await expect(busy.execute('organization-id', 'list-id', {})).rejects.toMatchObject({
+      service: 'api-gateway',
+    });
     expect(read).not.toHaveBeenCalled();
   });
 });

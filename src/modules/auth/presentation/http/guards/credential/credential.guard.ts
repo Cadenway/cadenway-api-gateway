@@ -12,6 +12,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 
 import {
+  anonymousRateLimitExceededProblem,
   apiTokenInvalidProblem,
   apiTokenNotAcceptedProblem,
   bearerFailureLimitExceededProblem,
@@ -32,6 +33,7 @@ import type { VerifiedApiToken } from '../../../../application/models/api-token/
 import type { VerifiedSession } from '../../../../application/models/session/verified-session.model.js';
 import type { VerifyApiTokenOutput } from '../../../../application/use-cases/commands/api-token/verify-api-token/verify-api-token.output.js';
 import { VerifyApiToken } from '../../../../application/use-cases/commands/api-token/verify-api-token/verify-api-token.use-case.js';
+import { PrepareCredentialIntrospection } from '../../../../application/use-cases/commands/credential/prepare-credential-introspection/prepare-credential-introspection.use-case.js';
 import { VerifySession } from '../../../../application/use-cases/queries/session/verify-session/verify-session.use-case.js';
 import {
   readBearerToken,
@@ -92,6 +94,9 @@ import {
  *    client signs the internal token of every call from it, and the log lines of the request carry
  *    `organizationId` and `userId`. The credential itself (its id, never its secret) is kept with
  *    `attachVerifiedCredential` for the rate limit, the sign-out and the choice of organization.
+ *
+ * Candidate sessions and PATs share a pre-introspection network ceiling and bounded in-flight
+ * allowance. Each successful admission still verifies the credential without caching.
  *
  * A failed introspection is `503 upstream.*`, whatever identity-service answered.
  */
@@ -154,6 +159,7 @@ export class CredentialGuard implements CanActivate {
    * @param {VerifyApiToken} apiTokens - Introspection of the personal API token.
    * @param {{ readonly ALLOWED_ORIGINS: readonly string[] }} config - Validated configuration of the gateway.
    * @param {Reflector} reflector - NestJS metadata reader.
+   * @param {PrepareCredentialIntrospection} admission - Shared pre-Identity admission control.
    * @constructor
    */
   public constructor(
@@ -161,6 +167,8 @@ export class CredentialGuard implements CanActivate {
     @Inject(VerifyApiToken) apiTokens: VerifyApiToken,
     @Inject(CONFIG) config: { readonly ALLOWED_ORIGINS: readonly string[] },
     @Inject(Reflector) reflector: Reflector,
+    @Inject(PrepareCredentialIntrospection)
+    private readonly admission: PrepareCredentialIntrospection,
   ) {
     this.sessions = sessions;
     this.apiTokens = apiTokens;
@@ -197,9 +205,9 @@ export class CredentialGuard implements CanActivate {
    * @returns {Promise<boolean>} `true` when the request may continue.
    * @throws {ProblemException} 401 `auth.session-required`, `auth.session-expired` or
    * `auth.api-token-invalid`; 403 `auth.csrf-rejected`, `auth.api-token-not-accepted`,
-   * `organization.mfa-required`, `auth.scope-missing` or `organization.not-selected`; 429 `rate-limit.exceeded` after too many
-   * failed bearer tokens from the client address; or 503 `upstream.*` when identity-service cannot
-   * answer.
+   * `organization.mfa-required`, `auth.scope-missing` or `organization.not-selected`;
+   * 429 `rate-limit.exceeded` when credential admission or the bearer failure budget is exhausted;
+   * or 503 `upstream.*` when identity-service cannot answer.
    * @throws {Error} When the handler declares no `OperationSecurity`: a programming error.
    */
   public async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -222,7 +230,7 @@ export class CredentialGuard implements CanActivate {
         return true;
       }
     }
-    await this.authenticateSession(request, operation);
+    await this.authenticateSession(context, operation);
     return true;
   }
 
@@ -245,12 +253,15 @@ export class CredentialGuard implements CanActivate {
     operation: OperationSecurity,
   ): Promise<void> {
     const request: Request = context.switchToHttp().getRequest<Request>();
-    const verification: VerifyApiTokenOutput = await this.introspect(() =>
+    const verify = (): Promise<VerifyApiTokenOutput> =>
       this.apiTokens.execute({
         token: bearer.kind === 'token' ? bearer.token : null,
         clientAddress: toClientAddress(request),
-      }),
-    );
+      });
+    const verification =
+      bearer.kind === 'token'
+        ? await this.introspectAdmitted(context, verify)
+        : await this.introspect(verify);
     if (verification.outcome === 'throttled') {
       context
         .switchToHttp()
@@ -298,12 +309,16 @@ export class CredentialGuard implements CanActivate {
    * request, then checks the current organization the operation needs: a withheld one first,
    * then a missing one. A withheld organization never reaches the context of the request.
    *
-   * @param {Request} request - Incoming request.
+   * @param {ExecutionContext} context - Incoming request and its response for Retry-After.
    * @param {OperationSecurity} operation - Security of the operation.
    * @returns {Promise<void>} Resolves once the request carries its identity, or none on an
    * operation whose credential is optional.
    */
-  private async authenticateSession(request: Request, operation: OperationSecurity): Promise<void> {
+  private async authenticateSession(
+    context: ExecutionContext,
+    operation: OperationSecurity,
+  ): Promise<void> {
+    const request = context.switchToHttp().getRequest<Request>();
     if (!acceptsSession(operation)) {
       throw new Error(`${operation.operationId} accepts no session: no route declares that yet.`);
     }
@@ -320,7 +335,7 @@ export class CredentialGuard implements CanActivate {
     }
     const session: VerifiedSession | null =
       cookie.kind === 'token'
-        ? await this.introspect(() => this.sessions.execute(cookie.token))
+        ? await this.introspectAdmitted(context, () => this.sessions.execute(cookie.token))
         : null;
     if (session === null) {
       if (optional) {
@@ -351,6 +366,24 @@ export class CredentialGuard implements CanActivate {
       id: session.sessionId,
       userId: session.userId,
     });
+  }
+
+  /** Holds one admission through verification, including upstream retries and failure handling. */
+  private async introspectAdmitted<TResult>(
+    context: ExecutionContext,
+    call: () => Promise<TResult>,
+  ): Promise<TResult> {
+    const http = context.switchToHttp();
+    const permit = await this.admission.execute(toClientAddress(http.getRequest<Request>()));
+    if (permit.outcome === 'refused') {
+      http.getResponse<Response>().setHeader('Retry-After', String(permit.retryAfterSeconds));
+      throw anonymousRateLimitExceededProblem();
+    }
+    try {
+      return await this.introspect(call);
+    } finally {
+      permit.release();
+    }
   }
 
   /**

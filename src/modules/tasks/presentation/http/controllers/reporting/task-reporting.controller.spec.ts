@@ -25,6 +25,18 @@ const organizationId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01';
 const listId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02';
 const userId = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03';
 
+function exportCsv(
+  controller: TaskReportingController,
+  params: Parameters<TaskReportingController['export']>[0],
+  query: Parameters<TaskReportingController['export']>[1],
+  response: Response,
+): Promise<void> {
+  return runWithOrganizationContext(
+    { organizationId, actor: { type: 'user', id: userId }, role: 'member', scopes: [] },
+    () => controller.export(params, query, response),
+  );
+}
+
 describe('TaskReportingController', () => {
   it('opens and reseals a sprint cursor for the verified request scope', async () => {
     const report = {
@@ -105,7 +117,8 @@ describe('TaskReportingController', () => {
     const response = Object.assign(new PassThrough(), { setHeader });
 
     await expect(
-      controller.export(
+      exportCsv(
+        controller,
         { listId },
         { level: 'roots', sort: 'manual' },
         response as unknown as Response,
@@ -148,16 +161,17 @@ describe('TaskReportingController', () => {
     const query = { level: 'roots', sort: 'manual' } as const;
 
     await runWithDeadline(120_000, () =>
-      controller.export({ listId }, query, response as unknown as Response),
+      exportCsv(controller, { listId }, query, response as unknown as Response),
     );
 
     expect(execute).toHaveBeenCalledExactlyOnceWith(
+      organizationId,
       listId,
       query,
       expect.any(Number),
       expect.any(AbortSignal),
     );
-    expect(execute.mock.calls[0]?.[2]).toBeGreaterThan(119_000);
+    expect(execute.mock.calls[0]?.[3]).toBeGreaterThan(119_000);
     expect(response.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
     expect(response.setHeader).toHaveBeenCalledWith(
       'Content-Disposition',
@@ -170,7 +184,7 @@ describe('TaskReportingController', () => {
 
   it('cancels pending preparation when the response closes', async () => {
     const execute = vi.fn<ExportListTasks['execute']>().mockImplementation(
-      (_listId, _query, _budget, signal) =>
+      (_organizationId, _listId, _query, _budget, signal) =>
         new Promise((_resolve, reject) => {
           signal?.addEventListener(
             'abort',
@@ -187,7 +201,8 @@ describe('TaskReportingController', () => {
       {} as AuthenticateReportCursor,
     );
     const response = Object.assign(new PassThrough(), { setHeader: vi.fn() });
-    const done = controller.export(
+    const done = exportCsv(
+      controller,
       { listId },
       { level: 'roots', sort: 'manual' },
       response as unknown as Response,
@@ -195,7 +210,7 @@ describe('TaskReportingController', () => {
     response.destroy();
 
     await done;
-    expect(execute.mock.calls[0]?.[3]?.aborted).toBe(true);
+    expect(execute.mock.calls[0]?.[4]?.aborted).toBe(true);
     expect(response.setHeader).not.toHaveBeenCalled();
   });
 
@@ -218,13 +233,63 @@ describe('TaskReportingController', () => {
         setHeader: vi.fn(),
         req: { method: 'GET' },
       });
-      const done = controller.export(
+      const done = exportCsv(
+        controller,
         { listId },
         { level: 'roots', sort: 'manual' },
         response as unknown as Response,
       );
 
       await vi.advanceTimersByTimeAsync(29_000);
+      expect(dispose).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1000);
+      await done;
+      expect(response.destroyed).toBe(true);
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('disposes a progressing download at the total transfer deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const dispose = vi.fn().mockResolvedValue(undefined);
+      const write = vi.fn((_chunk: Buffer, _encoding: string, callback: () => void) => {
+        callback();
+      });
+      const stream = async function* (): AsyncGenerator<Uint8Array> {
+        for (let index = 0; index < 8; index += 1) {
+          yield Buffer.from('row\r\n');
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 20_000);
+          });
+        }
+      };
+      const execute = vi.fn<ExportListTasks['execute']>().mockResolvedValue({
+        filename: 'sprint-14.csv',
+        byteLength: 40,
+        stream,
+        dispose,
+      });
+      const controller = new TaskReportingController(
+        {} as ReadTaskReports,
+        { execute } as unknown as ExportListTasks,
+        {} as AuthenticateReportCursor,
+      );
+      const response = Object.assign(new Writable({ write }), {
+        setHeader: vi.fn(),
+        req: { method: 'GET' },
+      });
+      const done = exportCsv(
+        controller,
+        { listId },
+        { level: 'roots', sort: 'manual' },
+        response as unknown as Response,
+      );
+
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect(write).toHaveBeenCalledTimes(6);
       expect(dispose).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1000);
       await done;

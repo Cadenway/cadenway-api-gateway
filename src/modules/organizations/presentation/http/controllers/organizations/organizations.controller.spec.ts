@@ -35,18 +35,20 @@ import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environm
  * @description
  * What the internal HTTP client throws for a client error of organization-service.
  *
- * @param {400 | 403 | 404 | 409 | 412 | 422} status - Status organization-service answered.
+ * @param {400 | 403 | 404 | 409 | 412 | 422 | 429} status - Status organization-service answered.
  * @param {string} code - Code of its problem.
  * @param {Readonly<Record<string, unknown>>} details - Details of its problem.
  * @returns {ReturnType<typeof identityProblem>} The problem.
  */
 function organizationProblem(
-  status: 400 | 403 | 404 | 409 | 412 | 422,
+  status: 400 | 403 | 404 | 409 | 412 | 422 | 429,
   code: string,
   details: Readonly<Record<string, unknown>> = {},
 ): ReturnType<typeof identityProblem> {
   return identityProblem(status, code, details, 'organization-service');
 }
+
+const CREATION_INVITE_RETRY_AT = new Date(Date.now() + 3_600_000).toISOString();
 
 /**
  * Constant CREATION
@@ -208,6 +210,29 @@ const CASES: readonly RouteCase[] = [
       counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 30 }),
     status: 429,
     code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'POST /v1/organizations relays the invitation budget with Retry-After',
+    method: 'post',
+    path: '/v1/organizations',
+    url: '/v1/organizations',
+    body: CREATION,
+    arrange: ({ organization }) =>
+      organization.createOrganization.mockRejectedValue(
+        organizationProblem(429, 'invitation.daily-limit-reached', {
+          remaining: 0,
+          nextAvailableAt: CREATION_INVITE_RETRY_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.daily-limit-reached',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        details: { remaining: 0, nextAvailableAt: CREATION_INVITE_RETRY_AT },
+      });
+      expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+      expect(response.headers.location).toBeUndefined();
+    },
   },
   {
     name: 'POST /v1/organizations answers 503 when organization-service cannot answer',

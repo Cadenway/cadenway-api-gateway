@@ -60,7 +60,7 @@ const LIST: AcceptedProblems = {
 const START: AcceptedProblems = {
   ...READ,
   403: ['access.role-insufficient'],
-  409: ['task.archived', 'idempotency.request-in-progress'],
+  409: ['task.archived', 'idempotency.request-in-progress', 'attachment.storage-quota-exceeded'],
   422: [
     'attachment.file-too-large',
     'attachment.upload-metadata-mismatch',

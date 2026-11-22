@@ -284,6 +284,24 @@ describe('routes of /v1/tasks/{taskKey}/trash and /v1/trash', () => {
     });
   });
 
+  it('relays the conflict when the task tree exceeds the trash limit', async () => {
+    application.task.trashTask.mockRejectedValue(
+      taskProblem(409, 'trash.tree-too-large', { limit: 1000 }),
+    );
+
+    const response = await runRouteCase(application, identity, {
+      name: 'task tree exceeds the trash limit',
+      method: 'post',
+      path: '/v1/tasks/{taskKey}/trash',
+      url: `/v1/tasks/${TASK_KEY}/trash`,
+      body: {},
+      status: 409,
+      code: 'trash.tree-too-large',
+    });
+
+    expect((response.body as { details?: unknown }).details).toEqual({ limit: 1000 });
+  });
+
   it('lists the trash with its entries, their trash members and the total', async () => {
     const response = await runRouteCase(application, identity, {
       name: 'trash page members',

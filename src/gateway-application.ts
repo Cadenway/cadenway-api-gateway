@@ -111,10 +111,12 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 // A capture-free path prevents Express decoding an invalid member ID before setting the header.
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
+const MEMBERS_PATH = /^\/v1\/members(?:\/[^/]+)?\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 // All routes addressed by a task key, plus the bulk actions and current-organization collections.
 const ORGANIZATION_BOUND_PATH =
   /^\/v1\/(?:tasks\/[^/]+(?:\/[^/]+)*|organization(?:\/authentication-policy)?|archives\/(?:lists|tasks)|trash\/(?:empty|entries(?:\/[^/]+(?:\/restore)?)?))\/?$/iu;
+const ONBOARDING_PATH = /^\/v1\/me\/onboarding(?:\/(?:checklist|finish))?\/?$/iu;
 const SEARCH_PATH = /^\/v1\/search\/?$/iu;
 const BILLING_PRIVATE_PATH = /^\/v1\/billing\/(?:subscription|checkout|invoices)\/?$/iu;
 const FEDERATED_AUTH_PATH =
@@ -297,7 +299,14 @@ export async function createGatewayApplication(
   // Keep the numeric ETag available to If-Match writes. It is not a validator of a cached
   // representation: the same URL and version can refer to different organizations.
   app.use(
-    [ORGANIZATION_BOUND_PATH, SEARCH_PATH, BILLING_PRIVATE_PATH, AUTOMATIONS_PATH],
+    [
+      ORGANIZATION_BOUND_PATH,
+      MEMBERS_PATH,
+      ONBOARDING_PATH,
+      SEARCH_PATH,
+      BILLING_PRIVATE_PATH,
+      AUTOMATIONS_PATH,
+    ],
     (request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'private, no-store');
       if (request.method === 'GET' || request.method === 'HEAD') {
@@ -311,7 +320,9 @@ export async function createGatewayApplication(
     [
       ORGANIZATION_BOUND_PATH,
       PROFILE_MEDIA_PATH,
+      MEMBERS_PATH,
       DOCUMENTS_PATH,
+      ONBOARDING_PATH,
       SEARCH_PATH,
       BILLING_PRIVATE_PATH,
       AUTOMATIONS_PATH,
