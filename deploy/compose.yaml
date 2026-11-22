@@ -9,13 +9,13 @@ services:
     image: ghcr.io/${GHCR_OWNER}/cadenway-api-gateway:${API_GATEWAY_VERSION}
     restart: unless-stopped
     # The entries of the gateway in cadenway-ops docs/service-environment.md, plus ALLOWED_ORIGINS,
-    # built from DOMAIN and PUBLIC_SCHEME. Those two, REDIS_URL and the <NAME>_SERVICE_URL come from
+    # built from DOMAIN and PUBLIC_SCHEME. Those two and the <NAME>_SERVICE_URL come from
     # the environment file Ansible writes on the host, the private key from the secrets of the
     # environment. The gateway trusts no issuer: it signs the calls it makes and authenticates the
     # applications itself.
     environment:
       PORT: '3000'
-      REDIS_URL: ${REDIS_URL}
+      REDIS_URL: redis://redis-api:6379
       # The web application and the website, the only origins CORS and the CSRF check accept.
       ALLOWED_ORIGINS: ${PUBLIC_SCHEME:-https}://app.${DOMAIN},${PUBLIC_SCHEME:-https}://${DOMAIN}
       # Enable after the Webapp serves the continuation route on its configured origin.
@@ -35,6 +35,7 @@ services:
     networks:
       - edge
       - internal
+      - redis-api
     # The environment in the router, service and network names keeps two stacks apart on one shared
     # Traefik.
     labels:
@@ -61,3 +62,5 @@ networks:
     name: cadenway-edge-${ENVIRONMENT:-local}
     external: true
   internal: {}
+  redis-api:
+    internal: true
