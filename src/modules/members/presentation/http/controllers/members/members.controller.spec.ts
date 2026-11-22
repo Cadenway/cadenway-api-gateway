@@ -564,6 +564,32 @@ describe('routes of /v1/members', () => {
       expect(response.body).toMatchObject({ id: INES.id, twoStepVerificationEnabled: false });
     });
 
+    it('returns the current member representation when the version is unchanged', async () => {
+      application.organization.getMember
+        .mockResolvedValueOnce({ ...INES, twoStepVerificationEnabled: false })
+        .mockResolvedValueOnce({ ...INES });
+      const read = {
+        name: 'member with role-dependent fields',
+        method: 'get',
+        path: '/v1/members/{memberId}',
+        url: MEMBER_URL,
+        status: 200,
+      } as const;
+
+      const before = await runRouteCase(application, identity, read);
+      expect(before.headers['cache-control']).toBe('private, no-store');
+      expect(before.body).toHaveProperty('twoStepVerificationEnabled', false);
+
+      const after = await runRouteCase(application, identity, {
+        ...read,
+        credential: 'members-token',
+        headers: { 'If-None-Match': String(before.headers.etag) },
+      });
+      expect(after.headers['cache-control']).toBe('private, no-store');
+      expect(after.headers.etag).toBe(before.headers.etag);
+      expect(after.body).not.toHaveProperty('twoStepVerificationEnabled');
+    });
+
     it('leaves twoStepVerificationEnabled out when organization-service does not send it, as for a member or a guest', async () => {
       application.organization.listMembers.mockResolvedValue({ ...PAGE });
 
