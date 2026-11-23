@@ -53,11 +53,11 @@ function fixture(role: 'owner' | 'admin' | 'member' = 'owner', id = organization
   const updateRule = vi.fn<AutomationServiceClient['updateRule']>();
   const deleteRule = vi.fn<AutomationServiceClient['deleteRule']>();
   const listRunCandidates = vi.fn<AutomationServiceClient['listRunCandidates']>();
-  const getTask = vi.fn<TaskServiceClient['getTask']>();
+  const getTaskVisibility = vi.fn<TaskServiceClient['getTaskVisibility']>();
   const registry = createAutomationRegistry(
     { getOrganization, checkAutomationRecipient },
     { createRule, listRules, updateRule, deleteRule, listRunCandidates },
-    { getTask },
+    { getTaskVisibility },
   );
   return {
     registry,
@@ -67,7 +67,7 @@ function fixture(role: 'owner' | 'admin' | 'member' = 'owner', id = organization
     listRules,
     updateRule,
     deleteRule,
-    getTask,
+    getTaskVisibility,
   };
 }
 
@@ -149,11 +149,15 @@ describe('Automation registry authority', () => {
     expect(other.listRules).not.toHaveBeenCalled();
   });
 
-  it('only treats the canonical hidden or trashed responses as invisible', async () => {
-    const { registry, getTask } = fixture();
-    getTask
-      .mockRejectedValueOnce(new ProblemException({ status: 404, code: 'task.trashed' }))
-      .mockRejectedValueOnce(new ProblemException({ status: 404, code: 'task.not-found' }))
+  it('uses the signed Task batch and rejects incomplete evidence', async () => {
+    const { registry, getTaskVisibility } = fixture();
+    const requested = ['CAD-482', 'CAD-483'];
+    const { signal } = new AbortController();
+    getTaskVisibility
+      .mockResolvedValueOnce(['CAD-483'])
+      .mockRejectedValueOnce(
+        new ProblemException({ status: 503, code: 'task.visibility-unavailable' }),
+      )
       .mockRejectedValueOnce(
         new ProblemException({
           status: 403,
@@ -161,7 +165,13 @@ describe('Automation registry authority', () => {
           details: { service: 'task-service' },
         }),
       );
-    await expect(registry.visibleTaskKeys(['CAD-482', 'CAD-483'])).resolves.toEqual(new Set());
+    await expect(registry.visibleTaskKeys(requested, signal)).resolves.toEqual(
+      new Set(['CAD-483']),
+    );
+    expect(getTaskVisibility).toHaveBeenCalledExactlyOnceWith(requested, signal);
+    await expect(registry.visibleTaskKeys(requested, signal)).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed', details: { service: 'task-service' } },
+    });
     await expect(registry.visibleTaskKeys(['CAD-482'])).rejects.toMatchObject({
       problem: { status: 503, code: 'upstream.unauthorized', details: { service: 'task-service' } },
     });

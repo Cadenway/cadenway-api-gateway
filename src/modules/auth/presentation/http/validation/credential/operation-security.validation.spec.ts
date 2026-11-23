@@ -43,9 +43,6 @@ const BODYLESS_POSTS = new Set([
   'completeReminder',
 ]);
 
-// These existing operations accept the optional pin ahead of the additive package release.
-const BOARD_READ_PRECONDITIONS = new Set(['getSpace', 'getList', 'listTasks', 'countTaskGroups']);
-
 /**
  * Interface ServedRoute
  *
@@ -304,8 +301,7 @@ function contractOperations(): readonly ContractOperation[] {
         const bodylessPost = BODYLESS_POSTS.has(operationId);
         const organizationPrecondition =
           declaresOrganizationPrecondition(spec, item.parameters) ||
-          declaresOrganizationPrecondition(spec, operation.parameters) ||
-          BOARD_READ_PRECONDITIONS.has(operationId);
+          declaresOrganizationPrecondition(spec, operation.parameters);
         if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
           throw new Error(`${operationId} no longer has a bodyless POST contract.`);
         }

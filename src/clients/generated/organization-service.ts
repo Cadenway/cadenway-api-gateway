@@ -25,6 +25,14 @@ export interface QuotaNotificationRecipientLookupResult {
   items: QuotaNotificationRecipientIds;
 }
 
+export interface BillingActiveSeatCount {
+  /**
+     * Total number of memberships using a seat at the time of the read.
+     * @minimum 0
+     */
+  activeSeatCount: number;
+}
+
 /**
  * @nullable
  */
@@ -270,7 +278,7 @@ export interface Organization {
      */
   logoId?: string | null;
   defaultLanguage: string;
-  /** Always `free` until billing exists. */
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   /**
      * Members that take a seat; guests are not counted.
@@ -303,6 +311,7 @@ export interface MyOrganization {
   role: Role;
   /** @minimum 1 */
   memberCount: number;
+  /** Latest plan entitlement applied from Billing, or `free` before the first entitlement. */
   plan: string;
   joinedAt: string;
 }
@@ -602,7 +611,7 @@ export type BillingMembershipAccessRefusedResponse = Problem;
 export type BillingOrganizationNotFoundResponse = Problem;
 
 /**
- * `organization.unavailable` when Organization cannot complete the snapshot page.
+ * `organization.unavailable` when Organization cannot complete the usage read.
  */
 export type BillingUsageUnavailableResponse = Problem;
 
@@ -683,7 +692,8 @@ export type AccountDeletionReservationNotFoundResponse = Problem;
 
 /**
  * `account.organization-owner` when the account still owns an organization, with
- * `details.organizationIds` listing the owned organizations.
+ * `details.organizationIds` containing a nonempty list of up to 100 owned organizations
+ * that prevent deletion. Other owned organizations may be omitted.
  * `account.deletion-reservation-conflict` when another attempt has already reserved the account.
  */
 export type AccountDeletionReservationConflictResponse = Problem;
@@ -2021,6 +2031,47 @@ const listBillingMembershipsInternal = async (params?: ListBillingMembershipsInt
 
 
 
+const getGetBillingActiveSeatCountInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/billing-active-seats`
+}
+
+/**
+ * Requires issuer `billing-service`, actor `{ type: 'system', id: 'billing-service' }`,
+ * and an organization in the verified internal token. The token determines the tenant.
+ * Every response carries `Cache-Control: private, no-store`.
+ *
+ * Organization checks that the tenant exists and counts its active owners, administrators
+ * and members in one read snapshot. Guests, pending invitations and removed memberships
+ * contribute zero seats. The response contains only the total for that snapshot.
+ *
+ * Billing uses this read to determine the quantity for a new Checkout attempt. The
+ * API gateway verifies the current owner role before forwarding the Checkout request.
+ * @summary Read the current active seat count for Checkout
+ */
+const getBillingActiveSeatCountInternal = async ( options?: RequestInit): Promise<getBillingActiveSeatCountInternalResponse> => {
+
+  const res = await fetchFn(getGetBillingActiveSeatCountInternalUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getBillingActiveSeatCountInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getBillingActiveSeatCountInternalResponse
+}
+
+
+
 const getListQuotaNotificationRecipientsInternalUrl = (params?: ListQuotaNotificationRecipientsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2272,7 +2323,7 @@ const reserveAccountDeletionInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, getBillingActiveSeatCountInternal, getGetBillingActiveSeatCountInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -3233,6 +3284,41 @@ export type listBillingMembershipsInternalResponseError = (listBillingMembership
 };
 
 export type listBillingMembershipsInternalResponse = (listBillingMembershipsInternalResponseSuccess | listBillingMembershipsInternalResponseError)
+
+
+export type getBillingActiveSeatCountInternalResponse200 = {
+  data: BillingActiveSeatCount
+  status: 200
+}
+
+export type getBillingActiveSeatCountInternalResponse401 = {
+  data: BillingUsageTokenRefusedResponse
+  status: 401
+}
+
+export type getBillingActiveSeatCountInternalResponse403 = {
+  data: BillingMembershipAccessRefusedResponse
+  status: 403
+}
+
+export type getBillingActiveSeatCountInternalResponse404 = {
+  data: BillingOrganizationNotFoundResponse
+  status: 404
+}
+
+export type getBillingActiveSeatCountInternalResponse503 = {
+  data: BillingUsageUnavailableResponse
+  status: 503
+}
+
+export type getBillingActiveSeatCountInternalResponseSuccess = (getBillingActiveSeatCountInternalResponse200) & {
+  headers: Headers;
+};
+export type getBillingActiveSeatCountInternalResponseError = (getBillingActiveSeatCountInternalResponse401 | getBillingActiveSeatCountInternalResponse403 | getBillingActiveSeatCountInternalResponse404 | getBillingActiveSeatCountInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getBillingActiveSeatCountInternalResponse = (getBillingActiveSeatCountInternalResponseSuccess | getBillingActiveSeatCountInternalResponseError)
 
 
 export type listQuotaNotificationRecipientsInternalResponse200 = {

@@ -43,7 +43,7 @@ export function createAutomationRegistry(
     AutomationServiceClient,
     'listRules' | 'createRule' | 'updateRule' | 'deleteRule' | 'listRunCandidates'
   >,
-  task: Pick<TaskServiceClient, 'getTask'>,
+  task: Pick<TaskServiceClient, 'getTaskVisibility'>,
 ): AutomationRegistry {
   function context() {
     const current = getOrganizationContext();
@@ -64,25 +64,6 @@ export function createAutomationRegistry(
     }
     if (organization.role !== 'owner' && organization.role !== 'admin') {
       throw new ProblemException({ status: 403, code: 'organization.role-forbidden' });
-    }
-  }
-
-  async function readVisibleKey(taskKey: string, signal?: AbortSignal): Promise<string | null> {
-    try {
-      const visible = await task.getTask(taskKey, signal);
-      if (visible.key !== taskKey) throw dependencyFailure(TASK_SERVICE);
-      return taskKey;
-    } catch (error) {
-      if (error instanceof ProblemException) {
-        const { status, code } = error.problem;
-        if (status === 404 && (code === 'task.not-found' || code === 'task.trashed')) return null;
-        if (status === 503 && unavailableCodes.has(code))
-          throw dependencyFailure(TASK_SERVICE, code);
-        if (status === 401 || (status === 403 && taskTokenRefusals.has(code))) {
-          throw dependencyFailure(TASK_SERVICE, 'upstream.unauthorized');
-        }
-      }
-      throw dependencyFailure(TASK_SERVICE);
     }
   }
 
@@ -141,8 +122,19 @@ export function createAutomationRegistry(
       return automation.listRunCandidates(query, signal);
     },
     async visibleTaskKeys(taskKeys, signal) {
-      const results = await Promise.all(taskKeys.map((key) => readVisibleKey(key, signal)));
-      return new Set(results.filter((key) => key !== null));
+      try {
+        return new Set(await task.getTaskVisibility(taskKeys, signal));
+      } catch (error) {
+        if (error instanceof ProblemException) {
+          const { status, code } = error.problem;
+          if (status === 503 && unavailableCodes.has(code))
+            throw dependencyFailure(TASK_SERVICE, code);
+          if (status === 401 || (status === 403 && taskTokenRefusals.has(code))) {
+            throw dependencyFailure(TASK_SERVICE, 'upstream.unauthorized');
+          }
+        }
+        throw dependencyFailure(TASK_SERVICE);
+      }
     },
   };
 }
