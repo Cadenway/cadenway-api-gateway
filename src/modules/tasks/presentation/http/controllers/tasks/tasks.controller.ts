@@ -696,6 +696,7 @@ export class TasksController {
     operationId: 'listTasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTasks(
     @Param(new ZodValidationPipe(ListTasksParams)) params: z.output<typeof ListTasksParams>,
@@ -767,6 +768,7 @@ export class TasksController {
     operationId: 'countTaskGroups',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async countTaskGroups(
     @Param(new ZodValidationPipe(CountTaskGroupsParams))

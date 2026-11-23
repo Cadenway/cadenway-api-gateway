@@ -20,26 +20,36 @@ function run(
 
 function fixture(pages: readonly AutomationRunCandidatePage[]) {
   const authorize = vi.fn<AutomationRegistry['authorize']>().mockResolvedValue(undefined);
-  const canReadTask = vi.fn<AutomationRegistry['canReadTask']>().mockResolvedValue(true);
+  const canReadTask = vi
+    .fn<(key: string, signal?: AbortSignal) => Promise<boolean>>()
+    .mockResolvedValue(true);
+  const visibleTaskKeys = vi
+    .fn<AutomationRegistry['visibleTaskKeys']>()
+    .mockImplementation(async (keys, signal) => {
+      const checked = await Promise.all(
+        keys.map(async (key) => ((await canReadTask(key, signal)) ? key : null)),
+      );
+      return new Set(checked.filter((key) => key !== null));
+    });
   const listRunCandidates = vi.fn<AutomationRegistry['listRunCandidates']>();
   for (const page of pages) listRunCandidates.mockResolvedValueOnce(page);
   const read = new ReadAutomations({
     authorize,
-    canReadTask,
+    visibleTaskKeys,
     listRunCandidates,
     list: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   });
-  return { read, authorize, canReadTask, listRunCandidates };
+  return { read, authorize, canReadTask, visibleTaskKeys, listRunCandidates };
 }
 
 describe('ReadAutomations execution history', () => {
   it('authorizes before reading and preserves source order while stopping at eight visible runs', async () => {
     const first = [run(1), run(2), run(3, 'CAD-2'), run(4)];
     const second = Array.from({ length: 12 }, (_, i) => run(i + 5));
-    const { read, authorize, canReadTask, listRunCandidates } = fixture([
+    const { read, authorize, canReadTask, visibleTaskKeys, listRunCandidates } = fixture([
       { items: first, nextCursor: 'continuation' },
       { items: second, nextCursor: 'unused' },
     ]);
@@ -63,6 +73,10 @@ describe('ReadAutomations execution history', () => {
       'CAD-7',
       'CAD-8',
       'CAD-9',
+    ]);
+    expect(visibleTaskKeys.mock.calls.map(([keys]) => keys)).toEqual([
+      ['CAD-1', 'CAD-2', 'CAD-4'],
+      ['CAD-5', 'CAD-6', 'CAD-7', 'CAD-8', 'CAD-9'],
     ]);
   });
 

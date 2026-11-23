@@ -407,6 +407,7 @@ export class ListsController {
     operationId: 'getList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getList(
     @Param(new ZodValidationPipe(GetListParams)) params: z.output<typeof GetListParams>,

@@ -48,6 +48,33 @@ describe('organization preconditions at the public HTTP edge', () => {
     await application.app.close();
   });
 
+  it.each([
+    ['getSpace', '/v1/spaces/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e02'],
+    ['getList', '/v1/lists/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03'],
+    [
+      'countTaskGroups',
+      '/v1/lists/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03/task-groups?groupBy=status',
+    ],
+    ['listTasks', '/v1/lists/019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e03/tasks'],
+  ] as const)('rejects a stale organization before the board read %s', async (operation, path) => {
+    identity.introspect.mockResolvedValue(OTHER_ORGANIZATION_SESSION);
+
+    const stale = await request(application.server)
+      .get(path)
+      .set('Cookie', SESSION_COOKIE)
+      .set('If-Organization-Match', ATELIER_NORD_ID);
+
+    expectOrganizationChanged(stale);
+    expect(application.task[operation]).not.toHaveBeenCalled();
+
+    const current = await request(application.server)
+      .get(path)
+      .set('Cookie', SESSION_COOKIE)
+      .set('If-Organization-Match', OTHER_ORGANIZATION_ID);
+    expect(current.status).toBe(200);
+    expect(application.task[operation]).toHaveBeenCalledOnce();
+  });
+
   it('reads same-version homonyms afresh when the same session switches organizations', async () => {
     const task = internalExample(GetTaskInternalResponse, 'get', '/v1/tasks/{taskKey}');
     identity.introspect

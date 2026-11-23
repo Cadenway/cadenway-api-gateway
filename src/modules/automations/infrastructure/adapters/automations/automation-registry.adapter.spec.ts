@@ -161,9 +161,8 @@ describe('Automation registry authority', () => {
           details: { service: 'task-service' },
         }),
       );
-    await expect(registry.canReadTask('CAD-482')).resolves.toBe(false);
-    await expect(registry.canReadTask('CAD-482')).resolves.toBe(false);
-    await expect(registry.canReadTask('CAD-482')).rejects.toMatchObject({
+    await expect(registry.visibleTaskKeys(['CAD-482', 'CAD-483'])).resolves.toEqual(new Set());
+    await expect(registry.visibleTaskKeys(['CAD-482'])).rejects.toMatchObject({
       problem: { status: 503, code: 'upstream.unauthorized', details: { service: 'task-service' } },
     });
   });

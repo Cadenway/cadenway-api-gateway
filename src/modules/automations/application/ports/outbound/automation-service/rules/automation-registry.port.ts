@@ -30,7 +30,7 @@ export interface AutomationRegistry {
     signal?: AbortSignal,
   ): Promise<AutomationRunCandidatePage>;
 
-  /** Checks current visibility with the original caller under Task's read policy. */
-  canReadTask(taskKey: string, signal?: AbortSignal): Promise<boolean>;
+  /** Returns visible keys for the original caller under Task's read policy. */
+  visibleTaskKeys(taskKeys: readonly string[], signal?: AbortSignal): Promise<ReadonlySet<string>>;
   // #endregion
 }

@@ -25,7 +25,7 @@ function setup() {
     update: vi.fn().mockResolvedValue(rule),
     delete: vi.fn().mockResolvedValue(undefined),
     listRunCandidates: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-    canReadTask: vi.fn().mockResolvedValue(true),
+    visibleTaskKeys: vi.fn((keys: readonly string[]) => Promise.resolve(new Set(keys))),
   } satisfies AutomationRegistry;
   const read = new ReadAutomations(registry);
   const setHeader = vi.fn();

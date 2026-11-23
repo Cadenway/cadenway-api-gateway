@@ -43,6 +43,9 @@ const BODYLESS_POSTS = new Set([
   'completeReminder',
 ]);
 
+// These existing operations accept the optional pin ahead of the additive package release.
+const BOARD_READ_PRECONDITIONS = new Set(['getSpace', 'getList', 'listTasks', 'countTaskGroups']);
+
 /**
  * Interface ServedRoute
  *
@@ -301,7 +304,8 @@ function contractOperations(): readonly ContractOperation[] {
         const bodylessPost = BODYLESS_POSTS.has(operationId);
         const organizationPrecondition =
           declaresOrganizationPrecondition(spec, item.parameters) ||
-          declaresOrganizationPrecondition(spec, operation.parameters);
+          declaresOrganizationPrecondition(spec, operation.parameters) ||
+          BOARD_READ_PRECONDITIONS.has(operationId);
         if (bodylessPost && (method !== 'post' || operation.requestBody !== undefined)) {
           throw new Error(`${operationId} no longer has a bodyless POST contract.`);
         }
@@ -332,7 +336,7 @@ describe('the security of every route against the public contracts', () => {
     expect(operations).toHaveLength(237);
     expect(
       operations.filter((operation) => operation.security.organizationPrecondition),
-    ).toHaveLength(66);
+    ).toHaveLength(70);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

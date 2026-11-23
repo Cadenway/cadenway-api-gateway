@@ -26,7 +26,7 @@ export class ReadAutomations {
     const lifetime = new AbortController();
     const { signal } = lifetime;
     const items: AutomationRunCandidate[] = [];
-    const visibility = new Map<string, Promise<boolean>>();
+    const visibility = new Map<string, boolean>();
     let processed = 0;
     let cursor: string | null = null;
 
@@ -46,17 +46,15 @@ export class ReadAutomations {
         for (let offset = 0; offset < page.items.length && items.length < MAX_RUNS;) {
           // Each concurrent check could be visible. Do not speculatively check beyond eight.
           const end = offset + MAX_RUNS - items.length;
-          const checked = await Promise.all(
-            page.items.slice(offset, end).map(async (run) => {
-              let visible = visibility.get(run.taskKey);
-              if (visible === undefined) {
-                visible = this.registry.canReadTask(run.taskKey, signal);
-                visibility.set(run.taskKey, visible);
-              }
-              return (await visible) ? run : null;
-            }),
+          const candidates = page.items.slice(offset, end);
+          const unseenKeys = [...new Set(candidates.map(({ taskKey }) => taskKey))].filter(
+            (key) => !visibility.has(key),
           );
-          items.push(...checked.filter((run) => run !== null));
+          if (unseenKeys.length > 0) {
+            const visible = await this.registry.visibleTaskKeys(unseenKeys, signal);
+            for (const key of unseenKeys) visibility.set(key, visible.has(key));
+          }
+          items.push(...candidates.filter(({ taskKey }) => visibility.get(taskKey) === true));
           offset = end;
         }
       } while (cursor !== null && items.length < MAX_RUNS && processed < CANDIDATE_WINDOW);
