@@ -67,6 +67,25 @@ export function createAutomationRegistry(
     }
   }
 
+  async function readVisibleKey(taskKey: string, signal?: AbortSignal): Promise<string | null> {
+    try {
+      const visible = await task.getTask(taskKey, signal);
+      if (visible.key !== taskKey) throw dependencyFailure(TASK_SERVICE);
+      return taskKey;
+    } catch (error) {
+      if (error instanceof ProblemException) {
+        const { status, code } = error.problem;
+        if (status === 404 && (code === 'task.not-found' || code === 'task.trashed')) return null;
+        if (status === 503 && unavailableCodes.has(code))
+          throw dependencyFailure(TASK_SERVICE, code);
+        if (status === 401 || (status === 403 && taskTokenRefusals.has(code))) {
+          throw dependencyFailure(TASK_SERVICE, 'upstream.unauthorized');
+        }
+      }
+      throw dependencyFailure(TASK_SERVICE);
+    }
+  }
+
   return {
     authorize,
     async list(query) {
@@ -121,26 +140,9 @@ export function createAutomationRegistry(
     listRunCandidates(query, signal) {
       return automation.listRunCandidates(query, signal);
     },
-    async canReadTask(taskKey, signal) {
-      try {
-        const visible = await task.getTask(taskKey, signal);
-        if (visible.key !== taskKey) {
-          throw dependencyFailure(TASK_SERVICE);
-        }
-        return true;
-      } catch (error) {
-        if (error instanceof ProblemException) {
-          const { status, code } = error.problem;
-          if (status === 404 && (code === 'task.not-found' || code === 'task.trashed'))
-            return false;
-          if (status === 503 && unavailableCodes.has(code))
-            throw dependencyFailure(TASK_SERVICE, code);
-          if (status === 401 || (status === 403 && taskTokenRefusals.has(code))) {
-            throw dependencyFailure(TASK_SERVICE, 'upstream.unauthorized');
-          }
-        }
-        throw dependencyFailure(TASK_SERVICE);
-      }
+    async visibleTaskKeys(taskKeys, signal) {
+      const results = await Promise.all(taskKeys.map((key) => readVisibleKey(key, signal)));
+      return new Set(results.filter((key) => key !== null));
     },
   };
 }

@@ -15,6 +15,9 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 
 ## API
 
+The single-space read accepts an optional `If-Organization-Match` UUID. A mismatch returns
+`412 organization.context-changed` before Task reads the space.
+
 | Public route                          | Internal call                                  | Token scope   |
 | ------------------------------------- | ---------------------------------------------- | ------------- |
 | `GET /v1/spaces/{spaceId}/milestones` | `GET /internal/v1/spaces/{spaceId}/milestones` | `tasks:read`  |

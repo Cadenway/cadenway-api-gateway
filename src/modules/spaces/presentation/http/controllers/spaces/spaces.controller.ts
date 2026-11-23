@@ -354,6 +354,7 @@ export class SpacesController {
     operationId: 'getSpace',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getSpace(
     @Param(new ZodValidationPipe(GetSpaceParams)) params: z.output<typeof GetSpaceParams>,
