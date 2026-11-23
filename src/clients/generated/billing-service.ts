@@ -415,8 +415,9 @@ const getStartBillingCheckoutInternalUrl = () => {
  * key and equivalent body. An authorized repeat of an uncertain Stripe create request
  * uses the saved provider idempotency key and identical parameters. Recovery uses reads
  * after the create window closes. Billing keeps the original reservation while the
- * outcome is uncertain. A replacement requires confirmation that the previous session
- * expired without payment.
+ * outcome is uncertain. A replacement can proceed when Stripe confirms that the previous
+ * session expired without payment or that it definitively rejected the first creation
+ * request before creating a session.
  * @summary Start hosted Checkout for the signed organization
  */
 const startBillingCheckoutInternal = async (billingCheckoutRequest: BillingCheckoutRequest, options?: RequestInit): Promise<startBillingCheckoutInternalResponse> => {

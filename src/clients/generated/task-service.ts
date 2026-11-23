@@ -7,6 +7,31 @@ interface TypedResponse<T> extends Response {
   json(): Promise<T>;
 }
 
+/**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+export interface TaskVisibilityRequest {
+  /**
+     * The task keys to check, in the caller's preferred order.
+     * @minItems 1
+     * @maxItems 100
+     */
+  taskKeys: TaskKey[];
+}
+
+export interface TaskVisibility {
+  /**
+     * The visible subset of the requested task keys, in request order.
+     * @maxItems 100
+     */
+  visibleTaskKeys: TaskKey[];
+}
+
 export type SearchProjectionKind = typeof SearchProjectionKind[keyof typeof SearchProjectionKind];
 
 
@@ -26,14 +51,6 @@ export type SearchProjectionUuid = string;
  * @maximum 9007199254740991
  */
 export type SearchProjectionVersion = number;
-
-/**
- * Key of a task, the only way a task is named outside task-service: the prefix of the space
- * it was created in, a dash and a number. A key never changes, also when the task moves to
- * another space or its space changes prefix, and is never given to another task.
- * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
- */
-export type TaskKey = string;
 
 export type SearchProjectionIdentifier = TaskKey | SearchProjectionUuid;
 
@@ -4176,6 +4193,16 @@ export type SearchInternalTokenRefusedResponse = Problem;
 export type SearchInternalAccessRefusedResponse = Problem;
 
 /**
+ * `task.visibility-unavailable`: Task could not establish current visibility for the batch.
+ */
+export type TaskVisibilityUnavailableResponse = Problem;
+
+/**
+ * `http.service-unavailable`: Task could not verify current organization membership.
+ */
+export type CurrentMembershipUnavailableResponse = Problem;
+
+/**
  * `task.search-access-unavailable`: current membership or candidate access could not be proved.
  */
 export type SearchAccessUnavailableResponse = Problem;
@@ -6915,6 +6942,47 @@ const executeBulkTaskActionInternal = async (bulkTaskAction: BulkTaskAction, opt
 
   const data: executeBulkTaskActionInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as executeBulkTaskActionInternalResponse
+}
+
+
+
+const getGetTaskVisibilityInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/tasks/visibility`
+}
+
+/**
+ * Requires issuer `api-gateway`, a user actor and an organization in the verified internal
+ * token. Uses that actor's current task access in that organization.
+ *
+ * Applies the same visibility policy as `GET /internal/v1/tasks/{taskKey}`. Visible archived
+ * tasks are included. Trashed, inaccessible and nonexistent tasks are all omitted, without a
+ * per-key reason. Returns the visible subset in request order. If Task cannot establish a
+ * reliable decision, it answers `503 task.visibility-unavailable` without a partial result.
+ *
+ * The API gateway uses this batch to filter candidate automation runs without reading
+ * each task's details.
+ * @summary Resolve visibility for a batch of task keys
+ */
+const getTaskVisibilityInternal = async (taskVisibilityRequest: TaskVisibilityRequest, options?: RequestInit): Promise<getTaskVisibilityInternalResponse> => {
+
+  const res = await fetchFn(getGetTaskVisibilityInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskVisibilityRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getTaskVisibilityInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getTaskVisibilityInternalResponse
 }
 
 
@@ -11564,7 +11632,7 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, applyAutomationTaskCommentInternal, getApplyAutomationTaskCommentInternalUrl, authorizeAutomationNotificationInternal, getAuthorizeAutomationNotificationInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskVisibilityInternal, getGetTaskVisibilityInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, applyAutomationTaskCommentInternal, getApplyAutomationTaskCommentInternalUrl, authorizeAutomationNotificationInternal, getAuthorizeAutomationNotificationInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
 
 export type listTaskSearchProjectionsInternalResponse200 = {
@@ -11832,10 +11900,15 @@ export type updateSpaceInternalResponse422 = {
   status: 422
 }
 
+export type updateSpaceInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type updateSpaceInternalResponseSuccess = (updateSpaceInternalResponse200) & {
   headers: Headers;
 };
-export type updateSpaceInternalResponseError = (updateSpaceInternalResponse400 | updateSpaceInternalResponse401 | updateSpaceInternalResponse403 | updateSpaceInternalResponse404 | updateSpaceInternalResponse409 | updateSpaceInternalResponse412 | updateSpaceInternalResponse422) & {
+export type updateSpaceInternalResponseError = (updateSpaceInternalResponse400 | updateSpaceInternalResponse401 | updateSpaceInternalResponse403 | updateSpaceInternalResponse404 | updateSpaceInternalResponse409 | updateSpaceInternalResponse412 | updateSpaceInternalResponse422 | updateSpaceInternalResponse503) & {
   headers: Headers;
 };
 
@@ -11872,10 +11945,15 @@ export type deleteSpaceInternalResponse412 = {
   status: 412
 }
 
+export type deleteSpaceInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type deleteSpaceInternalResponseSuccess = (deleteSpaceInternalResponse204) & {
   headers: Headers;
 };
-export type deleteSpaceInternalResponseError = (deleteSpaceInternalResponse400 | deleteSpaceInternalResponse401 | deleteSpaceInternalResponse403 | deleteSpaceInternalResponse404 | deleteSpaceInternalResponse412) & {
+export type deleteSpaceInternalResponseError = (deleteSpaceInternalResponse400 | deleteSpaceInternalResponse401 | deleteSpaceInternalResponse403 | deleteSpaceInternalResponse404 | deleteSpaceInternalResponse412 | deleteSpaceInternalResponse503) & {
   headers: Headers;
 };
 
@@ -12585,6 +12663,41 @@ export type executeBulkTaskActionInternalResponseError = (executeBulkTaskActionI
 };
 
 export type executeBulkTaskActionInternalResponse = (executeBulkTaskActionInternalResponseSuccess | executeBulkTaskActionInternalResponseError)
+
+
+export type getTaskVisibilityInternalResponse200 = {
+  data: TaskVisibility
+  status: 200
+}
+
+export type getTaskVisibilityInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getTaskVisibilityInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getTaskVisibilityInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type getTaskVisibilityInternalResponse503 = {
+  data: TaskVisibilityUnavailableResponse
+  status: 503
+}
+
+export type getTaskVisibilityInternalResponseSuccess = (getTaskVisibilityInternalResponse200) & {
+  headers: Headers;
+};
+export type getTaskVisibilityInternalResponseError = (getTaskVisibilityInternalResponse400 | getTaskVisibilityInternalResponse401 | getTaskVisibilityInternalResponse403 | getTaskVisibilityInternalResponse503) & {
+  headers: Headers;
+};
+
+export type getTaskVisibilityInternalResponse = (getTaskVisibilityInternalResponseSuccess | getTaskVisibilityInternalResponseError)
 
 
 export type getTaskInternalResponse200 = {
@@ -14632,10 +14745,15 @@ export type listSpaceGrantsInternalResponse404 = {
   status: 404
 }
 
+export type listSpaceGrantsInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type listSpaceGrantsInternalResponseSuccess = (listSpaceGrantsInternalResponse200) & {
   headers: Headers;
 };
-export type listSpaceGrantsInternalResponseError = (listSpaceGrantsInternalResponse400 | listSpaceGrantsInternalResponse401 | listSpaceGrantsInternalResponse403 | listSpaceGrantsInternalResponse404) & {
+export type listSpaceGrantsInternalResponseError = (listSpaceGrantsInternalResponse400 | listSpaceGrantsInternalResponse401 | listSpaceGrantsInternalResponse403 | listSpaceGrantsInternalResponse404 | listSpaceGrantsInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14677,10 +14795,15 @@ export type setSpaceGrantInternalResponse422 = {
   status: 422
 }
 
+export type setSpaceGrantInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type setSpaceGrantInternalResponseSuccess = (setSpaceGrantInternalResponse200) & {
   headers: Headers;
 };
-export type setSpaceGrantInternalResponseError = (setSpaceGrantInternalResponse400 | setSpaceGrantInternalResponse401 | setSpaceGrantInternalResponse403 | setSpaceGrantInternalResponse404 | setSpaceGrantInternalResponse412 | setSpaceGrantInternalResponse422) & {
+export type setSpaceGrantInternalResponseError = (setSpaceGrantInternalResponse400 | setSpaceGrantInternalResponse401 | setSpaceGrantInternalResponse403 | setSpaceGrantInternalResponse404 | setSpaceGrantInternalResponse412 | setSpaceGrantInternalResponse422 | setSpaceGrantInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14722,10 +14845,15 @@ export type removeSpaceGrantInternalResponse422 = {
   status: 422
 }
 
+export type removeSpaceGrantInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type removeSpaceGrantInternalResponseSuccess = (removeSpaceGrantInternalResponse204) & {
   headers: Headers;
 };
-export type removeSpaceGrantInternalResponseError = (removeSpaceGrantInternalResponse400 | removeSpaceGrantInternalResponse401 | removeSpaceGrantInternalResponse403 | removeSpaceGrantInternalResponse404 | removeSpaceGrantInternalResponse412 | removeSpaceGrantInternalResponse422) & {
+export type removeSpaceGrantInternalResponseError = (removeSpaceGrantInternalResponse400 | removeSpaceGrantInternalResponse401 | removeSpaceGrantInternalResponse403 | removeSpaceGrantInternalResponse404 | removeSpaceGrantInternalResponse412 | removeSpaceGrantInternalResponse422 | removeSpaceGrantInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14757,10 +14885,15 @@ export type listListGrantsInternalResponse404 = {
   status: 404
 }
 
+export type listListGrantsInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type listListGrantsInternalResponseSuccess = (listListGrantsInternalResponse200) & {
   headers: Headers;
 };
-export type listListGrantsInternalResponseError = (listListGrantsInternalResponse400 | listListGrantsInternalResponse401 | listListGrantsInternalResponse403 | listListGrantsInternalResponse404) & {
+export type listListGrantsInternalResponseError = (listListGrantsInternalResponse400 | listListGrantsInternalResponse401 | listListGrantsInternalResponse403 | listListGrantsInternalResponse404 | listListGrantsInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14802,10 +14935,15 @@ export type setListGrantInternalResponse422 = {
   status: 422
 }
 
+export type setListGrantInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type setListGrantInternalResponseSuccess = (setListGrantInternalResponse200) & {
   headers: Headers;
 };
-export type setListGrantInternalResponseError = (setListGrantInternalResponse400 | setListGrantInternalResponse401 | setListGrantInternalResponse403 | setListGrantInternalResponse404 | setListGrantInternalResponse412 | setListGrantInternalResponse422) & {
+export type setListGrantInternalResponseError = (setListGrantInternalResponse400 | setListGrantInternalResponse401 | setListGrantInternalResponse403 | setListGrantInternalResponse404 | setListGrantInternalResponse412 | setListGrantInternalResponse422 | setListGrantInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14847,10 +14985,15 @@ export type removeListGrantInternalResponse422 = {
   status: 422
 }
 
+export type removeListGrantInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type removeListGrantInternalResponseSuccess = (removeListGrantInternalResponse204) & {
   headers: Headers;
 };
-export type removeListGrantInternalResponseError = (removeListGrantInternalResponse400 | removeListGrantInternalResponse401 | removeListGrantInternalResponse403 | removeListGrantInternalResponse404 | removeListGrantInternalResponse412 | removeListGrantInternalResponse422) & {
+export type removeListGrantInternalResponseError = (removeListGrantInternalResponse400 | removeListGrantInternalResponse401 | removeListGrantInternalResponse403 | removeListGrantInternalResponse404 | removeListGrantInternalResponse412 | removeListGrantInternalResponse422 | removeListGrantInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14922,10 +15065,15 @@ export type listAccessRequestsInternalResponse404 = {
   status: 404
 }
 
+export type listAccessRequestsInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type listAccessRequestsInternalResponseSuccess = (listAccessRequestsInternalResponse200) & {
   headers: Headers;
 };
-export type listAccessRequestsInternalResponseError = (listAccessRequestsInternalResponse400 | listAccessRequestsInternalResponse401 | listAccessRequestsInternalResponse403 | listAccessRequestsInternalResponse404) & {
+export type listAccessRequestsInternalResponseError = (listAccessRequestsInternalResponse400 | listAccessRequestsInternalResponse401 | listAccessRequestsInternalResponse403 | listAccessRequestsInternalResponse404 | listAccessRequestsInternalResponse503) & {
   headers: Headers;
 };
 
@@ -14967,10 +15115,15 @@ export type approveAccessRequestInternalResponse422 = {
   status: 422
 }
 
+export type approveAccessRequestInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type approveAccessRequestInternalResponseSuccess = (approveAccessRequestInternalResponse200) & {
   headers: Headers;
 };
-export type approveAccessRequestInternalResponseError = (approveAccessRequestInternalResponse400 | approveAccessRequestInternalResponse401 | approveAccessRequestInternalResponse403 | approveAccessRequestInternalResponse404 | approveAccessRequestInternalResponse409 | approveAccessRequestInternalResponse422) & {
+export type approveAccessRequestInternalResponseError = (approveAccessRequestInternalResponse400 | approveAccessRequestInternalResponse401 | approveAccessRequestInternalResponse403 | approveAccessRequestInternalResponse404 | approveAccessRequestInternalResponse409 | approveAccessRequestInternalResponse422 | approveAccessRequestInternalResponse503) & {
   headers: Headers;
 };
 
@@ -15007,10 +15160,15 @@ export type refuseAccessRequestInternalResponse409 = {
   status: 409
 }
 
+export type refuseAccessRequestInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type refuseAccessRequestInternalResponseSuccess = (refuseAccessRequestInternalResponse200) & {
   headers: Headers;
 };
-export type refuseAccessRequestInternalResponseError = (refuseAccessRequestInternalResponse400 | refuseAccessRequestInternalResponse401 | refuseAccessRequestInternalResponse403 | refuseAccessRequestInternalResponse404 | refuseAccessRequestInternalResponse409) & {
+export type refuseAccessRequestInternalResponseError = (refuseAccessRequestInternalResponse400 | refuseAccessRequestInternalResponse401 | refuseAccessRequestInternalResponse403 | refuseAccessRequestInternalResponse404 | refuseAccessRequestInternalResponse409 | refuseAccessRequestInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16497,10 +16655,15 @@ export type createGoalInternalResponse422 = {
   status: 422
 }
 
+export type createGoalInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type createGoalInternalResponseSuccess = (createGoalInternalResponse201) & {
   headers: Headers;
 };
-export type createGoalInternalResponseError = (createGoalInternalResponse400 | createGoalInternalResponse401 | createGoalInternalResponse403 | createGoalInternalResponse404 | createGoalInternalResponse409 | createGoalInternalResponse422) & {
+export type createGoalInternalResponseError = (createGoalInternalResponse400 | createGoalInternalResponse401 | createGoalInternalResponse403 | createGoalInternalResponse404 | createGoalInternalResponse409 | createGoalInternalResponse422 | createGoalInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16577,10 +16740,15 @@ export type updateGoalInternalResponse422 = {
   status: 422
 }
 
+export type updateGoalInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type updateGoalInternalResponseSuccess = (updateGoalInternalResponse200) & {
   headers: Headers;
 };
-export type updateGoalInternalResponseError = (updateGoalInternalResponse400 | updateGoalInternalResponse401 | updateGoalInternalResponse403 | updateGoalInternalResponse404 | updateGoalInternalResponse412 | updateGoalInternalResponse422) & {
+export type updateGoalInternalResponseError = (updateGoalInternalResponse400 | updateGoalInternalResponse401 | updateGoalInternalResponse403 | updateGoalInternalResponse404 | updateGoalInternalResponse412 | updateGoalInternalResponse422 | updateGoalInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16617,10 +16785,15 @@ export type deleteGoalInternalResponse412 = {
   status: 412
 }
 
+export type deleteGoalInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type deleteGoalInternalResponseSuccess = (deleteGoalInternalResponse204) & {
   headers: Headers;
 };
-export type deleteGoalInternalResponseError = (deleteGoalInternalResponse400 | deleteGoalInternalResponse401 | deleteGoalInternalResponse403 | deleteGoalInternalResponse404 | deleteGoalInternalResponse412) & {
+export type deleteGoalInternalResponseError = (deleteGoalInternalResponse400 | deleteGoalInternalResponse401 | deleteGoalInternalResponse403 | deleteGoalInternalResponse404 | deleteGoalInternalResponse412 | deleteGoalInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16667,10 +16840,15 @@ export type createGoalResultInternalResponse422 = {
   status: 422
 }
 
+export type createGoalResultInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type createGoalResultInternalResponseSuccess = (createGoalResultInternalResponse201) & {
   headers: Headers;
 };
-export type createGoalResultInternalResponseError = (createGoalResultInternalResponse400 | createGoalResultInternalResponse401 | createGoalResultInternalResponse403 | createGoalResultInternalResponse404 | createGoalResultInternalResponse409 | createGoalResultInternalResponse412 | createGoalResultInternalResponse422) & {
+export type createGoalResultInternalResponseError = (createGoalResultInternalResponse400 | createGoalResultInternalResponse401 | createGoalResultInternalResponse403 | createGoalResultInternalResponse404 | createGoalResultInternalResponse409 | createGoalResultInternalResponse412 | createGoalResultInternalResponse422 | createGoalResultInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16747,10 +16925,15 @@ export type updateGoalResultInternalResponse422 = {
   status: 422
 }
 
+export type updateGoalResultInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type updateGoalResultInternalResponseSuccess = (updateGoalResultInternalResponse200) & {
   headers: Headers;
 };
-export type updateGoalResultInternalResponseError = (updateGoalResultInternalResponse400 | updateGoalResultInternalResponse401 | updateGoalResultInternalResponse403 | updateGoalResultInternalResponse404 | updateGoalResultInternalResponse412 | updateGoalResultInternalResponse422) & {
+export type updateGoalResultInternalResponseError = (updateGoalResultInternalResponse400 | updateGoalResultInternalResponse401 | updateGoalResultInternalResponse403 | updateGoalResultInternalResponse404 | updateGoalResultInternalResponse412 | updateGoalResultInternalResponse422 | updateGoalResultInternalResponse503) & {
   headers: Headers;
 };
 
@@ -16787,10 +16970,15 @@ export type deleteGoalResultInternalResponse412 = {
   status: 412
 }
 
+export type deleteGoalResultInternalResponse503 = {
+  data: CurrentMembershipUnavailableResponse
+  status: 503
+}
+
 export type deleteGoalResultInternalResponseSuccess = (deleteGoalResultInternalResponse204) & {
   headers: Headers;
 };
-export type deleteGoalResultInternalResponseError = (deleteGoalResultInternalResponse400 | deleteGoalResultInternalResponse401 | deleteGoalResultInternalResponse403 | deleteGoalResultInternalResponse404 | deleteGoalResultInternalResponse412) & {
+export type deleteGoalResultInternalResponseError = (deleteGoalResultInternalResponse400 | deleteGoalResultInternalResponse401 | deleteGoalResultInternalResponse403 | deleteGoalResultInternalResponse404 | deleteGoalResultInternalResponse412 | deleteGoalResultInternalResponse503) & {
   headers: Headers;
 };
 

@@ -42,6 +42,7 @@ import {
   GetSpaceOverviewInternalResponse,
   GetTaskDetailInternalResponse,
   GetTaskInternalResponse,
+  GetTaskVisibilityInternalResponse,
   ListAccessRequestsInternalResponse,
   ListArchivedListsInternalResponse,
   ListArchivedTasksInternalResponse,
@@ -412,6 +413,11 @@ export function createFakeTask(): FakeTask {
     ),
     checkTaskAttachmentAccess: vi.fn(() => Promise.resolve()),
     getTask: vi.fn(task(GetTaskInternalResponse, 'get', '/v1/tasks/{taskKey}')),
+    getTaskVisibility: vi.fn(() =>
+      Promise.resolve(
+        GetTaskVisibilityInternalResponse.parse({ visibleTaskKeys: [] }).visibleTaskKeys,
+      ),
+    ),
     updateTask: vi.fn(task(UpdateTaskInternalResponse, 'patch', '/v1/tasks/{taskKey}')),
     getTaskDetail: vi.fn(() => Promise.resolve(taskDetailCore())),
     listSubtasks: vi.fn(task(ListSubtasksInternalResponse, 'get', '/v1/tasks/{taskKey}/subtasks')),

@@ -43,20 +43,15 @@ export class ReadAutomations {
         processed += page.items.length;
         cursor = page.nextCursor;
 
-        for (let offset = 0; offset < page.items.length && items.length < MAX_RUNS;) {
-          // Each concurrent check could be visible. Do not speculatively check beyond eight.
-          const end = offset + MAX_RUNS - items.length;
-          const candidates = page.items.slice(offset, end);
-          const unseenKeys = [...new Set(candidates.map(({ taskKey }) => taskKey))].filter(
-            (key) => !visibility.has(key),
-          );
-          if (unseenKeys.length > 0) {
-            const visible = await this.registry.visibleTaskKeys(unseenKeys, signal);
-            for (const key of unseenKeys) visibility.set(key, visible.has(key));
-          }
-          items.push(...candidates.filter(({ taskKey }) => visibility.get(taskKey) === true));
-          offset = end;
+        const unseenKeys = [...new Set(page.items.map(({ taskKey }) => taskKey))].filter(
+          (key) => !visibility.has(key),
+        );
+        if (unseenKeys.length > 0) {
+          const visible = await this.registry.visibleTaskKeys(unseenKeys, signal);
+          for (const key of unseenKeys) visibility.set(key, visible.has(key));
         }
+        const visibleRuns = page.items.filter(({ taskKey }) => visibility.get(taskKey) === true);
+        items.push(...visibleRuns.slice(0, MAX_RUNS - items.length));
       } while (cursor !== null && items.length < MAX_RUNS && processed < CANDIDATE_WINDOW);
       return { items };
     } finally {

@@ -64,19 +64,9 @@ describe('ReadAutomations execution history', () => {
       { limit: 32 },
       { cursor: 'continuation', limit: 32 },
     ]);
-    expect(canReadTask.mock.calls.map(([key]) => key)).toEqual([
-      'CAD-1',
-      'CAD-2',
-      'CAD-4',
-      'CAD-5',
-      'CAD-6',
-      'CAD-7',
-      'CAD-8',
-      'CAD-9',
-    ]);
     expect(visibleTaskKeys.mock.calls.map(([keys]) => keys)).toEqual([
       ['CAD-1', 'CAD-2', 'CAD-4'],
-      ['CAD-5', 'CAD-6', 'CAD-7', 'CAD-8', 'CAD-9'],
+      second.map(({ taskKey }) => taskKey),
     ]);
   });
 
@@ -85,33 +75,25 @@ describe('ReadAutomations execution history', () => {
       items: Array.from({ length: size }, (_, i) => run(page * 32 + i + 1)),
       nextCursor: `page-${String(page + 2)}`,
     }));
-    const { read, canReadTask, listRunCandidates } = fixture(pages);
+    const { read, canReadTask, listRunCandidates, visibleTaskKeys } = fixture(pages);
     canReadTask.mockResolvedValue(false);
 
     await expect(read.execute({ kind: 'runs' })).resolves.toEqual({ items: [] });
     expect(canReadTask).toHaveBeenCalledTimes(100);
+    expect(visibleTaskKeys.mock.calls.map(([keys]) => keys.length)).toEqual([32, 32, 32, 4]);
     expect(listRunCandidates.mock.calls.map(([query]) => query.limit)).toEqual([32, 32, 32, 4]);
   });
 
-  it('cancels the other visibility reads and returns no partial history on a failed check', async () => {
-    const { read, canReadTask } = fixture([{ items: [run(1), run(2)], nextCursor: null }]);
+  it('returns no partial history when a later visibility batch fails', async () => {
+    const { read, visibleTaskKeys } = fixture([
+      { items: [run(1)], nextCursor: 'second' },
+      { items: [run(2)], nextCursor: null },
+    ]);
     const unavailable = new Error('upstream failed');
-    const cancelled = vi.fn();
-    canReadTask.mockRejectedValueOnce(unavailable).mockImplementationOnce(
-      async (_task, signal) =>
-        new Promise((resolve) => {
-          signal?.addEventListener(
-            'abort',
-            () => {
-              cancelled();
-              resolve(false);
-            },
-            { once: true },
-          );
-        }),
-    );
+    visibleTaskKeys.mockResolvedValueOnce(new Set(['CAD-1'])).mockRejectedValueOnce(unavailable);
     await expect(read.execute({ kind: 'runs' })).rejects.toBe(unavailable);
-    expect(cancelled).toHaveBeenCalledOnce();
+    expect(visibleTaskKeys).toHaveBeenCalledTimes(2);
+    expect(visibleTaskKeys.mock.calls[1]?.[1]?.aborted).toBe(true);
   });
 
   it('does not fetch any candidate if the current role cannot read the history', async () => {

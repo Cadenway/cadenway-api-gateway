@@ -21,7 +21,7 @@ eligibility. Task owns task visibility.
 - Before creating a rule with a recipient, request current proof from Organization and place the
   exact canonical recipient scope in the signed Automation request. Repeat this check before
   replaying an identical public creation.
-- History reads at most 100 ordered candidates, obtains current Task visibility with the same
-  caller and returns at most eight visible executions. Hidden tasks are omitted from the result.
-  Unavailable evidence fails the request with the documented problem.
+- History reads at most 100 ordered candidates, obtains current Task visibility in a single
+  signed batch per candidate page and returns at most eight visible executions. Hidden tasks
+  are omitted from the result. Unavailable evidence fails the request with the documented problem.
 - The gateway stores no rules, recipient proofs or execution records.

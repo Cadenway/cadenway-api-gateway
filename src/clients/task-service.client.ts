@@ -49,6 +49,8 @@ import {
   GetSpaceOverviewInternalResponse,
   GetTaskDetailInternalResponse,
   GetTaskInternalResponse,
+  GetTaskVisibilityInternalBody,
+  GetTaskVisibilityInternalResponse,
   ListAccessRequestsInternalQueryParams,
   ListAccessRequestsInternalResponse,
   ListArchivedListsInternalQueryParams,
@@ -566,7 +568,7 @@ function requireIntakeNoStore(operation: string, headers: Headers): void {
  * - The internal HTTP client gives ordinary calls up to 2 seconds, one retry after a connection
  *   error or a `503` for an idempotent call, and the circuit breaker of task-service. The CSV
  *   export is sent once and only its streamed body uses the longer export budget. Retried are
- *   other `GET` requests and a creation with an `Idempotency-Key`, which
+ *   other `GET` requests, the read-only Task visibility batch and a creation with an `Idempotency-Key`, which
  *   task-service replays. Every other mutation is sent once (`sentOnce`), with or without
  *   `If-Match`: the `PATCH` of a space, a list, a task or a checklist item; the `DELETE` of a space
  *   or a list; the `PUT` and `DELETE` of an assignee and of a grant; the addition and removal of a
@@ -1984,6 +1986,44 @@ export class TaskServiceClient {
       GetTaskInternalResponse,
       this.routes.getTaskInternal(taskKey, signal ? { signal } : undefined),
     );
+  }
+
+  /**
+   * Method getTaskVisibility
+   *
+   * @description
+   * Reads Task's visibility decisions in the current signed user and organization context.
+   *
+   * @param {readonly string[]} taskKeys - Distinct canonical task keys in the requested order.
+   * @param {AbortSignal | undefined} signal - The history read's lifetime.
+   * @returns {Promise<readonly string[]>} The visible subset in request order.
+   */
+  public async getTaskVisibility(
+    taskKeys: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<readonly string[]> {
+    const operation = 'getTaskVisibilityInternal';
+    const request = toRequest(operation, GetTaskVisibilityInternalBody, { taskKeys });
+    const options: InternalRequestInit = {
+      idempotent: true,
+      ...(signal === undefined ? {} : { signal }),
+    };
+    const { visibleTaskKeys } = await call(
+      operation,
+      200,
+      GetTaskVisibilityInternalResponse,
+      this.routes.getTaskVisibilityInternal(request, options),
+    );
+    const positions = new Map(request.taskKeys.map((key, position) => [key, position]));
+    let last = -1;
+    for (const key of visibleTaskKeys) {
+      const position = positions.get(key);
+      if (position === undefined || position <= last) {
+        throw outsideContract(TASK_SERVICE, operation, 'visible keys outside the ordered request');
+      }
+      last = position;
+    }
+    return visibleTaskKeys;
   }
 
   /**

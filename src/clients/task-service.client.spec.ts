@@ -859,6 +859,42 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     });
   });
 
+  it('checks a task visibility batch with the verified user and organization', async () => {
+    answer('post', '/internal/v1/tasks/visibility', () =>
+      json({ visibleTaskKeys: ['CAD-483', 'CAD-484'] }),
+    );
+    const taskKeys = ['CAD-482', 'CAD-483', 'CAD-484'];
+
+    await expect(asCamille(() => client.getTaskVisibility(taskKeys))).resolves.toEqual([
+      'CAD-483',
+      'CAD-484',
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      body: { taskKeys },
+      principal: {
+        issuer: GATEWAY_ISSUER,
+        actor: { type: 'user', id: CAMILLE.id },
+        organizationId: ATELIER_NORD_ID,
+      },
+    });
+  });
+
+  it.each([
+    { label: 'unrequested', keys: ['CAD-999'] },
+    { label: 'reordered', keys: ['CAD-483', 'CAD-482'] },
+    { label: 'duplicate', keys: ['CAD-482', 'CAD-482'] },
+  ])('refuses $label task visibility evidence', async ({ keys }) => {
+    answer('post', '/internal/v1/tasks/visibility', () => json({ visibleTaskKeys: keys }));
+
+    await expect(
+      asCamille(() => client.getTaskVisibility(['CAD-482', 'CAD-483'])),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   it('opens an NDJSON export through the generated route with the verified user and organization', async () => {
     const frames = [
       { kind: 'metadata', filename: 'sprint.csv', header: '"Identifiant"' },
