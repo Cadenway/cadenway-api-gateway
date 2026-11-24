@@ -25,7 +25,7 @@ export interface MemberDirectory {
    * @param {ListMembersInput} query - The page and the filters.
    * @returns {Promise<MemberPage>} One page of members, with the totals.
    */
-  listMembers(query: ListMembersInput): Promise<MemberPage>;
+  listMembers(query: ListMembersInput, method?: 'QUERY'): Promise<MemberPage>;
 
   /**
    * Method getMember

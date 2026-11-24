@@ -5,6 +5,7 @@ import type {
   InvitationPage,
   ListInvitationsInternalParams,
   ListMembersInternalParams,
+  ListMembersQuery,
   ListMyOrganizationsInternalParams,
   ListReceivedInvitationsInternalParams,
   Member,
@@ -35,6 +36,8 @@ import {
   InviteMembersInternalResponse,
   ListInvitationsInternalResponse,
   ListMembersInternalResponse,
+  QueryListMembersInternalBody,
+  QueryListMembersInternalResponse,
   ListMyOrganizationsInternalResponse,
   ListReceivedInvitationsInternalResponse,
   ResendInvitationInternalResponse,
@@ -449,6 +452,21 @@ export class OrganizationServiceClient {
       await answered('listMembersInternal', this.routes.listMembersInternal(query)),
       200,
       ListMembersInternalResponse,
+    );
+  }
+
+  /** Reads members with a JSON query and retries transient failures. */
+  public async queryListMembers(body: ListMembersQuery): Promise<MemberPage> {
+    const operation = 'queryListMembersInternal';
+    const options: InternalRequestInit = { idempotent: true };
+    return expectBody(
+      operation,
+      await answered(
+        operation,
+        this.routes.queryListMembersInternal(QueryListMembersInternalBody.parse(body), options),
+      ),
+      200,
+      QueryListMembersInternalResponse,
     );
   }
 

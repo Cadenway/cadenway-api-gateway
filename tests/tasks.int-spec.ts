@@ -1,9 +1,10 @@
 import { Writable } from 'node:stream';
 
 import { InternalTokenVerifier, type InternalPrincipal } from '@cadenway/nest-common';
+import { QueryGetListWorkloadInternalResponse } from '@cadenway/contracts/validators/internal/task-service';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
-import { delay, http, HttpResponse, type JsonBodyType } from 'msw';
+import { delay, http, HttpHandler, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
@@ -35,6 +36,7 @@ const IDENTITY_URL = 'http://identity-service.test';
  * Base URL of the faked task-service.
  */
 const TASK_URL = 'http://task-service.test';
+const ORGANIZATION_URL = 'http://organization-service.test';
 
 /** Base URL of the faked storage-service. */
 const STORAGE_URL = 'http://storage-service.test';
@@ -140,7 +142,7 @@ describe('the task core routes against task-service over HTTP', () => {
     url: string,
     options: { body?: object; headers?: Record<string, string>; bearer?: string } = {},
   ): Promise<request.Response> {
-    let pending: request.Test = request(server)[method](url);
+    let pending: request.Test = request(server)[method](url) as request.Test;
     pending =
       options.bearer === undefined
         ? pending.set('Cookie', `__Host-cw_session=${SESSION}`)
@@ -206,6 +208,7 @@ describe('the task core routes against task-service over HTTP', () => {
           REDIS_URL: redis.getConnectionUrl(),
           IDENTITY_SERVICE_URL: IDENTITY_URL,
           TASK_SERVICE_URL: TASK_URL,
+          ORGANIZATION_SERVICE_URL: ORGANIZATION_URL,
           STORAGE_SERVICE_URL: STORAGE_URL,
         },
         keys,
@@ -224,6 +227,109 @@ describe('the task core routes against task-service over HTTP', () => {
     await app.close();
     network.close();
     await redis.stop();
+  });
+
+  it.each([
+    { suffix: 'tasks', body: {} },
+    { suffix: 'task-groups', body: { groupBy: 'status' } },
+    { suffix: 'workload', body: { weekStart: '2026-11-02' } },
+    { suffix: 'activity', body: {} },
+  ])('forwards QUERY $suffix as JSON to task-service', async ({ suffix, body }) => {
+    const path = `/v1/lists/{listId}/${suffix}`;
+    if (suffix === 'workload') {
+      QueryGetListWorkloadInternalResponse.parse(responseExample('get', path, 200));
+    }
+    const received: unknown[] = [];
+    network.use(
+      new HttpHandler(
+        'QUERY',
+        `${TASK_URL}/internal/v1/lists/${LIST_ID}/${suffix}`,
+        async ({ request: call }) => {
+          received.push({
+            method: call.method,
+            contentType: call.headers.get('content-type'),
+            body: (await call.json()) as unknown,
+            principal: await verifier.verify(
+              (call.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+            ),
+          });
+          return HttpResponse.json(responseExample('get', path, 200) as JsonBodyType);
+        },
+      ),
+    );
+    const response = await send('query', path, `/v1/lists/${LIST_ID}/${suffix}`, { body });
+    expect(received).toHaveLength(1);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(received[0]).toMatchObject({
+      method: 'QUERY',
+      contentType: 'application/json',
+      body,
+      principal: { organizationId: ATELIER_NORD_ID },
+    });
+  });
+
+  it('forwards the member QUERY to organization-service', async () => {
+    const received: unknown[] = [];
+    const organizationVerifier = await InternalTokenVerifier.create({
+      audience: 'organization-service',
+      trustedIssuers: { [GATEWAY_ISSUER]: [keys.publicJwk] },
+    });
+    network.use(
+      new HttpHandler(
+        'QUERY',
+        `${ORGANIZATION_URL}/internal/v1/members`,
+        async ({ request: call }) => {
+          received.push({
+            method: call.method,
+            body: (await call.json()) as unknown,
+            principal: await organizationVerifier.verify(
+              (call.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+            ),
+          });
+          return HttpResponse.json(responseExample('get', '/v1/members', 200) as JsonBodyType);
+        },
+      ),
+    );
+    const response = await send('query', '/v1/members', '/v1/members', { body: {} });
+    expect(response.status).toBe(200);
+    expect(received).toHaveLength(1);
+    expect(received[0]).toMatchObject({
+      method: 'QUERY',
+      body: { limit: 50 },
+      principal: { organizationId: ATELIER_NORD_ID },
+    });
+  });
+
+  it('downloads CSV from a QUERY NDJSON stream', async () => {
+    const received: unknown[] = [];
+    network.use(
+      new HttpHandler(
+        'QUERY',
+        `${TASK_URL}/internal/v1/lists/${LIST_ID}/tasks/export`,
+        async ({ request: call }) => {
+          received.push({
+            method: call.method,
+            accept: call.headers.get('accept'),
+            body: (await call.json()) as unknown,
+          });
+          return new HttpResponse(
+            `${JSON.stringify({ kind: 'metadata', filename: 'sprint-14.csv', header: '"Nom"' })}\n${JSON.stringify({ kind: 'complete', rowCount: 0 })}\n`,
+            { headers: { 'Content-Type': 'application/x-ndjson' } },
+          );
+        },
+      ),
+    );
+    const response = await send(
+      'query',
+      '/v1/lists/{listId}/tasks/export',
+      `/v1/lists/${LIST_ID}/tasks/export`,
+      { body: {} },
+    );
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.text).toBe('"Nom"\r\n');
+    expect(received).toEqual([
+      expect.objectContaining({ method: 'QUERY', accept: 'application/x-ndjson' }),
+    ]);
   });
 
   it('keeps the session cookie usable when Identity temporarily cannot verify membership', async () => {

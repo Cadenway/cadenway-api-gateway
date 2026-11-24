@@ -238,7 +238,10 @@ export class TasksModule implements NestModule {
     consumer.apply(noStore).forRoutes(IntakeController, PublicIntakeController);
     consumer
       .apply(requestDeadlineMiddleware({ budgetMs: 120_000, acceptIncoming: false }))
-      .forRoutes({ path: 'v1/lists/:listId/tasks/export', method: RequestMethod.GET });
+      .forRoutes(
+        { path: 'v1/lists/:listId/tasks/export', method: RequestMethod.GET },
+        { path: 'v1/lists/:listId/tasks/export', method: RequestMethod.QUERY },
+      );
   }
   // #endregion
 }

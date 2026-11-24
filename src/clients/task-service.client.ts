@@ -1,4 +1,14 @@
 import {
+  QueryListTasksInternalBody,
+  QueryListTasksInternalResponse,
+  QueryCountTaskGroupsInternalBody,
+  QueryCountTaskGroupsInternalResponse,
+  QueryGetListWorkloadInternalBody,
+  QueryGetListWorkloadInternalResponse,
+  QueryExportListTasksInternalBody,
+  QueryExportListTasksInternalParams,
+  QueryListListActivityInternalBody,
+  QueryListListActivityInternalResponse,
   CheckTaskAttachmentAccessInternalQueryParams,
   ResolveNotificationSubjectsInternalBody,
   ResolveNotificationSubjectsInternalResponse,
@@ -899,6 +909,25 @@ export class TaskServiceClient {
     );
   }
 
+  /** Reads a list's workload with a JSON query and retries transient failures. */
+  public queryGetListWorkload(
+    listId: string,
+    body: unknown,
+  ): Promise<z.output<typeof QueryGetListWorkloadInternalResponse>> {
+    const operation = 'queryGetListWorkloadInternal';
+    const options: InternalRequestInit = { idempotent: true };
+    return call(
+      operation,
+      200,
+      QueryGetListWorkloadInternalResponse,
+      this.routes.queryGetListWorkloadInternal(
+        listId,
+        toRequest(operation, QueryGetListWorkloadInternalBody, body),
+        options,
+      ),
+    );
+  }
+
   /** Reads a weekly list timesheet. */
   public getListTimesheet(
     listId: string,
@@ -931,6 +960,26 @@ export class TaskServiceClient {
     const init: InternalRequestInit = {
       method: 'GET',
       headers: { Accept: TASK_CSV_NDJSON },
+      idempotent: false,
+      streamTimeoutMs: 120_000,
+      signal,
+    };
+    return readTaskCsvExport(await this.http.fetch(url, init), signal);
+  }
+
+  /** Opens the NDJSON export for a JSON query with a bounded deadline and no retry. */
+  public async queryExportListTasks(
+    listId: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ): Promise<AsyncIterable<TaskCsvExportFrame>> {
+    const operation = 'queryExportListTasksInternal';
+    const params = toRequest(operation, QueryExportListTasksInternalParams, { listId });
+    const url = this.routes.getQueryExportListTasksInternalUrl(params.listId);
+    const init: InternalRequestInit = {
+      method: 'QUERY',
+      headers: { Accept: TASK_CSV_NDJSON, 'Content-Type': 'application/json' },
+      body: JSON.stringify(toRequest(operation, QueryExportListTasksInternalBody, body)),
       idempotent: false,
       streamTimeoutMs: 120_000,
       signal,
@@ -1473,6 +1522,25 @@ export class TaskServiceClient {
     );
   }
 
+  /** Reads list activity with a JSON query and retries transient failures. */
+  public queryListListActivity(
+    listId: string,
+    body: unknown,
+  ): Promise<z.output<typeof QueryListListActivityInternalResponse>> {
+    const operation = 'queryListListActivityInternal';
+    const options: InternalRequestInit = { idempotent: true };
+    return call(
+      operation,
+      200,
+      QueryListListActivityInternalResponse,
+      this.routes.queryListListActivityInternal(
+        listId,
+        toRequest(operation, QueryListListActivityInternalBody, body),
+        options,
+      ),
+    );
+  }
+
   /** Lists the current actor's favorites. */
   public listFavorites(query: unknown): Promise<z.output<typeof ListFavoritesInternalResponse>> {
     const operation = 'listFavoritesInternal';
@@ -1912,6 +1980,25 @@ export class TaskServiceClient {
     );
   }
 
+  /** Reads tasks with a JSON query and retries transient failures. */
+  public queryListTasks(
+    listId: string,
+    body: unknown,
+  ): Promise<z.output<typeof QueryListTasksInternalResponse>> {
+    const operation = 'queryListTasksInternal';
+    const options: InternalRequestInit = { idempotent: true };
+    return call(
+      operation,
+      200,
+      QueryListTasksInternalResponse,
+      this.routes.queryListTasksInternal(
+        listId,
+        toRequest(operation, QueryListTasksInternalBody, body),
+        options,
+      ),
+    );
+  }
+
   /**
    * Method createTask
    *
@@ -1963,6 +2050,25 @@ export class TaskServiceClient {
       this.routes.countTaskGroupsInternal(
         listId,
         toRequest(operation, CountTaskGroupsInternalQueryParams, query),
+      ),
+    );
+  }
+
+  /** Reads grouped task counts with a JSON query and retries transient failures. */
+  public queryCountTaskGroups(
+    listId: string,
+    body: unknown,
+  ): Promise<z.output<typeof QueryCountTaskGroupsInternalResponse>> {
+    const operation = 'queryCountTaskGroupsInternal';
+    const options: InternalRequestInit = { idempotent: true };
+    return call(
+      operation,
+      200,
+      QueryCountTaskGroupsInternalResponse,
+      this.routes.queryCountTaskGroupsInternal(
+        listId,
+        toRequest(operation, QueryCountTaskGroupsInternalBody, body),
+        options,
       ),
     );
   }

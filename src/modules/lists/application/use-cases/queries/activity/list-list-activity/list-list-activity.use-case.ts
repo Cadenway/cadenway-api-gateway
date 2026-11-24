@@ -47,8 +47,14 @@ export class ListListActivity {
    * @param {TaskServiceDocument} query - The query the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  public execute(listId: string, query: TaskServiceDocument): Promise<TaskServiceDocument> {
-    return this.listRegistry.listListActivity(listId, query);
+  public execute(
+    listId: string,
+    query: TaskServiceDocument,
+    method?: 'QUERY',
+  ): Promise<TaskServiceDocument> {
+    return method === 'QUERY'
+      ? this.listRegistry.listListActivity(listId, query, method)
+      : this.listRegistry.listListActivity(listId, query);
   }
   // #endregion
 }

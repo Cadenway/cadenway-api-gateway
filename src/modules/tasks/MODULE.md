@@ -24,8 +24,12 @@ returning its public path. The producer owns all work log authorization and dura
 | `POST /v1/tasks/bulk-actions`                                 | `POST /internal/v1/tasks/bulk-actions`                                 | `tasks:write` |
 | `POST /v1/tasks/{taskKey}/duplicate`                          | `POST /internal/v1/tasks/{taskKey}/duplicate`                          | `tasks:write` |
 | `GET /v1/lists/{listId}/tasks`                                | `GET /internal/v1/lists/{listId}/tasks`                                | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/tasks`                              | `QUERY /internal/v1/lists/{listId}/tasks`                              | `tasks:read`  |
 | `POST /v1/lists/{listId}/tasks`                               | `POST /internal/v1/lists/{listId}/tasks`                               | `tasks:write` |
 | `GET /v1/lists/{listId}/task-groups`                          | `GET /internal/v1/lists/{listId}/task-groups`                          | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/task-groups`                        | `QUERY /internal/v1/lists/{listId}/task-groups`                        | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/workload`                           | `QUERY /internal/v1/lists/{listId}/workload`                           | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/tasks/export`                       | `QUERY /internal/v1/lists/{listId}/tasks/export`                       | `tasks:read`  |
 | `GET /v1/tasks/{taskKey}`                                     | `GET /internal/v1/tasks/{taskKey}`                                     | `tasks:read`  |
 | `PATCH /v1/tasks/{taskKey}`                                   | `PATCH /internal/v1/tasks/{taskKey}`                                   | `tasks:write` |
 | `GET /v1/tasks/{taskKey}/detail`                              | `GET /internal/v1/tasks/{taskKey}/detail` (aggregate)                  | `tasks:read`  |

@@ -13,9 +13,12 @@ export class ReadTaskReports {
     report: 'dashboard' | 'sprint' | 'workload' | 'timesheet',
     query: object,
     listId?: string,
+    method?: 'QUERY',
   ): Promise<object> {
     if (report === 'dashboard') return this.reports.dashboard(query);
     if (listId === undefined) throw new Error('A list report requires a list identifier.');
+    if (report === 'workload' && method === 'QUERY')
+      return this.reports.workload(listId, query, method);
     return this.reports[report](listId, query);
   }
   // #endregion

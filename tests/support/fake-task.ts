@@ -407,6 +407,13 @@ export function createFakeTask(): FakeTask {
       task(ListListActivityInternalResponse, 'get', '/v1/lists/{listId}/activity'),
     ),
     listTasks: vi.fn(task(ListTasksInternalResponse, 'get', '/v1/lists/{listId}/tasks')),
+    queryListTasks: vi.fn(task(ListTasksInternalResponse, 'get', '/v1/lists/{listId}/tasks')),
+    queryCountTaskGroups: vi.fn(
+      task(CountTaskGroupsInternalResponse, 'get', '/v1/lists/{listId}/task-groups'),
+    ),
+    queryListListActivity: vi.fn(
+      task(ListListActivityInternalResponse, 'get', '/v1/lists/{listId}/activity'),
+    ),
     createTask: vi.fn(task(CreateTaskInternalResponse, 'post', '/v1/lists/{listId}/tasks', 201)),
     countTaskGroups: vi.fn(
       task(CountTaskGroupsInternalResponse, 'get', '/v1/lists/{listId}/task-groups'),
@@ -550,8 +557,10 @@ export function createFakeTask(): FakeTask {
     getTeamDashboard: vi.fn(),
     getSprintReport: vi.fn(),
     getListWorkload: vi.fn(),
+    queryGetListWorkload: vi.fn(),
     getListTimesheet: vi.fn(),
     exportListTasks: vi.fn(),
+    queryExportListTasks: vi.fn(),
     getIntakeFormConfiguration: vi.fn(),
     updateIntakeFormConfiguration: vi.fn(),
     publishIntakeForm: vi.fn(),

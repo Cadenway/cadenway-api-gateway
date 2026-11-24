@@ -39,7 +39,11 @@ export interface TaskRegistry {
    * @param {TaskServiceDocument} query - The query the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  listTasks(listId: string, query: TaskServiceDocument): Promise<TaskServiceDocument>;
+  listTasks(
+    listId: string,
+    query: TaskServiceDocument,
+    method?: 'QUERY',
+  ): Promise<TaskServiceDocument>;
 
   /**
    * Method createTask
@@ -68,7 +72,11 @@ export interface TaskRegistry {
    * @param {TaskServiceDocument} query - The query the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  countTaskGroups(listId: string, query: TaskServiceDocument): Promise<TaskServiceDocument>;
+  countTaskGroups(
+    listId: string,
+    query: TaskServiceDocument,
+    method?: 'QUERY',
+  ): Promise<TaskServiceDocument>;
 
   /**
    * Method getTask

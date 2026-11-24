@@ -98,7 +98,7 @@ describe('the security of the account against identity-service over HTTP', () =>
    * @returns The response.
    */
   async function send(
-    method: SpecMethod,
+    method: Exclude<SpecMethod, 'query'>,
     path: string,
     token?: string,
     body?: object,

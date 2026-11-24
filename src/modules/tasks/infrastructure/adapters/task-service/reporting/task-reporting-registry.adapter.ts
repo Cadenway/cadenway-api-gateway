@@ -6,7 +6,10 @@ export function createTaskReportingRegistry(client: TaskServiceClient): TaskRepo
   return {
     dashboard: (query) => client.getTeamDashboard(query),
     sprint: (listId, query) => client.getSprintReport(listId, query),
-    workload: (listId, query) => client.getListWorkload(listId, query),
+    workload: (listId, query, method) =>
+      method === 'QUERY'
+        ? client.queryGetListWorkload(listId, query)
+        : client.getListWorkload(listId, query),
     timesheet: (listId, query) => client.getListTimesheet(listId, query),
   };
 }

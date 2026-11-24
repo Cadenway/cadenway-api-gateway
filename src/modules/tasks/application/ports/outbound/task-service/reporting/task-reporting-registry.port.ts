@@ -8,7 +8,7 @@ export interface TaskReportingRegistry {
   sprint(listId: string, query: object): Promise<object>;
 
   /** Reads a workload page. */
-  workload(listId: string, query: object): Promise<object>;
+  workload(listId: string, query: object, method?: 'QUERY'): Promise<object>;
 
   /** Reads a weekly timesheet page. */
   timesheet(listId: string, query: object): Promise<object>;

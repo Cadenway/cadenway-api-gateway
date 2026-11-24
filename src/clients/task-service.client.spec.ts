@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { http, HttpResponse, type JsonBodyType } from 'msw';
+import { http, HttpHandler, HttpResponse, type JsonBodyType } from 'msw';
 import { setupServer, type SetupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -762,12 +762,12 @@ describe('TaskServiceClient against task-service over HTTP', () => {
    * @param reply - The answer.
    */
   function answer(
-    method: 'get' | 'post' | 'put' | 'patch' | 'delete',
+    method: 'get' | 'post' | 'put' | 'patch' | 'delete' | 'query',
     path: string,
     reply: (request: Request) => Response,
   ): void {
     server.use(
-      http[method](`${BASE_URL}${path}`, async ({ request }) => {
+      new HttpHandler(method.toUpperCase(), `${BASE_URL}${path}`, async ({ request }) => {
         const text: string = await request.text();
         const url: URL = new URL(request.url);
         calls.push({
@@ -921,6 +921,31 @@ describe('TaskServiceClient against task-service over HTTP', () => {
       issuer: GATEWAY_ISSUER,
       actor: { type: 'user', id: CAMILLE.id },
       organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('sends a QUERY export body and reads the NDJSON stream', async () => {
+    const frames = [
+      { kind: 'metadata', filename: 'sprint.csv', header: '"Identifiant"' },
+      { kind: 'complete', rowCount: 0 },
+    ];
+    answer('query', '/internal/v1/lists/:listId/tasks/export', (request) => {
+      expect(request.headers.get('Accept')).toBe('application/x-ndjson');
+      expect(request.headers.get('Content-Type')).toBe('application/json');
+      return new HttpResponse(`${frames.map((frame) => JSON.stringify(frame)).join('\n')}\n`, {
+        headers: { 'Content-Type': 'application/x-ndjson' },
+      });
+    });
+    const body = { sheetSortColumn: 'people' };
+    const stream = await asCamille(() => client.queryExportListTasks(LIST_ID, body));
+    const result: unknown[] = [];
+    for await (const frame of stream) result.push(frame);
+    expect(result).toEqual(frames);
+    expect(calls[0]).toMatchObject({
+      method: 'QUERY',
+      url: `/internal/v1/lists/${LIST_ID}/tasks/export`,
+      body,
+      principal: { actor: { type: 'user', id: CAMILLE.id }, organizationId: ATELIER_NORD_ID },
     });
   });
 
@@ -1113,6 +1138,25 @@ describe('TaskServiceClient against task-service over HTTP', () => {
     expect(calls[0]?.url).toBe(
       '/internal/v1/lists/019a7001-2b3c-7d4e-8f5a-6b7c8d9e0f12/tasks?status=progress,review&assignee=me&level=roots&sort=manual&limit=10',
     );
+  });
+
+  it('sends a JSON task query and retries a transient upstream failure', async () => {
+    let attempts = 0;
+    answer('query', '/internal/v1/lists/:listId/tasks', () => {
+      attempts += 1;
+      return attempts === 1
+        ? json({ type: 'about:blank', status: 503, code: 'service.unavailable' }, 503)
+        : json(responseExample('get', '/v1/lists/{listId}/tasks', 200));
+    });
+    const body = { status: ['progress', 'review'], limit: 10 };
+    await asCamille(() => client.queryListTasks(LIST_ID, body));
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      method: 'QUERY',
+      url: `/internal/v1/lists/${LIST_ID}/tasks`,
+      body,
+      principal: { actor: { type: 'user', id: CAMILLE.id }, organizationId: ATELIER_NORD_ID },
+    });
   });
 
   it('relays the today of the caller and the user of the context on the home', async () => {

@@ -8,6 +8,265 @@ interface TypedResponse<T> extends Response {
 }
 
 /**
+ * Work date in the caller's time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.
+ * @pattern ^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$
+ */
+export type TaskWorkDate = string;
+
+/**
+ * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
+ * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
+ * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
+ * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
+ * status, it never adds or removes a key.
+ */
+export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
+
+
+export const StatusKey = {
+  triage: 'triage',
+  backlog: 'backlog',
+  todo: 'todo',
+  progress: 'progress',
+  review: 'review',
+  testing: 'testing',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @minItems 1
+ * @maxItems 10
+ */
+export type Schema = StatusKey[];
+
+/**
+ * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
+ * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
+ * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
+ */
+export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
+
+
+export const PriorityKey = {
+  urgente: 'urgente',
+  haute: 'haute',
+  moyenne: 'moyenne',
+  basse: 'basse',
+} as const;
+
+/**
+ * @minItems 1
+ * @maxItems 4
+ */
+export type Schema2 = PriorityKey[];
+
+/**
+ * @minItems 1
+ * @maxItems 20
+ * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
+ */
+export type Schema3 = string[];
+
+/**
+ * @minItems 1
+ * @maxItems 20
+ * @items.minLength 1
+ * @items.maxLength 32
+ */
+export type Schema4 = string[];
+
+/**
+ * @minLength 1
+ * @maxLength 100
+ */
+export type Schema5 = string;
+
+export type Schema6 = string;
+
+export type Schema7 = string;
+
+export type Schema8 = typeof Schema8[keyof typeof Schema8];
+
+
+export const Schema8 = {
+  roots: 'roots',
+  all: 'all',
+} as const;
+
+export type Schema9 = boolean;
+
+export type Schema10 = string;
+
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+export type Schema11 = number;
+
+export interface ListWorkloadQuery {
+  weekStart: TaskWorkDate;
+  status?: Schema;
+  priority?: Schema2;
+  assignee?: Schema3;
+  label?: Schema4;
+  search?: Schema5;
+  dueFrom?: Schema6;
+  dueTo?: Schema7;
+  level?: Schema8;
+  milestone?: Schema9;
+  cursor?: Schema10;
+  limit?: Schema11;
+}
+
+export type Schema12 = typeof Schema12[keyof typeof Schema12];
+
+
+export const Schema12 = {
+  manual: 'manual',
+  '-manual': '-manual',
+  dueDate: 'dueDate',
+  '-dueDate': '-dueDate',
+  priority: 'priority',
+  '-priority': '-priority',
+  name: 'name',
+  '-name': '-name',
+  createdAt: 'createdAt',
+  '-createdAt': '-createdAt',
+} as const;
+
+/**
+ * Feuille column key from the mockup.
+ */
+export type SavedViewSheetColumn = typeof SavedViewSheetColumn[keyof typeof SavedViewSheetColumn];
+
+
+export const SavedViewSheetColumn = {
+  name: 'name',
+  status: 'status',
+  priority: 'priority',
+  people: 'people',
+  due: 'due',
+  estimate: 'estimate',
+  spent: 'spent',
+  labels: 'labels',
+  list: 'list',
+  points: 'points',
+  client: 'client',
+} as const;
+
+/**
+ * A stable UUID v7 identifying one custom field definition, in lowercase.
+ * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+ */
+export type CustomFieldId = string;
+
+/**
+ * Existing sheet column or stable ID of a custom field.
+ */
+export type SheetExportColumn = SavedViewSheetColumn | CustomFieldId;
+
+/**
+ * Order of the selected sheet column in the CSV export.
+ */
+export type SheetExportDirection = typeof SheetExportDirection[keyof typeof SheetExportDirection];
+
+
+export const SheetExportDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
+
+export interface ListTaskExportQuery {
+  status?: Schema;
+  priority?: Schema2;
+  assignee?: Schema3;
+  label?: Schema4;
+  search?: Schema5;
+  dueFrom?: Schema6;
+  dueTo?: Schema7;
+  level?: Schema8;
+  milestone?: Schema9;
+  sort?: Schema12;
+  sheetSortColumn?: SheetExportColumn;
+  sheetSortDirection?: SheetExportDirection;
+}
+
+export type Schema13Item = typeof Schema13Item[keyof typeof Schema13Item];
+
+
+export const Schema13Item = {
+  create: 'create',
+  status: 'status',
+  priority: 'priority',
+  due: 'due',
+  assign: 'assign',
+  comment: 'comment',
+} as const;
+
+/**
+ * @minItems 1
+ * @maxItems 6
+ */
+export type Schema13 = Schema13Item[];
+
+/**
+ * @minItems 1
+ * @maxItems 20
+ * @items.minLength 1
+ * @items.maxLength 100
+ */
+export type Schema14 = string[];
+
+export interface ListActivityQuery {
+  kind?: Schema13;
+  actorId?: Schema14;
+  cursor?: Schema10;
+  limit?: Schema11;
+}
+
+export interface ListTasksQuery {
+  status?: Schema;
+  priority?: Schema2;
+  assignee?: Schema3;
+  label?: Schema4;
+  search?: Schema5;
+  dueFrom?: Schema6;
+  dueTo?: Schema7;
+  level?: Schema8;
+  milestone?: Schema9;
+  sort?: Schema12;
+  cursor?: Schema10;
+  limit?: Schema11;
+}
+
+export type Schema15 = typeof Schema15[keyof typeof Schema15];
+
+
+export const Schema15 = {
+  status: 'status',
+  priority: 'priority',
+  assignee: 'assignee',
+} as const;
+
+export interface TaskGroupsQuery {
+  groupBy: Schema15;
+  status?: Schema;
+  priority?: Schema2;
+  assignee?: Schema3;
+  label?: Schema4;
+  search?: Schema5;
+  dueFrom?: Schema6;
+  dueTo?: Schema7;
+  level?: Schema8;
+  milestone?: Schema9;
+  cursor?: Schema10;
+  limit?: Schema11;
+}
+
+/**
  * Key of a task, the only way a task is named outside task-service: the prefix of the space
  * it was created in, a dash and a number. A key never changes, also when the task moves to
  * another space or its space changes prefix, and is never given to another task.
@@ -53,29 +312,6 @@ export type SearchProjectionUuid = string;
 export type SearchProjectionVersion = number;
 
 export type SearchProjectionIdentifier = TaskKey | SearchProjectionUuid;
-
-/**
- * Key of a task status, in the order of the workflow: `triage` ("À trier"), `backlog` ("À
- * planifier"), `todo` ("À faire"), `progress` ("En cours"), `review` ("En revue"), `testing`
- * ("En validation"), `waiting` ("En attente"), `blocked` ("Bloqué"), `done` ("Terminé") and
- * `cancelled` ("Annulé"). `STATUS_KEYS` of `@cadenway/contracts`; a space renames or hides a
- * status, it never adds or removes a key.
- */
-export type StatusKey = typeof StatusKey[keyof typeof StatusKey];
-
-
-export const StatusKey = {
-  triage: 'triage',
-  backlog: 'backlog',
-  todo: 'todo',
-  progress: 'progress',
-  review: 'review',
-  testing: 'testing',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  cancelled: 'cancelled',
-} as const;
 
 export interface SearchTaskProjection {
   kind: 'task';
@@ -285,12 +521,6 @@ export interface ListTaskExport {
      */
   rows: ListTaskExportRowsItem[];
 }
-
-/**
- * A stable UUID v7 identifying one custom field definition, in lowercase.
- * @pattern ^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
- */
-export type CustomFieldId = string;
 
 /**
  * An active definition of a custom column in a space.
@@ -687,21 +917,6 @@ export const CancelReason = {
 } as const;
 
 /**
- * Priority of a task, from the most to the least urgent: `urgente` ("Urgente"), `haute`
- * ("Haute"), `moyenne` ("Moyenne", the default) and `basse` ("Basse"). `PRIORITY_KEYS` of
- * `@cadenway/contracts`. A closed set: another priority would be a breaking change.
- */
-export type PriorityKey = typeof PriorityKey[keyof typeof PriorityKey];
-
-
-export const PriorityKey = {
-  urgente: 'urgente',
-  haute: 'haute',
-  moyenne: 'moyenne',
-  basse: 'basse',
-} as const;
-
-/**
  * A person, by account. Only the account id in this version: the web application takes the
  * name and the initials from the member list. It may name a former member, for example the
  * owner of a space of the whole organization who left it. Later versions may add members.
@@ -928,33 +1143,6 @@ export type LookIconValue = string | null;
 export type SavedViewLayoutValue = string;
 
 /**
- * @minItems 1
- * @maxItems 10
- */
-export type Schema = StatusKey[];
-
-/**
- * @minItems 1
- * @maxItems 4
- */
-export type Schema2 = PriorityKey[];
-
-/**
- * @minItems 1
- * @maxItems 20
- * @items.pattern ^(me|none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$
- */
-export type Schema3 = string[];
-
-/**
- * @minItems 1
- * @maxItems 20
- * @items.minLength 1
- * @items.maxLength 32
- */
-export type Schema4 = string[];
-
-/**
  * Existing task-query filters. `me` is resolved for the person applying the view, not its
  * creator. Search, milestone, level, collapsed groups, zoom and tab selection remain local.
  */
@@ -1123,35 +1311,6 @@ export const SavedViewSort = {
   '-createdAt': '-createdAt',
 } as const;
 
-export type Schema5 = typeof Schema5[keyof typeof Schema5];
-
-
-export const Schema5 = {
-  status: 'status',
-  priority: 'priority',
-  assignee: 'assignee',
-} as const;
-
-/**
- * Feuille column key from the mockup.
- */
-export type SavedViewSheetColumn = typeof SavedViewSheetColumn[keyof typeof SavedViewSheetColumn];
-
-
-export const SavedViewSheetColumn = {
-  name: 'name',
-  status: 'status',
-  priority: 'priority',
-  people: 'people',
-  due: 'due',
-  estimate: 'estimate',
-  spent: 'spent',
-  labels: 'labels',
-  list: 'list',
-  points: 'points',
-  client: 'client',
-} as const;
-
 export type SavedViewPresentationSheetSortDirection = typeof SavedViewPresentationSheetSortDirection[keyof typeof SavedViewPresentationSheetSortDirection];
 
 
@@ -1192,7 +1351,7 @@ export interface SavedViewConfigurationInput {
   layout: SavedViewLayout;
   filters: SavedViewFilters;
   sort: SavedViewSort;
-  groupBy: Schema5 | null;
+  groupBy: Schema15 | null;
   presentation?: SavedViewPresentation;
 }
 
@@ -1271,7 +1430,7 @@ export interface SavedViewConfigurationPatch {
   layout?: SavedViewLayout;
   filters?: SavedViewFiltersPatch;
   sort?: SavedViewSort;
-  groupBy?: Schema5 | null;
+  groupBy?: Schema15 | null;
   presentation?: SavedViewPresentationPatch | null;
 }
 
@@ -3542,12 +3701,6 @@ export interface Problem {
 }
 
 /**
- * Work date in the caller's time zone from 0001-01-01 to 9999-12-31, independent of the UTC creation instant.
- * @pattern ^([1-9][0-9]{3}|0[1-9][0-9]{2}|00[1-9][0-9]|000[1-9])-[0-9]{2}-[0-9]{2}$
- */
-export type TaskWorkDate = string;
-
-/**
  * Nonnegative points when the observation is available, or null when it is unavailable.
  * @minimum 0
  * @nullable
@@ -3775,22 +3928,6 @@ export interface ListTimesheetPage {
   items: ListTimesheetRow[];
   nextCursor: NextCursor | null;
 }
-
-/**
- * Existing sheet column or stable ID of a custom field.
- */
-export type SheetExportColumn = SavedViewSheetColumn | CustomFieldId;
-
-/**
- * Order of the selected sheet column in the CSV export.
- */
-export type SheetExportDirection = typeof SheetExportDirection[keyof typeof SheetExportDirection];
-
-
-export const SheetExportDirection = {
-  asc: 'asc',
-  desc: 'desc',
-} as const;
 
 export type AutomationAssignActionType = 'assign';
 
@@ -4089,6 +4226,31 @@ export interface IntakeAttachmentAllocation {
   /** Absolute draft lease cutoff, at most 30 minutes after the draft was opened. */
   expiresAt: string;
 }
+
+/**
+ * Workload totals and one page of task and assignee rows.
+ */
+export type ListWorkloadSuccessResponse = ListWorkloadPage;
+
+/**
+ * The encoded header and visible task rows, with IDs for the assignee cells.
+ */
+export type ListTaskExportSuccessResponse = ListTaskExport | string;
+
+/**
+ * One page of entries.
+ */
+export type ListActivitySuccessResponse = ActivityPage;
+
+/**
+ * One page of tasks.
+ */
+export type ListTasksSuccessResponse = TaskSummaryPage;
+
+/**
+ * One page of groups.
+ */
+export type CountTaskGroupsSuccessResponse = TaskGroupPage;
 
 /**
  * The Git command disposition and the minimal task identity and placement authorized by
@@ -6568,6 +6730,40 @@ const getListWorkloadInternal = async (listId: string,
 
 
 
+const getQueryGetListWorkloadInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/workload`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/lists/{listId}/workload`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read scheduled work for two calendar weeks using a JSON query
+ */
+const queryGetListWorkloadInternal = async (listId: string,
+    listWorkloadQuery: ListWorkloadQuery, options?: RequestInit): Promise<queryGetListWorkloadInternalResponse> => {
+
+  const res = await fetchFn(getQueryGetListWorkloadInternalUrl(listId),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listWorkloadQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryGetListWorkloadInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryGetListWorkloadInternalResponse
+}
+
+
+
 const getGetListTimesheetInternalUrl = (listId: string,
     params: GetListTimesheetInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -6676,6 +6872,40 @@ const exportListTasksInternal = async (listId: string,
 
 
 
+const getQueryExportListTasksInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/tasks/export`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/lists/{listId}/tasks/export`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read the visible list task rows for CSV export using a JSON query
+ */
+const queryExportListTasksInternal = async (listId: string,
+    listTaskExportQuery: ListTaskExportQuery, options?: RequestInit): Promise<queryExportListTasksInternalResponse> => {
+
+  const res = await fetchFn(getQueryExportListTasksInternalUrl(listId),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listTaskExportQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryExportListTasksInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryExportListTasksInternalResponse
+}
+
+
+
 const getGetListCountsInternalUrl = (listId: string,
     params: GetListCountsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -6758,6 +6988,40 @@ const listListActivityInternal = async (listId: string,
 
   const data: listListActivityInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listListActivityInternalResponse
+}
+
+
+
+const getQueryListListActivityInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/activity`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/lists/{listId}/activity`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Read the activity log of a list using a JSON query
+ */
+const queryListListActivityInternal = async (listId: string,
+    listActivityQuery: ListActivityQuery, options?: RequestInit): Promise<queryListListActivityInternalResponse> => {
+
+  const res = await fetchFn(getQueryListListActivityInternalUrl(listId),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listActivityQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryListListActivityInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryListListActivityInternalResponse
 }
 
 
@@ -6852,6 +7116,40 @@ const listTasksInternal = async (listId: string,
 
 
 
+const getQueryListTasksInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/tasks`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/lists/{listId}/tasks`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the tasks of a list using a JSON query
+ */
+const queryListTasksInternal = async (listId: string,
+    listTasksQuery: ListTasksQuery, options?: RequestInit): Promise<queryListTasksInternalResponse> => {
+
+  const res = await fetchFn(getQueryListTasksInternalUrl(listId),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listTasksQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryListTasksInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryListTasksInternalResponse
+}
+
+
+
 const getCountTaskGroupsInternalUrl = (listId: string,
     params: CountTaskGroupsInternalParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -6893,6 +7191,40 @@ const countTaskGroupsInternal = async (listId: string,
 
   const data: countTaskGroupsInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as countTaskGroupsInternalResponse
+}
+
+
+
+const getQueryCountTaskGroupsInternalUrl = (listId: string,) => {
+
+
+
+
+  return `/internal/v1/lists/${listId}/task-groups`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/lists/{listId}/task-groups`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary Count the tasks of a list by group using a JSON query
+ */
+const queryCountTaskGroupsInternal = async (listId: string,
+    taskGroupsQuery: TaskGroupsQuery, options?: RequestInit): Promise<queryCountTaskGroupsInternalResponse> => {
+
+  const res = await fetchFn(getQueryCountTaskGroupsInternalUrl(listId),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(taskGroupsQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryCountTaskGroupsInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryCountTaskGroupsInternalResponse
 }
 
 
@@ -11632,7 +11964,7 @@ const releaseIntakeAttachmentInternal = async (publicKey: string,
 
 
 
-return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskVisibilityInternal, getGetTaskVisibilityInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, applyAutomationTaskCommentInternal, getApplyAutomationTaskCommentInternalUrl, authorizeAutomationNotificationInternal, getAuthorizeAutomationNotificationInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
+return { listTaskSearchProjectionsInternal, getListTaskSearchProjectionsInternalUrl, resolveTaskSearchProjectionsInternal, getResolveTaskSearchProjectionsInternalUrl, resolveTaskSearchAccessInternal, getResolveTaskSearchAccessInternalUrl, createSpaceInternal, getCreateSpaceInternalUrl, listSpacesInternal, getListSpacesInternalUrl, getSpaceInternal, getGetSpaceInternalUrl, updateSpaceInternal, getUpdateSpaceInternalUrl, deleteSpaceInternal, getDeleteSpaceInternalUrl, listSpaceMilestonesInternal, getListSpaceMilestonesInternalUrl, getSpaceOverviewInternal, getGetSpaceOverviewInternalUrl, createListInternal, getCreateListInternalUrl, listListsInternal, getListListsInternalUrl, getListInternal, getGetListInternalUrl, updateListInternal, getUpdateListInternalUrl, deleteListInternal, getDeleteListInternalUrl, duplicateListInternal, getDuplicateListInternalUrl, getSprintReportInternal, getGetSprintReportInternalUrl, getListWorkloadInternal, getGetListWorkloadInternalUrl, queryGetListWorkloadInternal, getQueryGetListWorkloadInternalUrl, getListTimesheetInternal, getGetListTimesheetInternalUrl, exportListTasksInternal, getExportListTasksInternalUrl, queryExportListTasksInternal, getQueryExportListTasksInternalUrl, getListCountsInternal, getGetListCountsInternalUrl, listListActivityInternal, getListListActivityInternalUrl, queryListListActivityInternal, getQueryListListActivityInternalUrl, createTaskInternal, getCreateTaskInternalUrl, listTasksInternal, getListTasksInternalUrl, queryListTasksInternal, getQueryListTasksInternalUrl, countTaskGroupsInternal, getCountTaskGroupsInternalUrl, queryCountTaskGroupsInternal, getQueryCountTaskGroupsInternalUrl, executeBulkTaskActionInternal, getExecuteBulkTaskActionInternalUrl, getTaskVisibilityInternal, getGetTaskVisibilityInternalUrl, getTaskInternal, getGetTaskInternalUrl, updateTaskInternal, getUpdateTaskInternalUrl, applyGitTaskStatusActionInternal, getApplyGitTaskStatusActionInternalUrl, applyAutomationTaskActionInternal, getApplyAutomationTaskActionInternalUrl, applyAutomationTaskCommentInternal, getApplyAutomationTaskCommentInternalUrl, authorizeAutomationNotificationInternal, getAuthorizeAutomationNotificationInternalUrl, assignTaskInternal, getAssignTaskInternalUrl, unassignTaskInternal, getUnassignTaskInternalUrl, addTaskLabelInternal, getAddTaskLabelInternalUrl, removeTaskLabelInternal, getRemoveTaskLabelInternalUrl, duplicateTaskInternal, getDuplicateTaskInternalUrl, getTaskDetailInternal, getGetTaskDetailInternalUrl, listTaskTimeEntriesInternal, getListTaskTimeEntriesInternalUrl, createTaskTimeEntryInternal, getCreateTaskTimeEntryInternalUrl, getTaskTimeEntryInternal, getGetTaskTimeEntryInternalUrl, deleteTaskTimeEntryInternal, getDeleteTaskTimeEntryInternalUrl, getTaskTimeSummaryInternal, getGetTaskTimeSummaryInternalUrl, getTaskStatusDurationsInternal, getGetTaskStatusDurationsInternalUrl, getTaskApprovalInternal, getGetTaskApprovalInternalUrl, requestTaskApprovalInternal, getRequestTaskApprovalInternalUrl, voteOnTaskApprovalInternal, getVoteOnTaskApprovalInternalUrl, withdrawTaskApprovalVoteInternal, getWithdrawTaskApprovalVoteInternalUrl, listTaskCommentsInternal, getListTaskCommentsInternalUrl, createTaskCommentInternal, getCreateTaskCommentInternalUrl, getTaskCommentInternal, getGetTaskCommentInternalUrl, updateTaskCommentInternal, getUpdateTaskCommentInternalUrl, deleteTaskCommentInternal, getDeleteTaskCommentInternalUrl, listTaskParticipantsInternal, getListTaskParticipantsInternalUrl, listTaskWatchersInternal, getListTaskWatchersInternalUrl, followTaskWatcherInternal, getFollowTaskWatcherInternalUrl, unfollowTaskWatcherInternal, getUnfollowTaskWatcherInternalUrl, listTaskDependenciesInternal, getListTaskDependenciesInternalUrl, createTaskDependencyInternal, getCreateTaskDependencyInternalUrl, getTaskDependencyInternal, getGetTaskDependencyInternalUrl, deleteTaskDependencyInternal, getDeleteTaskDependencyInternalUrl, listDependencyCandidatesInternal, getListDependencyCandidatesInternalUrl, listSubtasksInternal, getListSubtasksInternalUrl, createSubtaskInternal, getCreateSubtaskInternalUrl, addChecklistItemInternal, getAddChecklistItemInternalUrl, updateChecklistItemInternal, getUpdateChecklistItemInternalUrl, listTaskActivityInternal, getListTaskActivityInternalUrl, listLabelsInternal, getListLabelsInternalUrl, listMyTasksInternal, getListMyTasksInternalUrl, getHomeInternal, getGetHomeInternalUrl, getOnboardingInternal, getGetOnboardingInternalUrl, updateOnboardingInternal, getUpdateOnboardingInternalUrl, updateOnboardingChecklistInternal, getUpdateOnboardingChecklistInternalUrl, finishOnboardingInternal, getFinishOnboardingInternalUrl, listSpaceGrantsInternal, getListSpaceGrantsInternalUrl, setSpaceGrantInternal, getSetSpaceGrantInternalUrl, removeSpaceGrantInternal, getRemoveSpaceGrantInternalUrl, listListGrantsInternal, getListListGrantsInternalUrl, setListGrantInternal, getSetListGrantInternalUrl, removeListGrantInternal, getRemoveListGrantInternalUrl, createAccessRequestInternal, getCreateAccessRequestInternalUrl, listAccessRequestsInternal, getListAccessRequestsInternalUrl, approveAccessRequestInternal, getApproveAccessRequestInternalUrl, refuseAccessRequestInternal, getRefuseAccessRequestInternalUrl, archiveListInternal, getArchiveListInternalUrl, unarchiveListInternal, getUnarchiveListInternalUrl, archiveTaskInternal, getArchiveTaskInternalUrl, unarchiveTaskInternal, getUnarchiveTaskInternalUrl, listArchivedListsInternal, getListArchivedListsInternalUrl, listArchivedTasksInternal, getListArchivedTasksInternalUrl, trashTaskInternal, getTrashTaskInternalUrl, listTrashInternal, getListTrashInternalUrl, purgeTrashEntryInternal, getPurgeTrashEntryInternalUrl, restoreTrashEntryInternal, getRestoreTrashEntryInternalUrl, emptyTrashInternal, getEmptyTrashInternalUrl, resolveDocumentSpaceAccessInternal, getResolveDocumentSpaceAccessInternalUrl, checkListAccessInternal, getCheckListAccessInternalUrl, checkTaskAccessInternal, getCheckTaskAccessInternalUrl, checkTaskAttachmentAccessInternal, getCheckTaskAttachmentAccessInternalUrl, resolveNotificationSubjectsInternal, getResolveNotificationSubjectsInternalUrl, listTaskTemplatesInternal, getListTaskTemplatesInternalUrl, createTaskTemplateInternal, getCreateTaskTemplateInternalUrl, getTaskTemplateInternal, getGetTaskTemplateInternalUrl, deleteTaskTemplateInternal, getDeleteTaskTemplateInternalUrl, listSavedViewsInternal, getListSavedViewsInternalUrl, createSavedViewInternal, getCreateSavedViewInternalUrl, getSavedViewInternal, getGetSavedViewInternalUrl, updateSavedViewInternal, getUpdateSavedViewInternalUrl, deleteSavedViewInternal, getDeleteSavedViewInternalUrl, duplicateSavedViewInternal, getDuplicateSavedViewInternalUrl, listFavoritesInternal, getListFavoritesInternalUrl, createFavoriteInternal, getCreateFavoriteInternalUrl, getFavoriteInternal, getGetFavoriteInternalUrl, deleteFavoriteInternal, getDeleteFavoriteInternalUrl, listSpaceCustomFieldsInternal, getListSpaceCustomFieldsInternalUrl, createSpaceCustomFieldInternal, getCreateSpaceCustomFieldInternalUrl, getSpaceCustomFieldInternal, getGetSpaceCustomFieldInternalUrl, updateSpaceCustomFieldInternal, getUpdateSpaceCustomFieldInternalUrl, retireSpaceCustomFieldInternal, getRetireSpaceCustomFieldInternalUrl, listListCustomFieldsInternal, getListListCustomFieldsInternalUrl, listGoalsInternal, getListGoalsInternalUrl, createGoalInternal, getCreateGoalInternalUrl, getGoalInternal, getGetGoalInternalUrl, updateGoalInternal, getUpdateGoalInternalUrl, deleteGoalInternal, getDeleteGoalInternalUrl, createGoalResultInternal, getCreateGoalResultInternalUrl, getGoalResultInternal, getGetGoalResultInternalUrl, updateGoalResultInternal, getUpdateGoalResultInternalUrl, deleteGoalResultInternal, getDeleteGoalResultInternalUrl, getTeamDashboardInternal, getGetTeamDashboardInternalUrl, getIntakeFormConfigurationInternal, getGetIntakeFormConfigurationInternalUrl, updateIntakeFormConfigurationInternal, getUpdateIntakeFormConfigurationInternalUrl, publishIntakeFormInternal, getPublishIntakeFormInternalUrl, disableIntakeFormInternal, getDisableIntakeFormInternalUrl, getTaskIntakeContactInternal, getGetTaskIntakeContactInternalUrl, getPublicIntakeFormInternal, getGetPublicIntakeFormInternalUrl, submitPublicIntakeFormInternal, getSubmitPublicIntakeFormInternalUrl, allocateIntakeAttachmentInternal, getAllocateIntakeAttachmentInternalUrl, resolveIntakeAttachmentInternal, getResolveIntakeAttachmentInternalUrl, releaseIntakeAttachmentInternal, getReleaseIntakeAttachmentInternalUrl };
 };
 
 export type listTaskSearchProjectionsInternalResponse200 = {
@@ -12350,6 +12682,41 @@ export type getListWorkloadInternalResponseError = (getListWorkloadInternalRespo
 export type getListWorkloadInternalResponse = (getListWorkloadInternalResponseSuccess | getListWorkloadInternalResponseError)
 
 
+export type queryGetListWorkloadInternalResponse200 = {
+  data: ListWorkloadSuccessResponse
+  status: 200
+}
+
+export type queryGetListWorkloadInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryGetListWorkloadInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryGetListWorkloadInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type queryGetListWorkloadInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type queryGetListWorkloadInternalResponseSuccess = (queryGetListWorkloadInternalResponse200) & {
+  headers: Headers;
+};
+export type queryGetListWorkloadInternalResponseError = (queryGetListWorkloadInternalResponse400 | queryGetListWorkloadInternalResponse401 | queryGetListWorkloadInternalResponse403 | queryGetListWorkloadInternalResponse404) & {
+  headers: Headers;
+};
+
+export type queryGetListWorkloadInternalResponse = (queryGetListWorkloadInternalResponseSuccess | queryGetListWorkloadInternalResponseError)
+
+
 export type getListTimesheetInternalResponse200 = {
   data: ListTimesheetPage
   status: 200
@@ -12430,6 +12797,46 @@ export type exportListTasksInternalResponseError = (exportListTasksInternalRespo
 export type exportListTasksInternalResponse = (exportListTasksInternalResponseSuccess | exportListTasksInternalResponseError)
 
 
+export type queryExportListTasksInternalResponse200 = {
+  data: ListTaskExportSuccessResponse
+  status: 200
+}
+
+export type queryExportListTasksInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryExportListTasksInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryExportListTasksInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type queryExportListTasksInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type queryExportListTasksInternalResponse422 = {
+  data: ExportRowLimitReachedResponse
+  status: 422
+}
+
+export type queryExportListTasksInternalResponseSuccess = (queryExportListTasksInternalResponse200) & {
+  headers: Headers;
+};
+export type queryExportListTasksInternalResponseError = (queryExportListTasksInternalResponse400 | queryExportListTasksInternalResponse401 | queryExportListTasksInternalResponse403 | queryExportListTasksInternalResponse404 | queryExportListTasksInternalResponse422) & {
+  headers: Headers;
+};
+
+export type queryExportListTasksInternalResponse = (queryExportListTasksInternalResponseSuccess | queryExportListTasksInternalResponseError)
+
+
 export type getListCountsInternalResponse200 = {
   data: ListSummary
   status: 200
@@ -12498,6 +12905,41 @@ export type listListActivityInternalResponseError = (listListActivityInternalRes
 };
 
 export type listListActivityInternalResponse = (listListActivityInternalResponseSuccess | listListActivityInternalResponseError)
+
+
+export type queryListListActivityInternalResponse200 = {
+  data: ListActivitySuccessResponse
+  status: 200
+}
+
+export type queryListListActivityInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryListListActivityInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryListListActivityInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type queryListListActivityInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type queryListListActivityInternalResponseSuccess = (queryListListActivityInternalResponse200) & {
+  headers: Headers;
+};
+export type queryListListActivityInternalResponseError = (queryListListActivityInternalResponse400 | queryListListActivityInternalResponse401 | queryListListActivityInternalResponse403 | queryListListActivityInternalResponse404) & {
+  headers: Headers;
+};
+
+export type queryListListActivityInternalResponse = (queryListListActivityInternalResponseSuccess | queryListListActivityInternalResponseError)
 
 
 export type createTaskInternalResponse201 = {
@@ -12580,6 +13022,41 @@ export type listTasksInternalResponseError = (listTasksInternalResponse400 | lis
 export type listTasksInternalResponse = (listTasksInternalResponseSuccess | listTasksInternalResponseError)
 
 
+export type queryListTasksInternalResponse200 = {
+  data: ListTasksSuccessResponse
+  status: 200
+}
+
+export type queryListTasksInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryListTasksInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryListTasksInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type queryListTasksInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type queryListTasksInternalResponseSuccess = (queryListTasksInternalResponse200) & {
+  headers: Headers;
+};
+export type queryListTasksInternalResponseError = (queryListTasksInternalResponse400 | queryListTasksInternalResponse401 | queryListTasksInternalResponse403 | queryListTasksInternalResponse404) & {
+  headers: Headers;
+};
+
+export type queryListTasksInternalResponse = (queryListTasksInternalResponseSuccess | queryListTasksInternalResponseError)
+
+
 export type countTaskGroupsInternalResponse200 = {
   data: TaskGroupPage
   status: 200
@@ -12613,6 +13090,41 @@ export type countTaskGroupsInternalResponseError = (countTaskGroupsInternalRespo
 };
 
 export type countTaskGroupsInternalResponse = (countTaskGroupsInternalResponseSuccess | countTaskGroupsInternalResponseError)
+
+
+export type queryCountTaskGroupsInternalResponse200 = {
+  data: CountTaskGroupsSuccessResponse
+  status: 200
+}
+
+export type queryCountTaskGroupsInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryCountTaskGroupsInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryCountTaskGroupsInternalResponse403 = {
+  data: InternalAccessRefusedResponse
+  status: 403
+}
+
+export type queryCountTaskGroupsInternalResponse404 = {
+  data: ListNotFoundResponse
+  status: 404
+}
+
+export type queryCountTaskGroupsInternalResponseSuccess = (queryCountTaskGroupsInternalResponse200) & {
+  headers: Headers;
+};
+export type queryCountTaskGroupsInternalResponseError = (queryCountTaskGroupsInternalResponse400 | queryCountTaskGroupsInternalResponse401 | queryCountTaskGroupsInternalResponse403 | queryCountTaskGroupsInternalResponse404) & {
+  headers: Headers;
+};
+
+export type queryCountTaskGroupsInternalResponse = (queryCountTaskGroupsInternalResponseSuccess | queryCountTaskGroupsInternalResponseError)
 
 
 export type executeBulkTaskActionInternalResponse200 = {

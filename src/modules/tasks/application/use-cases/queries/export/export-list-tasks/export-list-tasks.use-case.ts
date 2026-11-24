@@ -50,6 +50,7 @@ export class ExportListTasks {
     query: ListTaskExportQuery,
     budgetMs: number = REQUEST_BUDGET_MS,
     caller?: AbortSignal,
+    method?: 'QUERY',
   ): Promise<ListTaskCsv> {
     if (budgetMs <= 0) {
       throw new ListTaskExportUnavailable('task-service', 'upstream.deadline-exceeded');
@@ -74,7 +75,10 @@ export class ExportListTasks {
       spool = fileSpool;
       signal.throwIfAborted();
       service = 'task-service';
-      const frames = await this.tasks.read(listId, query, signal);
+      const frames =
+        method === 'QUERY'
+          ? await this.tasks.read(listId, query, signal, method)
+          : await this.tasks.read(listId, query, signal);
       let filename: string | undefined;
       let rowCount = 0;
       let complete = false;

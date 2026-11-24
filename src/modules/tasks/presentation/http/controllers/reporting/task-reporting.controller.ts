@@ -7,6 +7,8 @@ import {
   GetSprintReportParams,
   GetSprintReportQueryParams,
   GetSprintReportResponse,
+  QueryExportListTasksBody,
+  QueryGetListWorkloadBody,
 } from '@cadenway/contracts/validators/public/lists';
 import {
   GetTeamDashboardQueryParams,
@@ -22,13 +24,24 @@ import {
   remainingBudgetMs,
   ZodValidationPipe,
 } from '@cadenway/nest-common';
-import { Controller, Get, Inject, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Param,
+  Query,
+  QueryMethod,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { verifiedCredentialOf } from '../../../../../../presentation/http/session/request-session.js';
 import { publicProblem } from '../../../../../../problems/public-problem.js';
 import { conformBody, outsideContract } from '../../../../../../problems/upstream-answer.js';
@@ -182,12 +195,17 @@ export class TaskReportingController {
     @Param(new ZodValidationPipe(GetListWorkloadParams))
     params: z.output<typeof GetListWorkloadParams>,
     @Query(new ZodValidationPipe(WORKLOAD_QUERY)) query: z.output<typeof WORKLOAD_QUERY>,
+    method?: 'QUERY',
   ): Promise<z.output<typeof GetListWorkloadResponse>> {
     const body = conformBody(
       'task-service',
       'getListWorkload',
       GetListWorkloadResponse,
-      await relayProblems(READ, () => this.reports.execute('workload', query, params.listId)),
+      await relayProblems(READ, () =>
+        method === 'QUERY'
+          ? this.reports.execute('workload', query, params.listId, method)
+          : this.reports.execute('workload', query, params.listId),
+      ),
     );
     if (
       body.listId.toLowerCase() !== params.listId.toLowerCase() ||
@@ -196,6 +214,21 @@ export class TaskReportingController {
       throw outsideContract('task-service', 'getListWorkload', 'a report for another list');
     }
     return body;
+  }
+
+  /** Reads list workload using filters supplied in a JSON body. */
+  @QueryMethod('lists/:listId/workload')
+  @CredentialGuard.requires({
+    operationId: 'queryGetListWorkload',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
+    organization: true,
+  })
+  public async queryWorkload(
+    @Param(new ZodValidationPipe(GetListWorkloadParams))
+    params: z.output<typeof GetListWorkloadParams>,
+    @RequiredBody(QueryGetListWorkloadBody) body: z.output<typeof QueryGetListWorkloadBody>,
+  ): Promise<z.output<typeof GetListWorkloadResponse>> {
+    return this.workload(params, body, 'QUERY');
   }
 
   /** Reads one week of time entries on a visible list. */
@@ -238,6 +271,7 @@ export class TaskReportingController {
     params: z.output<typeof ExportListTasksParams>,
     @Query(new ZodValidationPipe(EXPORT_QUERY)) query: z.output<typeof EXPORT_QUERY>,
     @Res() response: Response,
+    method?: 'QUERY',
   ): Promise<void> {
     if (response.destroyed) return;
     const organizationId = getOrganizationContext()?.organizationId;
@@ -253,13 +287,24 @@ export class TaskReportingController {
     let transferTimer: ReturnType<typeof setTimeout> | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      file = await this.exportTasks.execute(
-        organizationId,
-        params.listId,
-        query,
-        remainingBudgetMs(),
-        lifetime.signal,
-      );
+      const budget = remainingBudgetMs();
+      file =
+        method === 'QUERY'
+          ? await this.exportTasks.execute(
+              organizationId,
+              params.listId,
+              query,
+              budget,
+              lifetime.signal,
+              method,
+            )
+          : await this.exportTasks.execute(
+              organizationId,
+              params.listId,
+              query,
+              budget,
+              lifetime.signal,
+            );
       if (lifetime.signal.aborted) return;
       response.setHeader('Content-Type', 'text/csv; charset=utf-8');
       response.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
@@ -297,6 +342,22 @@ export class TaskReportingController {
       response.off('close', disconnect);
       await file?.dispose();
     }
+  }
+
+  /** Exports the list selection supplied in a JSON body. */
+  @QueryMethod('lists/:listId/tasks/export')
+  @CredentialGuard.requires({
+    operationId: 'queryExportListTasks',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
+    organization: true,
+  })
+  public async queryExport(
+    @Param(new ZodValidationPipe(ExportListTasksParams))
+    params: z.output<typeof ExportListTasksParams>,
+    @RequiredBody(QueryExportListTasksBody) body: z.output<typeof QueryExportListTasksBody>,
+    @Res() response: Response,
+  ): Promise<void> {
+    await this.export(params, body, response, 'QUERY');
   }
   // #endregion
 }

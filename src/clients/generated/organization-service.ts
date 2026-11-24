@@ -3,6 +3,44 @@
  * Do not edit: run `pnpm generate:clients`.
  */
 /**
+ * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
+ * ("Membre") or `guest` ("Invité").
+ */
+export type Role = typeof Role[keyof typeof Role];
+
+
+export const Role = {
+  owner: 'owner',
+  admin: 'admin',
+  member: 'member',
+  guest: 'guest',
+} as const;
+
+export type Schema = string;
+
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+export type Schema2 = number;
+
+export interface ListMembersQuery {
+  /**
+     * Text to find in the name or address, without regard to case or accents.
+     * @minLength 1
+     * @maxLength 100
+     */
+  search?: string;
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  role?: Role[];
+  cursor?: Schema;
+  limit?: Schema2;
+}
+
+/**
  * @maxItems 100
  */
 export type QuotaNotificationRecipientIds = string[];
@@ -49,20 +87,6 @@ export type BillingActiveMembershipState = typeof BillingActiveMembershipState[k
 
 export const BillingActiveMembershipState = {
   active: 'active',
-} as const;
-
-/**
- * Role in an organization: `owner` ("Propriétaire"), `admin` ("Administrateur"), `member`
- * ("Membre") or `guest` ("Invité").
- */
-export type Role = typeof Role[keyof typeof Role];
-
-
-export const Role = {
-  owner: 'owner',
-  admin: 'admin',
-  member: 'member',
-  guest: 'guest',
 } as const;
 
 export interface BillingActiveMembership {
@@ -549,7 +573,10 @@ export interface SetProfileMedia {
   uploadId: ProfileMediaId;
 }
 
-export type Schema = string;
+/**
+ * One page of members.
+ */
+export type ListMembersSuccessResponse = MemberPage;
 
 /**
  * `request.invalid` for malformed input, including a cursor issued for another tenant or
@@ -1368,6 +1395,39 @@ const listMembersInternal = async (params?: ListMembersInternalParams, options?:
 
   const data: listMembersInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listMembersInternalResponse
+}
+
+
+
+const getQueryListMembersInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/members`
+}
+
+/**
+ * Equivalent to `GET /internal/v1/members`, with filters in the JSON body.
+ * A body exceeding the JSON body limit yields `400 request.body-too-large`.
+ * @summary List the members using a JSON query
+ */
+const queryListMembersInternal = async (listMembersQuery: ListMembersQuery, options?: RequestInit): Promise<queryListMembersInternalResponse> => {
+
+  const res = await fetchFn(getQueryListMembersInternalUrl(),
+  {
+    ...options,
+    method: 'QUERY',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(listMembersQuery)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: queryListMembersInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as queryListMembersInternalResponse
 }
 
 
@@ -2323,7 +2383,7 @@ const reserveAccountDeletionInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, getBillingActiveSeatCountInternal, getGetBillingActiveSeatCountInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, queryListMembersInternal, getQueryListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, getBillingActiveSeatCountInternal, getGetBillingActiveSeatCountInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -2684,6 +2744,41 @@ export type listMembersInternalResponseError = (listMembersInternalResponse400 |
 };
 
 export type listMembersInternalResponse = (listMembersInternalResponseSuccess | listMembersInternalResponseError)
+
+
+export type queryListMembersInternalResponse200 = {
+  data: ListMembersSuccessResponse
+  status: 200
+}
+
+export type queryListMembersInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type queryListMembersInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type queryListMembersInternalResponse403 = {
+  data: RoleForbiddenResponse
+  status: 403
+}
+
+export type queryListMembersInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type queryListMembersInternalResponseSuccess = (queryListMembersInternalResponse200) & {
+  headers: Headers;
+};
+export type queryListMembersInternalResponseError = (queryListMembersInternalResponse400 | queryListMembersInternalResponse401 | queryListMembersInternalResponse403 | queryListMembersInternalResponse404) & {
+  headers: Headers;
+};
+
+export type queryListMembersInternalResponse = (queryListMembersInternalResponseSuccess | queryListMembersInternalResponseError)
 
 
 export type lookupMemberNamesInternalResponse200 = {

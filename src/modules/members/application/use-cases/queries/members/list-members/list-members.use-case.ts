@@ -47,8 +47,10 @@ export class ListMembers {
    * @param {ListMembersInput} input - The page and the filters.
    * @returns {Promise<MemberPage>} One page of members, with the totals.
    */
-  public execute(input: ListMembersInput): Promise<MemberPage> {
-    return this.directory.listMembers(input);
+  public execute(input: ListMembersInput, method?: 'QUERY'): Promise<MemberPage> {
+    return method === 'QUERY'
+      ? this.directory.listMembers(input, method)
+      : this.directory.listMembers(input);
   }
   // #endregion
 }

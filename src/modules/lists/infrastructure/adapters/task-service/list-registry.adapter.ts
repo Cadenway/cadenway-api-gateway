@@ -22,6 +22,9 @@ export function createListRegistryAdapter(client: TaskServiceClient): ListRegist
     updateList: (listId, patch, ifMatch) => client.updateList(listId, patch, ifMatch),
     deleteList: (listId, ifMatch) => client.deleteList(listId, ifMatch),
     getListCounts: (listId, query) => client.getListCounts(listId, query),
-    listListActivity: (listId, query) => client.listListActivity(listId, query),
+    listListActivity: (listId, query, method) =>
+      method === 'QUERY'
+        ? client.queryListListActivity(listId, query)
+        : client.listListActivity(listId, query),
   };
 }

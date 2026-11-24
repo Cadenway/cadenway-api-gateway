@@ -187,7 +187,7 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
    * @returns The answer.
    */
   async function send(
-    method: SpecMethod,
+    method: Exclude<SpecMethod, 'query'>,
     path: string,
     url: string,
     options: { body?: object; headers?: Record<string, string>; bearer?: string } = {},

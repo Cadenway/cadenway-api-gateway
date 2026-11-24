@@ -444,7 +444,7 @@ describe('routes of the tasks, the labels, "Mes tâches" and "Accueil"', () => {
 
     it('refuses two identical If-Organization-Match fields before calling Task', async () => {
       const pending = request(application.server)
-        [route.method](route.url)
+        [route.method as Exclude<typeof route.method, 'query'>](route.url)
         .set({
           ...route.headers,
           Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,

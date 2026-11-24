@@ -7,13 +7,12 @@ import { publicProblem } from '../../../../../../problems/public-problem.js';
  * Constant SAFE_METHODS
  *
  * @description
- * Methods RFC 9110 defines as safe, which change nothing: every other method, `POST`, `PUT`,
- * `PATCH` and `DELETE` included, gets the cross-site check, so a method nobody listed cannot skip
- * it.
+ * Safe HTTP methods supported by the gateway, including `QUERY` from RFC 10008. Every other
+ * method gets the cross-site check, so a method nobody listed cannot skip it.
  *
  * @type {ReadonlySet<string>}
  */
-const SAFE_METHODS: ReadonlySet<string> = new Set<string>(['GET', 'HEAD', 'OPTIONS']);
+const SAFE_METHODS: ReadonlySet<string> = new Set<string>(['GET', 'HEAD', 'OPTIONS', 'QUERY']);
 
 /**
  * Constant JSON_MEDIA_TYPE
@@ -33,7 +32,7 @@ const JSON_MEDIA_TYPE: string = 'application/json';
  * Tells whether a request method changes something.
  *
  * @param {string} method - Method of the request, as Express reads it (uppercase).
- * @returns {boolean} `false` for `GET`, `HEAD` and `OPTIONS`, `true` for every other method.
+ * @returns {boolean} `false` for `GET`, `HEAD`, `OPTIONS` and `QUERY`, `true` otherwise.
  */
 export function isUnsafeMethod(method: string): boolean {
   return !SAFE_METHODS.has(method.toUpperCase());

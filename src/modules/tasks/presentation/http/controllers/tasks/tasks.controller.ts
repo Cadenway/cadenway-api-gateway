@@ -33,6 +33,8 @@ import {
   ListTasksParams,
   ListTasksQueryParams,
   ListTasksResponse,
+  QueryCountTaskGroupsBody,
+  QueryListTasksBody,
   RemoveTaskLabelBody,
   RemoveTaskLabelParams,
   RemoveTaskLabelResponse,
@@ -57,6 +59,7 @@ import {
   Post,
   Put,
   Query,
+  QueryMethod,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -712,6 +715,28 @@ export class TasksController {
     );
   }
 
+  /** Lists tasks using filters supplied in a JSON body. */
+  @QueryMethod('lists/:listId/tasks')
+  @CredentialGuard.requires({
+    operationId: 'queryListTasks',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
+    organization: true,
+    organizationPrecondition: true,
+  })
+  public async queryListTasks(
+    @Param(new ZodValidationPipe(ListTasksParams)) params: z.output<typeof ListTasksParams>,
+    @RequiredBody(QueryListTasksBody) body: z.output<typeof QueryListTasksBody>,
+  ): Promise<z.output<typeof ListTasksResponse>> {
+    return conformBody(
+      TASK_SERVICE,
+      'queryListTasks',
+      ListTasksResponse,
+      await relayProblems(LIST_TASKS_PROBLEMS, () =>
+        this.taskListing.execute(params.listId, body, 'QUERY'),
+      ),
+    );
+  }
+
   /**
    * Method createTask
    *
@@ -782,6 +807,29 @@ export class TasksController {
       CountTaskGroupsResponse,
       await relayProblems(COUNT_TASK_GROUPS_PROBLEMS, () =>
         this.groupCounting.execute(params.listId, query),
+      ),
+    );
+  }
+
+  /** Counts task groups using filters supplied in a JSON body. */
+  @QueryMethod('lists/:listId/task-groups')
+  @CredentialGuard.requires({
+    operationId: 'queryCountTaskGroups',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
+    organization: true,
+    organizationPrecondition: true,
+  })
+  public async queryCountTaskGroups(
+    @Param(new ZodValidationPipe(CountTaskGroupsParams))
+    params: z.output<typeof CountTaskGroupsParams>,
+    @RequiredBody(QueryCountTaskGroupsBody) body: z.output<typeof QueryCountTaskGroupsBody>,
+  ): Promise<z.output<typeof CountTaskGroupsResponse>> {
+    return conformBody(
+      TASK_SERVICE,
+      'queryCountTaskGroups',
+      CountTaskGroupsResponse,
+      await relayProblems(COUNT_TASK_GROUPS_PROBLEMS, () =>
+        this.groupCounting.execute(params.listId, body, 'QUERY'),
       ),
     );
   }
