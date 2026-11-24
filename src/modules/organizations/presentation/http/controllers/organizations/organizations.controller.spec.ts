@@ -202,6 +202,26 @@ const CASES: readonly RouteCase[] = [
     code: 'organization.slug-invalid',
   },
   {
+    name: 'POST /v1/organizations relays 422 organization.slug-reserved with the slug',
+    method: 'post',
+    path: '/v1/organizations',
+    url: '/v1/organizations',
+    body: { name: 'Home' },
+    arrange: ({ organization }) =>
+      organization.createOrganization.mockRejectedValue(
+        organizationProblem(422, 'organization.slug-reserved', { slug: 'home' }),
+      ),
+    status: 422,
+    code: 'organization.slug-reserved',
+    check: (response) => {
+      expect(response.body).toMatchObject({
+        title: 'Cette adresse est réservée : choisissez-en une autre.',
+        details: { slug: 'home' },
+      });
+      expect(response.body).not.toHaveProperty('details.service');
+    },
+  },
+  {
     name: 'POST /v1/organizations answers 429 beyond the quota',
     method: 'post',
     path: '/v1/organizations',
@@ -501,6 +521,22 @@ const CASES: readonly RouteCase[] = [
       ),
     status: 409,
     code: 'organization.slug-taken',
+  },
+  {
+    name: 'PATCH /v1/organization relays 422 organization.slug-reserved with the slug',
+    method: 'patch',
+    path: '/v1/organization',
+    url: '/v1/organization',
+    body: { slug: 'account' },
+    arrange: ({ organization }) =>
+      organization.updateOrganization.mockRejectedValue(
+        organizationProblem(422, 'organization.slug-reserved', { slug: 'account' }),
+      ),
+    status: 422,
+    code: 'organization.slug-reserved',
+    check: (response) => {
+      expect(response.body).toMatchObject({ details: { slug: 'account' } });
+    },
   },
   {
     name: 'PATCH /v1/organization relays 412 request.version-mismatch',
