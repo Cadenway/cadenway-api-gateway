@@ -129,10 +129,12 @@ export async function runRouteCase(
     bearerFailureCounter: application.bearerFailureCounter,
   };
   routeCase.arrange?.(fakes);
-  const unsafe: boolean = routeCase.method !== 'get';
+  const unsafe: boolean = routeCase.method !== 'get' && routeCase.method !== 'query';
   const origin: string | null =
     routeCase.origin === undefined ? (unsafe ? ALLOWED_ORIGIN : null) : routeCase.origin;
-  let pending: request.Test = request(application.server)[routeCase.method](routeCase.url);
+  let pending: request.Test = request(application.server)[routeCase.method](
+    routeCase.url,
+  ) as request.Test;
   const headers: Record<string, string> = {
     ...credentialHeaders(routeCase.credential ?? 'session'),
     ...(origin === null ? {} : { Origin: origin }),

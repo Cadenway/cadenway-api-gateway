@@ -403,6 +403,25 @@ describe('OrganizationServiceClient', () => {
     );
   });
 
+  it('sends member filters as a JSON QUERY in the verified organization', async () => {
+    answer.mockReturnValue(
+      json(200, {
+        items: [INES],
+        nextCursor: null,
+        total: 1,
+        counts: { owner: 1, admin: 1, member: 0, guest: 0 },
+      }),
+    );
+    const body = { limit: 20, search: 'inès', role: ['owner', 'admin'] as ('owner' | 'admin')[] };
+    await asOwner(() => client.queryListMembers(body));
+    expect(calls[0]).toMatchObject({
+      method: 'QUERY',
+      url: `${BASE_URL}/internal/v1/members`,
+      body,
+      principal: { actor: OWNER.actor, organizationId: OWNER.organizationId },
+    });
+  });
+
   it('reads, changes and removes a member', async () => {
     answer
       .mockReturnValueOnce(json(200, INES))

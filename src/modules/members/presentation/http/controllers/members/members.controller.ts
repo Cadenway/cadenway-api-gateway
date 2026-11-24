@@ -3,6 +3,7 @@ import {
   ChangeMemberRoleBody,
   GetMemberParams,
   ListMembersQueryParams,
+  QueryListMembersBody,
 } from '@cadenway/contracts/validators/public/members';
 import { ZodValidationPipe } from '@cadenway/nest-common';
 import {
@@ -15,6 +16,7 @@ import {
   Param,
   Patch,
   Query,
+  QueryMethod,
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
@@ -25,6 +27,7 @@ import {
 } from '../../../../../../problems/upstream-problem.js';
 import { IfMatchHeader } from '../../../../../../presentation/http/mappers/request-headers.mapper.js';
 import { toQueryList } from '../../../../../../presentation/http/mappers/query-parameters.mapper.js';
+import { RequiredBody } from '../../../../../../presentation/http/mappers/request-body.mapper.js';
 import { CredentialGuard } from '../../../../../auth/public/credential/credential-guard.js';
 import { RateLimitGuard } from '../../../../../rate-limit/public/requests/rate-limit-guard.js';
 import { ChangeMemberRole } from '../../../../application/use-cases/commands/members/change-member-role/change-member-role.use-case.js';
@@ -235,6 +238,31 @@ export class MembersController {
           ...(query.search === undefined ? {} : { search: query.search }),
           ...(query.role === undefined ? {} : { roles: query.role }),
         }),
+      ),
+    );
+  }
+
+  /** Lists members using filters supplied in a JSON body. */
+  @QueryMethod()
+  @CredentialGuard.requires({
+    operationId: 'queryListMembers',
+    security: [{ sessionCookie: [] }, { apiToken: ['members:read'] }],
+    organization: true,
+  })
+  public async queryListMembers(
+    @RequiredBody(QueryListMembersBody) body: z.output<typeof QueryListMembersBody>,
+  ): Promise<MemberPage> {
+    return toMemberPage(
+      await this.relay(LIST_PROBLEMS, {}, () =>
+        this.listing.execute(
+          {
+            ...(body.cursor === undefined ? {} : { cursor: body.cursor }),
+            limit: body.limit,
+            ...(body.search === undefined ? {} : { search: body.search }),
+            ...(body.role === undefined ? {} : { roles: body.role }),
+          },
+          'QUERY',
+        ),
       ),
     );
   }

@@ -17,10 +17,14 @@ export function createTaskRegistryAdapter(client: TaskServiceClient): TaskRegist
     executeBulkTaskAction: (body, key) => client.executeBulkTaskAction(body, key),
     duplicateTask: (taskKey, body, ifMatch, key) =>
       client.duplicateTask(taskKey, body, ifMatch, key),
-    listTasks: (listId, query) => client.listTasks(listId, query),
+    listTasks: (listId, query, method) =>
+      method === 'QUERY' ? client.queryListTasks(listId, query) : client.listTasks(listId, query),
     createTask: (listId, creation, idempotencyKey) =>
       client.createTask(listId, creation, idempotencyKey),
-    countTaskGroups: (listId, query) => client.countTaskGroups(listId, query),
+    countTaskGroups: (listId, query, method) =>
+      method === 'QUERY'
+        ? client.queryCountTaskGroups(listId, query)
+        : client.countTaskGroups(listId, query),
     getTask: (taskKey) => client.getTask(taskKey),
     updateTask: (taskKey, patch, ifMatch) => client.updateTask(taskKey, patch, ifMatch),
     listSubtasks: (taskKey, query) => client.listSubtasks(taskKey, query),

@@ -134,6 +134,7 @@ export function createFakeOrganization(): FakeOrganization {
     deleteOrganizationLogo: vi.fn(unexpected),
     updateOrganization: vi.fn(unexpected),
     listMembers: vi.fn(unexpected),
+    queryListMembers: vi.fn(unexpected),
     lookupMemberNames: vi.fn(unexpected),
     checkAutomationRecipient: vi.fn(unexpected),
     getMember: vi.fn(unexpected),

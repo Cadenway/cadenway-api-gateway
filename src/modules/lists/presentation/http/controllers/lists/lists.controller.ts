@@ -12,6 +12,7 @@ import {
   ListListActivityParams,
   ListListActivityQueryParams,
   ListListActivityResponse,
+  QueryListListActivityBody,
   ListListsParams,
   ListListsQueryParams,
   ListListsResponse,
@@ -31,6 +32,7 @@ import {
   Patch,
   Post,
   Query,
+  QueryMethod,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -539,6 +541,28 @@ export class ListsController {
       ListListActivityResponse,
       await relayProblems(LIST_LIST_ACTIVITY_PROBLEMS, () =>
         this.activityListing.execute(params.listId, query),
+      ),
+    );
+  }
+
+  /** Lists activity using filters supplied in a JSON body. */
+  @QueryMethod('lists/:listId/activity')
+  @CredentialGuard.requires({
+    operationId: 'queryListListActivity',
+    security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
+    organization: true,
+  })
+  public async queryListListActivity(
+    @Param(new ZodValidationPipe(ListListActivityParams))
+    params: z.output<typeof ListListActivityParams>,
+    @RequiredBody(QueryListListActivityBody) body: z.output<typeof QueryListListActivityBody>,
+  ): Promise<z.output<typeof ListListActivityResponse>> {
+    return conformBody(
+      TASK_SERVICE,
+      'queryListListActivity',
+      ListListActivityResponse,
+      await relayProblems(LIST_LIST_ACTIVITY_PROBLEMS, () =>
+        this.activityListing.execute(params.listId, body, 'QUERY'),
       ),
     );
   }

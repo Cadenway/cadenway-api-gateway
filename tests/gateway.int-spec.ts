@@ -78,17 +78,17 @@ describe('gateway start-up', () => {
     expect(response.body).toMatchObject({ status: 'ok', info: { redis: { status: 'up' } } });
   });
 
-  it('accepts a preflight from an allowed origin, with credentials', async () => {
+  it.each(['PATCH', 'QUERY'])('accepts a %s preflight from an allowed origin', async (method) => {
     const response: request.Response = await request(server)
       .options('/v1/tasks/CAD-482')
       .set('Origin', ALLOWED_ORIGIN)
-      .set('Access-Control-Request-Method', 'PATCH')
+      .set('Access-Control-Request-Method', method)
       .set('Access-Control-Request-Headers', 'content-type,if-match,if-organization-match');
 
     expect(response.status).toBe(204);
     expect(response.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN);
     expect(response.headers['access-control-allow-credentials']).toBe('true');
-    expect(response.headers['access-control-allow-methods']).toContain('PATCH');
+    expect(response.headers['access-control-allow-methods']).toContain(method);
     expect(response.headers['access-control-allow-headers']).toBe(
       'Content-Type,If-Match,If-Organization-Match,Idempotency-Key,Intake-Draft-Key',
     );
@@ -104,6 +104,20 @@ describe('gateway start-up', () => {
 
       expect(response.headers['access-control-allow-origin']).toBeUndefined();
     }
+  });
+
+  it('exposes a malformed QUERY JSON error to an allowed origin', async () => {
+    const query = request(server) as unknown as { query: (url: string) => request.Test };
+    const response: request.Response = await query
+      .query('/v1/members')
+      .set('Origin', ALLOWED_ORIGIN)
+      .set('Content-Type', 'application/json')
+      .send('{');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ status: 400, code: 'request.invalid' });
+    expect(response.headers['access-control-allow-origin']).toBe(ALLOWED_ORIGIN);
+    expect(response.headers['access-control-expose-headers']).toContain('X-Request-Id');
   });
 
   it('exposes the error reference to an allowed origin and ignores the one a client sends', async () => {

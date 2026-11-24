@@ -114,6 +114,10 @@ export interface ListRegistry {
    * @param {TaskServiceDocument} query - The query the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  listListActivity(listId: string, query: TaskServiceDocument): Promise<TaskServiceDocument>;
+  listListActivity(
+    listId: string,
+    query: TaskServiceDocument,
+    method?: 'QUERY',
+  ): Promise<TaskServiceDocument>;
   // #endregion
 }

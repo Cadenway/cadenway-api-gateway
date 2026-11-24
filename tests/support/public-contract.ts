@@ -14,7 +14,7 @@ export type SpecNode = Readonly<Record<string, unknown>>;
 /**
  * Method of a public route, as the specs write it.
  */
-export type SpecMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
+export type SpecMethod = 'get' | 'query' | 'post' | 'put' | 'patch' | 'delete';
 
 /**
  * The public specs the gateway serves, by file name.
@@ -258,7 +258,7 @@ export function expectPublicResponse(
       const errors: readonly ErrorObject[] = schemaErrors(
         spec,
         `${declared.pointer}/content/${escapePointer(mediaType)}/schema`,
-        response.body,
+        mediaType.startsWith('text/') ? response.text : response.body,
       );
       problems.push(
         ...errors.map(

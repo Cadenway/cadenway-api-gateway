@@ -9,6 +9,7 @@ export interface ListTaskExportSource {
     listId: string,
     query: ListTaskExportQuery,
     signal: AbortSignal,
+    method?: 'QUERY',
   ): Promise<AsyncIterable<ListTaskExportFrame>>;
   // #endregion
 }

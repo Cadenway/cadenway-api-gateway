@@ -18,6 +18,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 | Public route                    | Internal call                            | Credential                       |
 | ------------------------------- | ---------------------------------------- | -------------------------------- |
 | `GET /v1/members`               | `GET /internal/v1/members`               | session, or token `members:read` |
+| `QUERY /v1/members`             | `QUERY /internal/v1/members`             | session, or token `members:read` |
 | `GET /v1/members/{memberId}`    | `GET /internal/v1/members/{memberId}`    | session, or token `members:read` |
 | `PATCH /v1/members/{memberId}`  | `PATCH /internal/v1/members/{memberId}`  | session                          |
 | `DELETE /v1/members/{memberId}` | `DELETE /internal/v1/members/{memberId}` | session                          |

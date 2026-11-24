@@ -13,13 +13,15 @@ import type { OrganizationServiceClient } from '../../../../../clients/organizat
  */
 export function createMemberDirectoryAdapter(client: OrganizationServiceClient): MemberDirectory {
   return {
-    listMembers: (query) =>
-      client.listMembers({
+    listMembers: (query, method) => {
+      const input = {
         ...(query.cursor === undefined ? {} : { cursor: query.cursor }),
         limit: query.limit,
         ...(query.search === undefined ? {} : { search: query.search }),
         ...(query.roles === undefined ? {} : { role: [...query.roles] }),
-      }),
+      };
+      return method === 'QUERY' ? client.queryListMembers(input) : client.listMembers(input);
+    },
     getMember: (memberId) => client.getMember(memberId),
     changeMemberRole: (memberId, role, ifMatch) =>
       client.changeMemberRole(memberId, { role }, ifMatch),

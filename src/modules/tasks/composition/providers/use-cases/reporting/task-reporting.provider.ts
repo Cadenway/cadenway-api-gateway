@@ -35,7 +35,12 @@ export const taskReportingProviders: readonly FactoryProvider[] = [
     inject: [TaskServiceClient, OrganizationServiceClient],
     useFactory: (tasks: TaskServiceClient, members: OrganizationServiceClient): ExportListTasks =>
       new ExportListTasks(
-        { read: (listId, query, signal) => tasks.exportListTasks(listId, query, signal) },
+        {
+          read: (listId, query, signal, method) =>
+            method === 'QUERY'
+              ? tasks.queryExportListTasks(listId, query, signal)
+              : tasks.exportListTasks(listId, query, signal),
+        },
         { lookup: (userIds, signal) => members.lookupMemberNames(userIds, signal) },
         new DiskListTaskCsvSpoolFactory(),
       ),

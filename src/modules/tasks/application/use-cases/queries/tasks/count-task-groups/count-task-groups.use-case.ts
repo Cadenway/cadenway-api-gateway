@@ -47,8 +47,14 @@ export class CountTaskGroups {
    * @param {TaskServiceDocument} query - The query the public validator accepted.
    * @returns {Promise<TaskServiceDocument>} The answer of task-service.
    */
-  public execute(listId: string, query: TaskServiceDocument): Promise<TaskServiceDocument> {
-    return this.taskRegistry.countTaskGroups(listId, query);
+  public execute(
+    listId: string,
+    query: TaskServiceDocument,
+    method?: 'QUERY',
+  ): Promise<TaskServiceDocument> {
+    return method === 'QUERY'
+      ? this.taskRegistry.countTaskGroups(listId, query, method)
+      : this.taskRegistry.countTaskGroups(listId, query);
   }
   // #endregion
 }

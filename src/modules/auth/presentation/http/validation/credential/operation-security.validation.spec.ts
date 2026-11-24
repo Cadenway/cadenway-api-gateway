@@ -30,6 +30,7 @@ import {
  */
 const SPEC_METHODS: ReadonlyMap<number, string> = new Map<number, string>([
   [RequestMethod.GET, 'get'],
+  [RequestMethod.QUERY, 'query'],
   [RequestMethod.POST, 'post'],
   [RequestMethod.PUT, 'put'],
   [RequestMethod.PATCH, 'patch'],
@@ -329,10 +330,10 @@ describe('the security of every route against the public contracts', () => {
     expect(served.map((route: ServedRoute) => route.key).sort()).toEqual(
       operations.map((operation: ContractOperation) => operation.key).sort(),
     );
-    expect(operations).toHaveLength(237);
+    expect(operations).toHaveLength(243);
     expect(
       operations.filter((operation) => operation.security.organizationPrecondition),
-    ).toHaveLength(70);
+    ).toHaveLength(72);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -379,6 +380,7 @@ describe('the security of every route against the public contracts', () => {
         'getMember',
         'getMemberAvatar',
         'listMembers',
+        'queryListMembers',
         'listSpaces',
         'createSpace',
         'getSpace',
@@ -390,9 +392,12 @@ describe('the security of every route against the public contracts', () => {
         'updateList',
         'getListCounts',
         'listListActivity',
+        'queryListListActivity',
         'listTasks',
+        'queryListTasks',
         'createTask',
         'countTaskGroups',
+        'queryCountTaskGroups',
         'getTask',
         'updateTask',
         'getTaskDetail',
@@ -495,8 +500,10 @@ describe('the security of every route against the public contracts', () => {
         'getTeamDashboard',
         'getSprintReport',
         'getListWorkload',
+        'queryGetListWorkload',
         'getListTimesheet',
         'exportListTasks',
+        'queryExportListTasks',
         'getIntakeFormConfiguration',
         'updateIntakeFormConfiguration',
         'publishIntakeForm',

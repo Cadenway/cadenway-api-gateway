@@ -50,6 +50,7 @@ export const TRUSTED_PROXY_HOPS: number = 1;
 export const CORS_ALLOWED_METHODS: readonly string[] = [
   'GET',
   'HEAD',
+  'QUERY',
   'POST',
   'PUT',
   'PATCH',
@@ -129,6 +130,8 @@ const SIGNED_WEBHOOK_PATH =
   /^\/v1\/(?:webhooks\/(?:github|gitlab)|billing\/webhooks\/stripe)\/?$/iu;
 const STRIPE_WEBHOOK_ERROR_PATH = /^\/v1\/billing\/webhooks\/stripe\/?$/iu;
 const SITE_SUBMISSION_PATH = /^\/v1\/(?:contact-submissions|newsletter-subscriptions)\/?$/iu;
+const QUERY_PATH =
+  /^\/v1\/(?:members|lists\/[^/]+\/(?:tasks(?:\/export)?|task-groups|workload|activity))\/?$/iu;
 
 /** Sets the private cache policy before guards, parsing errors and the route response. */
 function noStorePrivateResource(
@@ -205,6 +208,16 @@ export async function createGatewayApplication(
     exposedHeaders: [...CORS_EXPOSED_HEADERS],
     maxAge: CORS_MAX_AGE_SECONDS,
   };
+  // Parser errors skip the regular CORS middleware.
+  function setParserErrorCors(request: Request, response: Response): void {
+    response.vary('Origin');
+    const origin = request.get('Origin');
+    if (origin !== undefined && cors.origin.includes(origin)) {
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Access-Control-Allow-Credentials', String(cors.credentials));
+      response.setHeader('Access-Control-Expose-Headers', cors.exposedHeaders.join(','));
+    }
+  }
   const app: NestExpressApplication = await createApplication(applicationModule, {
     service: SERVICE_NAME,
     config,
@@ -221,20 +234,20 @@ export async function createGatewayApplication(
     acceptIncomingRequestTimeout: false,
     logDestination,
   });
+  app.use(
+    QUERY_PATH,
+    (error: unknown, request: Request, response: Response, next: NextFunction): void => {
+      if (request.method === 'QUERY') setParserErrorCors(request, response);
+      next(error);
+    },
+  );
   app.use(SITE_SUBMISSION_PATH, noStore);
   app.use(
     SITE_SUBMISSION_PATH,
     (error: unknown, request: Request, response: Response, next: NextFunction): void => {
       response.setHeader('Cache-Control', 'no-store');
       response.setHeader(REQUEST_ID_HEADER, randomUUID());
-      // A parser error skips the regular CORS middleware.
-      response.vary('Origin');
-      const origin = request.get('Origin');
-      if (origin !== undefined && cors.origin.includes(origin)) {
-        response.setHeader('Access-Control-Allow-Origin', origin);
-        response.setHeader('Access-Control-Allow-Credentials', String(cors.credentials));
-        response.setHeader('Access-Control-Expose-Headers', cors.exposedHeaders.join(','));
-      }
+      setParserErrorCors(request, response);
       const problem = toProblem(error);
       if (
         problem.status === 400 &&

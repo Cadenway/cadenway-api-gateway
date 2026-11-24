@@ -222,7 +222,7 @@ describe('onboarding HTTP routes', () => {
     (route) => {
       it('accepts the selected organization and forwards the original version', async () => {
         const response = await request(application.server)
-          [route.method](route.url)
+          [route.method as Exclude<typeof route.method, 'query'>](route.url)
           .set({
             ...route.headers,
             Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
@@ -237,7 +237,7 @@ describe('onboarding HTTP routes', () => {
 
       it('rejects a stale organization before calling task-service', async () => {
         const response = await request(application.server)
-          [route.method](route.url)
+          [route.method as Exclude<typeof route.method, 'query'>](route.url)
           .set({
             ...route.headers,
             Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,
@@ -253,7 +253,7 @@ describe('onboarding HTTP routes', () => {
 
       it('rejects a malformed organization before calling task-service', async () => {
         const response = await request(application.server)
-          [route.method](route.url)
+          [route.method as Exclude<typeof route.method, 'query'>](route.url)
           .set({
             ...route.headers,
             Cookie: `__Host-cw_session=${CAMILLE_ORGANIZATION_TOKEN}`,

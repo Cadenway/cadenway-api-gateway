@@ -27,6 +27,7 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
 | `DELETE /v1/lists/{listId}`         | `DELETE /internal/v1/lists/{listId}`         | `tasks:write` |
 | `GET /v1/lists/{listId}/counts`     | `GET /internal/v1/lists/{listId}/counts`     | `tasks:read`  |
 | `GET /v1/lists/{listId}/activity`   | `GET /internal/v1/lists/{listId}/activity`   | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/activity` | `QUERY /internal/v1/lists/{listId}/activity` | `tasks:read`  |
 
 ## Decisions
 

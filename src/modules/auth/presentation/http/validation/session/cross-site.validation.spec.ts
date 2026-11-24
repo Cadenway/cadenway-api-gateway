@@ -42,7 +42,7 @@ describe('isUnsafeMethod', () => {
     },
   );
 
-  it.each(['GET', 'HEAD', 'OPTIONS'])('treats %s as safe', (method) => {
+  it.each(['GET', 'HEAD', 'OPTIONS', 'QUERY', 'query'])('treats %s as safe', (method) => {
     expect(isUnsafeMethod(method)).toBe(false);
   });
 });

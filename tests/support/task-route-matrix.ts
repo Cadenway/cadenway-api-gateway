@@ -261,7 +261,7 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
       code: 'upstream.unavailable',
     },
   ];
-  if (route.method !== 'get') {
+  if (route.method !== 'get' && route.method !== 'query') {
     cases.push({
       ...base,
       name: `${label} refuses a session request from another site before any call`,

@@ -67,7 +67,7 @@ describe('document routes through the public gateway', () => {
   let answer: (call: Request) => Response | Promise<Response>;
 
   async function send(
-    method: SpecMethod,
+    method: Exclude<SpecMethod, 'query'>,
     path: string,
     url: string,
     options: {
