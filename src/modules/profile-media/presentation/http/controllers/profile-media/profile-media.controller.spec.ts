@@ -228,44 +228,47 @@ describe('profile media HTTP routes', () => {
     }
     const testIdentity = createFakeIdentity();
     const testApp = await createRouteApplication(testIdentity);
-    const avatar = vi.spyOn(testApp.app.get(GetMemberAvatar), 'execute');
-    const logo = vi.spyOn(testApp.app.get(GetLogo), 'execute');
-    const avatarBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getAvatarImage');
-    const logoBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getOrganizationLogoImage');
-    const calls = [
-      testApp.organization.getMember,
-      testApp.organization.getOrganization,
-      testIdentity.getAvatarReference,
-    ];
-    const before = calls.map((mock) => mock.mock.calls.length);
-    const stale = '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b99';
-    const memberResponse = await request(testApp.server)
-      .get(`/v1/members/${INES.id}/avatar`)
-      .set('Cookie', orgSession)
-      .set('If-Organization-Match', stale);
-    const logoResponse = await request(testApp.server)
-      .get('/v1/organization/logo')
-      .set('Cookie', orgSession)
-      .set('If-Organization-Match', stale);
+    try {
+      const avatar = vi.spyOn(testApp.app.get(GetMemberAvatar), 'execute');
+      const logo = vi.spyOn(testApp.app.get(GetLogo), 'execute');
+      const avatarBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getAvatarImage');
+      const logoBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getOrganizationLogoImage');
+      const calls = [
+        testApp.organization.getMember,
+        testApp.organization.getOrganization,
+        testIdentity.getAvatarReference,
+      ];
+      const before = calls.map((mock) => mock.mock.calls.length);
+      const stale = '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b99';
+      const memberResponse = await request(testApp.server)
+        .get(`/v1/members/${INES.id}/avatar`)
+        .set('Cookie', orgSession)
+        .set('If-Organization-Match', stale);
+      const logoResponse = await request(testApp.server)
+        .get('/v1/organization/logo')
+        .set('Cookie', orgSession)
+        .set('If-Organization-Match', stale);
 
-    expectPublicResponse('get', '/v1/members/{memberId}/avatar', memberResponse);
-    expectPublicResponse('get', '/v1/organization/logo', logoResponse);
-    for (const response of [memberResponse, logoResponse]) {
-      expect(response.status).toBe(412);
-      expect(response.body as unknown).toMatchObject({ code: 'organization.context-changed' });
-      expect(response.headers['cache-control']).toBe('private, no-store');
-      expect(response.headers['content-type']).toContain('application/problem+json');
+      expectPublicResponse('get', '/v1/members/{memberId}/avatar', memberResponse);
+      expectPublicResponse('get', '/v1/organization/logo', logoResponse);
+      for (const response of [memberResponse, logoResponse]) {
+        expect(response.status).toBe(412);
+        expect(response.body as unknown).toMatchObject({ code: 'organization.context-changed' });
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(response.headers['content-type']).toContain('application/problem+json');
+      }
+      expect(avatar).not.toHaveBeenCalled();
+      expect(logo).not.toHaveBeenCalled();
+      expect(avatarHandler).not.toHaveBeenCalled();
+      expect(logoHandler).not.toHaveBeenCalled();
+      expect(avatarBytes).not.toHaveBeenCalled();
+      expect(logoBytes).not.toHaveBeenCalled();
+      expect(calls.map((mock) => mock.mock.calls.length)).toEqual(before);
+    } finally {
+      await testApp.app.close();
+      avatarHandler.mockRestore();
+      logoHandler.mockRestore();
     }
-    expect(avatar).not.toHaveBeenCalled();
-    expect(logo).not.toHaveBeenCalled();
-    expect(avatarHandler).not.toHaveBeenCalled();
-    expect(logoHandler).not.toHaveBeenCalled();
-    expect(avatarBytes).not.toHaveBeenCalled();
-    expect(logoBytes).not.toHaveBeenCalled();
-    expect(calls.map((mock) => mock.mock.calls.length)).toEqual(before);
-    await testApp.app.close();
-    avatarHandler.mockRestore();
-    logoHandler.mockRestore();
   });
 
   it('refuses malformed conditional headers before mutating an image', async () => {

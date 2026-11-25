@@ -326,6 +326,27 @@ describe('TaskReportingController', () => {
     }
   });
 
+  it('rejects a stale organization before QUERY workload reaches task-service', async () => {
+    const app = await createRouteApplication(createFakeIdentity());
+    try {
+      const response = await (
+        request(app.server).query(`/v1/lists/${listId}/workload`) as unknown as request.Test
+      )
+        .set('Authorization', `Bearer ${TASKS_TOKEN}`)
+        .set('If-Organization-Match', organizationId)
+        .send({ weekStart: '2026-11-16' });
+
+      expectPublicResponse('query', '/v1/lists/{listId}/workload', response);
+      expect(response.status).toBe(412);
+      expect(response.body).toMatchObject({ code: 'organization.context-changed' });
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(app.task.queryGetListWorkload).not.toHaveBeenCalled();
+      expect(app.task.getListWorkload).not.toHaveBeenCalled();
+    } finally {
+      await app.app.close();
+    }
+  });
+
   it.each(['get', 'query'] as const)(
     'rejects a stale organization before the %s CSV export and its stream',
     async (method) => {

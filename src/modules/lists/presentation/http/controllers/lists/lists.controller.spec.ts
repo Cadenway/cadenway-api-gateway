@@ -142,6 +142,17 @@ const ROUTES: readonly TaskRoute[] = [
     ],
     invalid: { url: `/v1/lists/${LIST_ID}/activity?kind=unknown` },
   },
+  {
+    method: 'query',
+    path: '/v1/lists/{listId}/activity',
+    url: `/v1/lists/${LIST_ID}/activity`,
+    call: 'queryListListActivity',
+    scope: 'tasks:read',
+    status: 200,
+    body: { kind: ['status', 'assign'], limit: 25 },
+    calledWith: [LIST_ID, { kind: ['status', 'assign'], limit: 25 }],
+    invalid: { body: { kind: ['unknown'] } },
+  },
 ];
 
 /**
