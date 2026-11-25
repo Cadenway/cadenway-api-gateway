@@ -101,6 +101,7 @@ export class TaskReportingController {
     operationId: 'getTeamDashboard',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async dashboard(
     @Query(new ZodValidationPipe(GetTeamDashboardQueryParams))
@@ -134,6 +135,7 @@ export class TaskReportingController {
     operationId: 'getSprintReport',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async sprint(
     @Param(new ZodValidationPipe(GetSprintReportParams))
@@ -190,6 +192,7 @@ export class TaskReportingController {
     operationId: 'getListWorkload',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async workload(
     @Param(new ZodValidationPipe(GetListWorkloadParams))
@@ -222,6 +225,7 @@ export class TaskReportingController {
     operationId: 'queryGetListWorkload',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async queryWorkload(
     @Param(new ZodValidationPipe(GetListWorkloadParams))
@@ -237,6 +241,7 @@ export class TaskReportingController {
     operationId: 'getListTimesheet',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async timesheet(
     @Param(new ZodValidationPipe(GetListTimesheetParams))
@@ -265,6 +270,7 @@ export class TaskReportingController {
     operationId: 'exportListTasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async export(
     @Param(new ZodValidationPipe(ExportListTasksParams))
@@ -350,6 +356,7 @@ export class TaskReportingController {
     operationId: 'queryExportListTasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async queryExport(
     @Param(new ZodValidationPipe(ExportListTasksParams))

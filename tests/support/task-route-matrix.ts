@@ -311,11 +311,13 @@ export function taskRouteCases(route: TaskRoute): readonly RouteCase[] {
       method: route.method,
       path: route.path,
       url: route.url,
-      name: `${label} refuses a form-encoded body of a token holding tasks:write before any call`,
+      name: `${label} refuses a form-encoded body of a token holding ${route.scope} before any call`,
       credential: { bearer: `Bearer ${TASKS_TOKEN}` },
       origin: null,
       arrange: ({ identity }) =>
-        identity.introspectApiToken.mockResolvedValue(TASKS_WRITE_API_TOKEN),
+        identity.introspectApiToken.mockResolvedValue(
+          route.scope === 'tasks:read' ? TASKS_API_TOKEN : TASKS_WRITE_API_TOKEN,
+        ),
       headers: { ...route.headers, 'Content-Type': 'application/x-www-form-urlencoded' },
       body: '&',
       status: 400,

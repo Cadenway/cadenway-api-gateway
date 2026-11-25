@@ -1,9 +1,11 @@
 import 'reflect-metadata';
 
 import { RequestMethod, type Type } from '@nestjs/common';
+import { INTERCEPTORS_METADATA } from '@nestjs/common/constants';
 import { describe, expect, it } from 'vitest';
 
 import { ROUTE_MODULES } from '../../../../../../app.module.js';
+import { OrganizationPreconditionInterceptor } from '../../../../../../presentation/http/middleware/organization-precondition.interceptor.js';
 import {
   isNode,
   PUBLIC_SPECS,
@@ -73,6 +75,9 @@ interface ServedRoute {
    * @readonly
    */
   readonly security: OperationSecurity | undefined;
+
+  /** Interceptors declared directly on the handler. */
+  readonly interceptors: readonly unknown[];
   // #endregion
 }
 
@@ -157,6 +162,9 @@ function servedRoutes(): readonly ServedRoute[] {
           key: `${SPEC_METHODS.get(method) ?? 'unknown'} ${joinPath(controllerPath, path)}`,
           security: Reflect.getMetadata(OPERATION_SECURITY, handler) as
             OperationSecurity | undefined,
+          interceptors:
+            (Reflect.getMetadata(INTERCEPTORS_METADATA, handler) as
+              readonly unknown[] | undefined) ?? [],
         });
       }
     }
@@ -333,7 +341,7 @@ describe('the security of every route against the public contracts', () => {
     expect(operations).toHaveLength(243);
     expect(
       operations.filter((operation) => operation.security.organizationPrecondition),
-    ).toHaveLength(72);
+    ).toHaveLength(183);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {
@@ -366,6 +374,15 @@ describe('the security of every route against the public contracts', () => {
       );
 
       expect(route?.security).toEqual(operation.security);
+    },
+  );
+
+  it.each(served.map((route) => [route.key, route] as const))(
+    '%s attaches the organization interceptor exactly when its security requires it',
+    (_key, route) => {
+      expect(route.interceptors.includes(OrganizationPreconditionInterceptor)).toBe(
+        route.security?.organizationPrecondition === true,
+      );
     },
   );
 

@@ -8,7 +8,7 @@ For uploads, the owner reserves the identifier and original expiry before Storag
 A pending reservation is prepared in Storage before its owner commits the image. A committed
 reservation goes directly to the owner, which decides whether the equivalent replay is still valid.
 Deletes delegate to the owner and return its current ETag.
-Logo writes can pin the expected organization with `If-Organization-Match`. A changed context
+Member avatar reads and organization logo reads and writes can pin the expected organization with `If-Organization-Match`. A changed context
 returns `412 organization.context-changed` before any Organization or Storage call and without an ETag.
 The optional `If-Match` still checks the logo's organization version on publishing and deletion.
 

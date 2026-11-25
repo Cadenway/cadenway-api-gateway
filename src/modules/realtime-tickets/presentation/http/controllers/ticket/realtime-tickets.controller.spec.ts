@@ -31,6 +31,20 @@ const TICKET = {
 
 const CASES: readonly RouteCase[] = [
   {
+    name: 'POST issueRealtimeTicket rejects a stale organization before the service call',
+    method: 'post',
+    path: PATH,
+    url: PATH,
+    body: {},
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { identity }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(identity.issueRealtimeTicket).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'issues one credential for the verified organization session',
     method: 'post',
     path: PATH,
@@ -164,7 +178,9 @@ describe('POST /v1/realtime/tickets', () => {
     '%s',
     async (_name, routeCase) => {
       const response = await runRouteCase(application, identity, routeCase);
-      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['cache-control']).toBe(
+        routeCase.code === 'organization.context-changed' ? 'private, no-store' : 'no-store',
+      );
       expect(application.logLines.join('\n')).not.toContain(TICKET.token);
       if (
         ![200, 404, 503].includes(routeCase.status) &&

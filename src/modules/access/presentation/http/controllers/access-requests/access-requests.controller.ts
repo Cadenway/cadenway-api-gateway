@@ -241,6 +241,7 @@ export class AccessRequestsController {
     operationId: 'createAccessRequest',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createAccessRequest(
     @RequiredBody(CreateAccessRequestBody)
@@ -267,6 +268,7 @@ export class AccessRequestsController {
     operationId: 'listAccessRequests',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listAccessRequests(
     @Query(new ZodValidationPipe(ListAccessRequestsQueryParams))
@@ -297,6 +299,7 @@ export class AccessRequestsController {
     operationId: 'approveAccessRequest',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async approveAccessRequest(
     @Param(new ZodValidationPipe(ApproveAccessRequestParams))
@@ -331,6 +334,7 @@ export class AccessRequestsController {
     operationId: 'refuseAccessRequest',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async refuseAccessRequest(
     @Param(new ZodValidationPipe(RefuseAccessRequestParams))

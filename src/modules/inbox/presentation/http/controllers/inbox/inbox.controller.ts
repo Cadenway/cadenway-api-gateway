@@ -64,6 +64,7 @@ export class InboxController {
     operationId: 'listInboxNotifications',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listNotifications(
     @Query(new ZodValidationPipe(ListInboxNotificationsQueryParams))
@@ -100,6 +101,7 @@ export class InboxController {
     operationId: 'getInboxUnreadCount',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async unreadCount(
     @Req() request: Request,
@@ -122,6 +124,7 @@ export class InboxController {
     operationId: 'markInboxNotificationsRead',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
     allowBodylessPost: true,
   })
   public async markAll(): Promise<z.output<typeof MarkInboxNotificationsReadResponse>> {
@@ -140,6 +143,7 @@ export class InboxController {
     operationId: 'markInboxNotificationRead',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
     allowBodylessPost: true,
   })
   public async markRead(
@@ -169,6 +173,7 @@ export class InboxController {
     operationId: 'archiveInboxNotification',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
     allowBodylessPost: true,
   })
   public async archive(

@@ -4,8 +4,8 @@ Owns the list and sprint routes of `openapi/public/lists.yaml` on the current or
 create and list the lists of a space, read, change and delete a list, its counts and its activity.
 task-service owns the lists and decides every rule (sprint dates, who sees a list, the role of the
 caller on it, its switch "Accès de l’organisation", deletion); the gateway decides none.
-The single-list read accepts an optional `If-Organization-Match` UUID. A mismatch returns
-`412 organization.context-changed` before Task reads the list.
+These routes accept an optional `If-Organization-Match` UUID. A mismatch returns
+`412 organization.context-changed` before Task is called.
 
 ## Public entry points
 

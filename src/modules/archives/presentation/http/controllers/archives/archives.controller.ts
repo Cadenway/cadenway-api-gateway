@@ -281,6 +281,7 @@ export class ArchivesController {
     operationId: 'archiveList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async archiveList(
     @Param(new ZodValidationPipe(ArchiveListParams)) params: z.output<typeof ArchiveListParams>,
@@ -315,6 +316,7 @@ export class ArchivesController {
     operationId: 'unarchiveList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async unarchiveList(
     @Param(new ZodValidationPipe(UnarchiveListParams)) params: z.output<typeof UnarchiveListParams>,

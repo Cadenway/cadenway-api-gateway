@@ -52,6 +52,7 @@ export class PaymentsController {
     operationId: 'startBillingCheckout',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async startCheckout(
     @Query(new SubscriptionQueryPipe()) _query: object,
@@ -94,6 +95,7 @@ export class PaymentsController {
     operationId: 'listBillingInvoices',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listInvoices(
     @Query(new ZodValidationPipe(INVOICES_QUERY)) query: z.output<typeof INVOICES_QUERY>,

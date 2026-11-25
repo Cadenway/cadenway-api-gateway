@@ -108,6 +108,7 @@ export class TaskTemplatesController {
     operationId: 'listTaskTemplates',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listTaskTemplates(
     @Param(new ZodValidationPipe(ListTaskTemplatesParams))
@@ -129,6 +130,7 @@ export class TaskTemplatesController {
     operationId: 'createTaskTemplate',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createTaskTemplate(
     @Param(new ZodValidationPipe(CreateTaskTemplateParams))
@@ -161,6 +163,7 @@ export class TaskTemplatesController {
     operationId: 'getTaskTemplate',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getTaskTemplate(
     @Param(new ZodValidationPipe(GetTaskTemplateParams))
@@ -186,6 +189,7 @@ export class TaskTemplatesController {
     operationId: 'deleteTaskTemplate',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteTaskTemplate(
     @Param(new ZodValidationPipe(DeleteTaskTemplateParams))

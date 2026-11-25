@@ -98,6 +98,7 @@ export class FavoritesController {
     operationId: 'listFavorites',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listFavorites(
     @Query(new ZodValidationPipe(ListFavoritesQueryParams))
@@ -117,6 +118,7 @@ export class FavoritesController {
     operationId: 'createFavorite',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createFavorite(
     @RequiredBody(CreateFavoriteBody) body: z.output<typeof CreateFavoriteBody>,
@@ -145,6 +147,7 @@ export class FavoritesController {
     operationId: 'getFavorite',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getFavorite(
     @Param(new ZodValidationPipe(GetFavoriteParams)) params: z.output<typeof GetFavoriteParams>,
@@ -167,6 +170,7 @@ export class FavoritesController {
     operationId: 'deleteFavorite',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteFavorite(
     @Param(new ZodValidationPipe(DeleteFavoriteParams))

@@ -42,6 +42,7 @@ export class ListSpaceMilestonesController {
     operationId: 'listSpaceMilestones',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listSpaceMilestones(
     @Param(new ZodValidationPipe(ListSpaceMilestonesParams))

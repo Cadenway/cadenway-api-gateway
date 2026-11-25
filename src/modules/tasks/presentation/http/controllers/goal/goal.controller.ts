@@ -108,6 +108,7 @@ export class GoalController {
     operationId: 'listGoals',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Query(new ZodValidationPipe(ListGoalsQueryParams))
@@ -127,6 +128,7 @@ export class GoalController {
     operationId: 'createGoal',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async create(
     @Query(new ZodValidationPipe(CreateGoalQueryParams))
@@ -169,6 +171,7 @@ export class GoalController {
     operationId: 'getGoal',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetGoalParams)) params: z.output<typeof GetGoalParams>,
@@ -191,6 +194,7 @@ export class GoalController {
     operationId: 'updateGoal',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Param(new ZodValidationPipe(UpdateGoalParams)) params: z.output<typeof UpdateGoalParams>,
@@ -219,6 +223,7 @@ export class GoalController {
     operationId: 'deleteGoal',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async delete(
     @Param(new ZodValidationPipe(DeleteGoalParams)) params: z.output<typeof DeleteGoalParams>,
@@ -235,6 +240,7 @@ export class GoalController {
     operationId: 'createGoalResult',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createResult(
     @Param(new ZodValidationPipe(CreateGoalResultParams))
@@ -275,6 +281,7 @@ export class GoalController {
     operationId: 'getGoalResult',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getResult(
     @Param(new ZodValidationPipe(GetGoalResultParams)) params: z.output<typeof GetGoalResultParams>,
@@ -296,6 +303,7 @@ export class GoalController {
     operationId: 'updateGoalResult',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateResult(
     @Param(new ZodValidationPipe(UpdateGoalResultParams))
@@ -328,6 +336,7 @@ export class GoalController {
     operationId: 'deleteGoalResult',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteResult(
     @Param(new ZodValidationPipe(DeleteGoalResultParams))

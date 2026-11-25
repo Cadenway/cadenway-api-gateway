@@ -287,6 +287,7 @@ export class SpacesController {
     operationId: 'listSpaces',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listSpaces(
     @Query(new ZodValidationPipe(ListSpacesQueryParams))
@@ -316,6 +317,7 @@ export class SpacesController {
     operationId: 'createSpace',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createSpace(
     @RequiredBody(CreateSpaceBody) body: z.output<typeof CreateSpaceBody>,
@@ -383,6 +385,7 @@ export class SpacesController {
     operationId: 'updateSpace',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateSpace(
     @Param(new ZodValidationPipe(UpdateSpaceParams)) params: z.output<typeof UpdateSpaceParams>,
@@ -417,6 +420,7 @@ export class SpacesController {
     operationId: 'deleteSpace',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteSpace(
     @Param(new ZodValidationPipe(DeleteSpaceParams)) params: z.output<typeof DeleteSpaceParams>,
@@ -442,6 +446,7 @@ export class SpacesController {
     operationId: 'getSpaceOverview',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getSpaceOverview(
     @Param(new ZodValidationPipe(GetSpaceOverviewParams))

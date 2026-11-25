@@ -159,6 +159,7 @@ export class MyTasksController {
     operationId: 'listMyTasks',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listMyTasks(
     @Query(new ZodValidationPipe(ListMyTasksQueryParams))
@@ -189,6 +190,7 @@ export class MyTasksController {
     operationId: 'getHome',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getHome(
     @Query(new ZodValidationPipe(GetHomeQueryParams)) query: z.output<typeof GetHomeQueryParams>,

@@ -340,6 +340,7 @@ export class ListsController {
     operationId: 'createList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createList(
     @Param(new ZodValidationPipe(CreateListParams)) params: z.output<typeof CreateListParams>,
@@ -379,6 +380,7 @@ export class ListsController {
     operationId: 'listLists',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listLists(
     @Param(new ZodValidationPipe(ListListsParams)) params: z.output<typeof ListListsParams>,
@@ -438,6 +440,7 @@ export class ListsController {
     operationId: 'updateList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateList(
     @Param(new ZodValidationPipe(UpdateListParams)) params: z.output<typeof UpdateListParams>,
@@ -472,6 +475,7 @@ export class ListsController {
     operationId: 'deleteList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteList(
     @Param(new ZodValidationPipe(DeleteListParams)) params: z.output<typeof DeleteListParams>,
@@ -497,6 +501,7 @@ export class ListsController {
     operationId: 'getListCounts',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getListCounts(
     @Param(new ZodValidationPipe(GetListCountsParams)) params: z.output<typeof GetListCountsParams>,
@@ -528,6 +533,7 @@ export class ListsController {
     operationId: 'listListActivity',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listListActivity(
     @Param(new ZodValidationPipe(ListListActivityParams))
@@ -551,6 +557,7 @@ export class ListsController {
     operationId: 'queryListListActivity',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async queryListListActivity(
     @Param(new ZodValidationPipe(ListListActivityParams))

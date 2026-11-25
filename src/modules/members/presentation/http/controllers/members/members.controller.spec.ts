@@ -87,6 +87,59 @@ const PAGE: {
  */
 const CASES: readonly RouteCase[] = [
   {
+    name: 'GET listMembers rejects a stale organization before the service call',
+    method: 'get',
+    path: '/v1/members',
+    url: '/v1/members',
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.listMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET getMember rejects a stale organization before the service call',
+    method: 'get',
+    path: '/v1/members/{memberId}',
+    url: MEMBER_URL,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.getMember).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'PATCH changeMemberRole rejects a stale organization before the service call',
+    method: 'patch',
+    path: '/v1/members/{memberId}',
+    url: MEMBER_URL,
+    body: { role: 'member' },
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.changeMemberRole).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'DELETE removeMember rejects a stale organization before the service call',
+    method: 'delete',
+    path: '/v1/members/{memberId}',
+    url: MEMBER_URL,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.removeMember).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'GET /v1/members answers a page of members to a session',
     method: 'get',
     path: '/v1/members',
@@ -523,6 +576,23 @@ describe('routes of /v1/members', () => {
 
   it('exercises every status each member route declares', () => {
     expectEveryDeclaredStatus(CASES);
+  });
+
+  it('rejects a stale organization on QUERY members before listing', async () => {
+    await runRouteCase(application, identity, {
+      name: 'QUERY members rejects a stale organization',
+      method: 'query',
+      path: '/v1/members',
+      url: '/v1/members',
+      body: {},
+      headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+      status: 412,
+      code: 'organization.context-changed',
+      check: (response, { organization }) => {
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(organization.queryListMembers).not.toHaveBeenCalled();
+      },
+    });
   });
 
   describe('the column "Deux étapes" of the members', () => {

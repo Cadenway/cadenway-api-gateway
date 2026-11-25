@@ -183,6 +183,7 @@ export class IntakeController {
     operationId: 'getIntakeFormConfiguration',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getConfiguration(
     @Param(new ZodValidationPipe(GetIntakeFormConfigurationParams))
@@ -209,6 +210,7 @@ export class IntakeController {
     operationId: 'updateIntakeFormConfiguration',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateConfiguration(
     @Param(new ZodValidationPipe(UpdateIntakeFormConfigurationParams))
@@ -250,6 +252,7 @@ export class IntakeController {
     operationId: 'publishIntakeForm',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async publish(
     @Param(new ZodValidationPipe(PublishIntakeFormParams))
@@ -280,6 +283,7 @@ export class IntakeController {
     operationId: 'disableIntakeForm',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async disable(
     @Param(new ZodValidationPipe(DisableIntakeFormParams))
