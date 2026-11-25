@@ -251,6 +251,7 @@ export class InvitationsController {
     operationId: 'inviteMembers',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async inviteMembers(
     @Body(new ZodValidationPipe(InviteMembersBody)) body: z.output<typeof InviteMembersBody>,
@@ -277,6 +278,7 @@ export class InvitationsController {
     operationId: 'listInvitations',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listInvitations(
     @Query(new ZodValidationPipe(LIST_QUERY)) query: z.output<typeof LIST_QUERY>,
@@ -307,6 +309,7 @@ export class InvitationsController {
     operationId: 'revokeInvitation',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async revokeInvitation(
     @Param(new ZodValidationPipe(RevokeInvitationParams))
@@ -338,6 +341,7 @@ export class InvitationsController {
     operationId: 'resendInvitation',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async resendInvitation(
     @Body(new ZodValidationPipe(EMPTY_BODY)) _body: z.output<typeof EMPTY_BODY>,

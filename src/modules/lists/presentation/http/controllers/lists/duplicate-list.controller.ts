@@ -53,6 +53,7 @@ export class DuplicateListController {
     operationId: 'duplicateList',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async duplicateList(
     @Param(new ZodValidationPipe(DuplicateListParams)) params: z.output<typeof DuplicateListParams>,

@@ -81,6 +81,46 @@ const CREATION: Record<string, unknown> = {
  */
 const CASES: readonly RouteCase[] = [
   {
+    name: 'POST createApiToken rejects a stale organization before the service call',
+    method: 'post',
+    path: '/v1/api-tokens',
+    url: '/v1/api-tokens',
+    body: CREATION,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { identity }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(identity.createApiToken).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET listApiTokens rejects a stale organization before the service call',
+    method: 'get',
+    path: '/v1/api-tokens',
+    url: '/v1/api-tokens',
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { identity }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(identity.listApiTokens).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'DELETE revokeApiToken rejects a stale organization before the service call',
+    method: 'delete',
+    path: '/v1/api-tokens/{apiTokenId}',
+    url: `/v1/api-tokens/${TOKEN.id}`,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { identity }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(identity.revokeApiToken).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'POST /v1/api-tokens answers the token and its secret once, with Location',
     method: 'post',
     path: '/v1/api-tokens',

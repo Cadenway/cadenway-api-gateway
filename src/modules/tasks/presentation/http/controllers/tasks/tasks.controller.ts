@@ -754,6 +754,7 @@ export class TasksController {
     operationId: 'createTask',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createTask(
     @Param(new ZodValidationPipe(CreateTaskParams)) params: z.output<typeof CreateTaskParams>,

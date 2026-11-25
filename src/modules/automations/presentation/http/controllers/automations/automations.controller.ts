@@ -77,6 +77,7 @@ export class AutomationsController {
     operationId: 'listAutomationRules',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Query(new ZodValidationPipe(ListAutomationRulesQueryParams.strict()))
@@ -99,6 +100,7 @@ export class AutomationsController {
     operationId: 'createAutomationRule',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async create(
     @RequiredBody(CreateAutomationRuleBody) body: z.output<typeof CreateAutomationRuleBody>,
@@ -128,6 +130,7 @@ export class AutomationsController {
     operationId: 'updateAutomationRule',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Param(new ZodValidationPipe(UpdateAutomationRuleParams))
@@ -161,6 +164,7 @@ export class AutomationsController {
     operationId: 'deleteAutomationRule',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async delete(
     @Param(new ZodValidationPipe(DeleteAutomationRuleParams))
@@ -183,6 +187,7 @@ export class AutomationsController {
     operationId: 'listRecentAutomationRuns',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async runs(
     @Query(new ZodValidationPipe(z.strictObject({}))) _query: object,

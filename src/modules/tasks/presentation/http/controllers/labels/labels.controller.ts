@@ -100,6 +100,7 @@ export class LabelsController {
     operationId: 'listLabels',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listLabels(
     @Query(new ZodValidationPipe(ListLabelsQueryParams))

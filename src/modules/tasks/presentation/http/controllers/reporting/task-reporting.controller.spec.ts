@@ -12,12 +12,13 @@ import {
   createFakeIdentity,
   TASKS_TOKEN,
 } from '../../../../../../../tests/support/fake-identity.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import { createRouteApplication } from '../../../../../../../tests/support/route-application.js';
 import { attachVerifiedCredential } from '../../../../../../presentation/http/session/request-session.js';
 import type { AuthenticateReportCursor } from '../../../../application/use-cases/queries/reporting/authenticate-report-cursor/authenticate-report-cursor.use-case.js';
 import type { ListTaskExportFrame } from '../../../../application/models/export/list-task-export-frame.model.js';
 import { ListTaskExportUnavailable } from '../../../../application/models/export/list-task-export-unavailable.model.js';
-import type { ExportListTasks } from '../../../../application/use-cases/queries/export/export-list-tasks/export-list-tasks.use-case.js';
+import { ExportListTasks } from '../../../../application/use-cases/queries/export/export-list-tasks/export-list-tasks.use-case.js';
 import type { ReadTaskReports } from '../../../../application/use-cases/queries/reporting/read-task-reports/read-task-reports.use-case.js';
 import { TaskReportingController } from './task-reporting.controller.js';
 
@@ -324,6 +325,44 @@ describe('TaskReportingController', () => {
       await app.app.close();
     }
   });
+
+  it.each(['get', 'query'] as const)(
+    'rejects a stale organization before the %s CSV export and its stream',
+    async (method) => {
+      const handlerName = method === 'get' ? 'export' : 'queryExport';
+      const original: unknown = Object.getOwnPropertyDescriptor(
+        TaskReportingController.prototype,
+        handlerName,
+      )?.value;
+      if (typeof original !== 'function') throw new Error('Export handler is missing.');
+      const handler = vi.spyOn(TaskReportingController.prototype, handlerName);
+      for (const key of Reflect.getMetadataKeys(original) as unknown[]) {
+        Reflect.defineMetadata(key, Reflect.getMetadata(key, original), handler);
+      }
+      const app = await createRouteApplication(createFakeIdentity());
+      try {
+        const prepare = vi.spyOn(app.app.get(ExportListTasks), 'execute');
+        const pending = (
+          request(app.server)[method](`/v1/lists/${listId}/tasks/export`) as request.Test
+        )
+          .set('Authorization', `Bearer ${TASKS_TOKEN}`)
+          .set('If-Organization-Match', organizationId);
+        const response = method === 'query' ? await pending.send({}) : await pending;
+
+        expectPublicResponse(method, '/v1/lists/{listId}/tasks/export', response);
+        expect(response.status).toBe(412);
+        expect(response.body).toMatchObject({ code: 'organization.context-changed' });
+        expect(response.headers['cache-control']).toBe('private, no-store');
+        expect(response.headers['content-disposition']).toBeUndefined();
+        expect(handler).not.toHaveBeenCalled();
+        expect(prepare).not.toHaveBeenCalled();
+        expect(app.task.exportListTasks).not.toHaveBeenCalled();
+      } finally {
+        await app.app.close();
+        handler.mockRestore();
+      }
+    },
+  );
 });
 
 async function* csvContent(): AsyncGenerator<Uint8Array> {

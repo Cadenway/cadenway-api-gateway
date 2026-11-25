@@ -108,6 +108,7 @@ export class CustomFieldsController {
     operationId: 'listSpaceCustomFields',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Param(new ZodValidationPipe(ListSpaceCustomFieldsParams))
@@ -129,6 +130,7 @@ export class CustomFieldsController {
     operationId: 'createSpaceCustomField',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async create(
     @Param(new ZodValidationPipe(CreateSpaceCustomFieldParams))
@@ -171,6 +173,7 @@ export class CustomFieldsController {
     operationId: 'getSpaceCustomField',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetSpaceCustomFieldParams))
@@ -206,6 +209,7 @@ export class CustomFieldsController {
     operationId: 'updateSpaceCustomField',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Param(new ZodValidationPipe(UpdateSpaceCustomFieldParams))
@@ -244,6 +248,7 @@ export class CustomFieldsController {
     operationId: 'retireSpaceCustomField',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async retire(
     @Param(new ZodValidationPipe(RetireSpaceCustomFieldParams))
@@ -261,6 +266,7 @@ export class CustomFieldsController {
     operationId: 'listListCustomFields',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listForList(
     @Param(new ZodValidationPipe(ListListCustomFieldsParams))

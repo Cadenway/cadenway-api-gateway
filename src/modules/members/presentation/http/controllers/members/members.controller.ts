@@ -226,6 +226,7 @@ export class MembersController {
     operationId: 'listMembers',
     security: [{ sessionCookie: [] }, { apiToken: ['members:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listMembers(
     @Query(new ZodValidationPipe(LIST_QUERY)) query: z.output<typeof LIST_QUERY>,
@@ -248,6 +249,7 @@ export class MembersController {
     operationId: 'queryListMembers',
     security: [{ sessionCookie: [] }, { apiToken: ['members:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async queryListMembers(
     @RequiredBody(QueryListMembersBody) body: z.output<typeof QueryListMembersBody>,
@@ -281,6 +283,7 @@ export class MembersController {
     operationId: 'getMember',
     security: [{ sessionCookie: [] }, { apiToken: ['members:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getMember(
     @Param(new ZodValidationPipe(GetMemberParams)) params: z.output<typeof GetMemberParams>,
@@ -307,6 +310,7 @@ export class MembersController {
     operationId: 'changeMemberRole',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async changeMemberRole(
     @Param(new ZodValidationPipe(GetMemberParams)) params: z.output<typeof GetMemberParams>,
@@ -335,6 +339,7 @@ export class MembersController {
     operationId: 'removeMember',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async removeMember(
     @Param(new ZodValidationPipe(GetMemberParams)) params: z.output<typeof GetMemberParams>,

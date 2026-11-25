@@ -41,6 +41,7 @@ export class RealtimeTicketsController {
     operationId: 'issueRealtimeTicket',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async issue(
     @RequiredBody(IssueRealtimeTicketBody) _body: z.output<typeof IssueRealtimeTicketBody>,

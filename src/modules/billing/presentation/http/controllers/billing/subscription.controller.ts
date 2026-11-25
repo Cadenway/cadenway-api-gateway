@@ -26,6 +26,7 @@ export class SubscriptionController {
     operationId: 'getBillingSubscription',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getSubscription(
     @Query(new SubscriptionQueryPipe()) _query: object,

@@ -77,7 +77,7 @@ returning its public path. The producer owns all work log authorization and dura
   HTTP client: a repeat after a change that succeeded would answer `412`. A blank `If-Match`,
   or a body that is zero-byte or not JSON in UTF-8 on a route whose contract requires one,
   answers `400 request.invalid` before any call.
-- The routes addressed by a task key, task bulk actions, list task reads, and task group counts
+- The routes addressed by a task key, task bulk actions, list task reads and creation, and task group counts
   accept an optional
   `If-Organization-Match` UUIDv7 precondition. After the credential and rate-limit guards, the
   gateway compares it with the verified organization before calling downstream services. An invalid or repeated header answers

@@ -108,6 +108,60 @@ function expectRetryAfterUntil(response: request.Response, instant: string): voi
  */
 const CASES: readonly RouteCase[] = [
   {
+    name: 'POST inviteMembers rejects a stale organization before the service call',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET listInvitations rejects a stale organization before the service call',
+    method: 'get',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.listInvitations).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'DELETE revokeInvitation rejects a stale organization before the service call',
+    method: 'delete',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.revokeInvitation).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST resendInvitation rejects a stale organization before the service call',
+    method: 'post',
+    path: '/v1/invitations/{invitationId}/resend',
+    url: `${INVITATION_URL}/resend`,
+    body: {},
+    headers: { 'If-Organization-Match': '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01' },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.resendInvitation).not.toHaveBeenCalled();
+    },
+  },
+  {
     name: 'POST /v1/invitations answers the outcome of each address',
     method: 'post',
     path: '/v1/invitations',

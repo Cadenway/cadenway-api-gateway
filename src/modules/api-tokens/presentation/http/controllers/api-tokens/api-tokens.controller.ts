@@ -195,6 +195,7 @@ export class ApiTokensController {
     operationId: 'createApiToken',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createApiToken(
     @Body(new ZodValidationPipe(CreateApiTokenBody)) body: z.output<typeof CreateApiTokenBody>,
@@ -235,6 +236,7 @@ export class ApiTokensController {
     operationId: 'listApiTokens',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listApiTokens(
     @Query(new ZodValidationPipe(LIST_QUERY)) query: z.output<typeof LIST_QUERY>,
@@ -265,6 +267,7 @@ export class ApiTokensController {
     operationId: 'revokeApiToken',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async revokeApiToken(
     @Param(new ZodValidationPipe(RevokeApiTokenParams))

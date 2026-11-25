@@ -89,6 +89,7 @@ export class OnboardingController {
     operationId: 'getOnboarding',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Req() request: Request,

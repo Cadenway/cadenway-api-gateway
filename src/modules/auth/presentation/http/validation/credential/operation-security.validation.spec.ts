@@ -333,7 +333,7 @@ describe('the security of every route against the public contracts', () => {
     expect(operations).toHaveLength(243);
     expect(
       operations.filter((operation) => operation.security.organizationPrecondition),
-    ).toHaveLength(72);
+    ).toHaveLength(183);
   });
 
   it('declares organization.mfa-required on every operation that acts on the current organization', () => {

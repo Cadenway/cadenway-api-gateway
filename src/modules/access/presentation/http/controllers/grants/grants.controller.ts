@@ -305,6 +305,7 @@ export class GrantsController {
     operationId: 'listSpaceGrants',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listSpaceGrants(
     @Param(new ZodValidationPipe(ListSpaceGrantsParams))
@@ -340,6 +341,7 @@ export class GrantsController {
     operationId: 'setSpaceGrant',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async setSpaceGrant(
     @Param(new ZodValidationPipe(SetSpaceGrantParams)) params: z.output<typeof SetSpaceGrantParams>,
@@ -378,6 +380,7 @@ export class GrantsController {
     operationId: 'removeSpaceGrant',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async removeSpaceGrant(
     @Param(new ZodValidationPipe(RemoveSpaceGrantParams))
@@ -406,6 +409,7 @@ export class GrantsController {
     operationId: 'listListGrants',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listListGrants(
     @Param(new ZodValidationPipe(ListListGrantsParams))
@@ -441,6 +445,7 @@ export class GrantsController {
     operationId: 'setListGrant',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async setListGrant(
     @Param(new ZodValidationPipe(SetListGrantParams)) params: z.output<typeof SetListGrantParams>,
@@ -479,6 +484,7 @@ export class GrantsController {
     operationId: 'removeListGrant',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async removeListGrant(
     @Param(new ZodValidationPipe(RemoveListGrantParams))

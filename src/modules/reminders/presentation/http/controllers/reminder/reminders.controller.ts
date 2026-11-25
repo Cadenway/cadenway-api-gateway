@@ -88,6 +88,7 @@ export class RemindersController {
     operationId: 'listReminders',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Query(new ZodValidationPipe(ListRemindersQueryParams))
@@ -165,6 +166,7 @@ export class RemindersController {
     operationId: 'getReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetReminderParams)) params: z.output<typeof GetReminderParams>,
@@ -181,6 +183,7 @@ export class RemindersController {
     operationId: 'updateReminderNote',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Param(new ZodValidationPipe(UpdateReminderNoteParams))
@@ -204,6 +207,7 @@ export class RemindersController {
     operationId: 'deleteReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async remove(
     @Param(new ZodValidationPipe(DeleteReminderParams))
@@ -222,6 +226,7 @@ export class RemindersController {
     operationId: 'snoozeReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async snooze(
     @Param(new ZodValidationPipe(SnoozeReminderParams))
@@ -241,6 +246,7 @@ export class RemindersController {
     operationId: 'completeReminder',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
     allowBodylessPost: true,
   })
   public async complete(

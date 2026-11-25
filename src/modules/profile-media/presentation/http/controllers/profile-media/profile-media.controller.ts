@@ -246,6 +246,7 @@ export class ProfileMediaController {
     operationId: 'getOrganizationLogo',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getLogo(@Res() response: Response): Promise<void> {
     sendImage(response, await relayProblems(LOGO_READ, () => this.getLogoUseCase.execute(), [404]));
@@ -310,6 +311,7 @@ export class ProfileMediaController {
     operationId: 'getMemberAvatar',
     security: [{ sessionCookie: [] }, { apiToken: ['members:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getMemberAvatar(
     @Param(new ZodValidationPipe(GetMemberAvatarParams))

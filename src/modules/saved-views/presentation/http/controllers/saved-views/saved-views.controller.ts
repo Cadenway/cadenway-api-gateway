@@ -136,6 +136,7 @@ export class SavedViewsController {
     operationId: 'listSavedViews',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async listSavedViews(
     @Param(new ZodValidationPipe(ListSavedViewsParams))
@@ -157,6 +158,7 @@ export class SavedViewsController {
     operationId: 'createSavedView',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async createSavedView(
     @Param(new ZodValidationPipe(CreateSavedViewParams))
@@ -189,6 +191,7 @@ export class SavedViewsController {
     operationId: 'getSavedView',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:read'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async getSavedView(
     @Param(new ZodValidationPipe(GetSavedViewParams)) params: z.output<typeof GetSavedViewParams>,
@@ -212,6 +215,7 @@ export class SavedViewsController {
     operationId: 'updateSavedView',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async updateSavedView(
     @Param(new ZodValidationPipe(UpdateSavedViewParams))
@@ -239,6 +243,7 @@ export class SavedViewsController {
     operationId: 'deleteSavedView',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async deleteSavedView(
     @Param(new ZodValidationPipe(DeleteSavedViewParams))
@@ -256,6 +261,7 @@ export class SavedViewsController {
     operationId: 'duplicateSavedView',
     security: [{ sessionCookie: [] }, { apiToken: ['tasks:write'] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async duplicateSavedView(
     @Param(new ZodValidationPipe(DuplicateSavedViewParams))

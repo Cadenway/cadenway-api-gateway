@@ -27,6 +27,7 @@ export class SearchController {
     operationId: 'search',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async search(
     @Query(new SearchQueryPipe())

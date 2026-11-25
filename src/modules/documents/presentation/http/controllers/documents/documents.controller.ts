@@ -122,6 +122,7 @@ export class DocumentsController {
     operationId: 'listDocuments',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async list(
     @Query(new ZodValidationPipe(ListDocumentsQueryParams.strict()))
@@ -145,6 +146,7 @@ export class DocumentsController {
     operationId: 'createDocument',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async create(
     @RequiredBody(CreateDocumentBody) body: z.output<typeof CreateDocumentBody>,
@@ -181,6 +183,7 @@ export class DocumentsController {
     operationId: 'getDocument',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async get(
     @Param(new ZodValidationPipe(GetDocumentParams)) params: z.output<typeof GetDocumentParams>,
@@ -206,6 +209,7 @@ export class DocumentsController {
     operationId: 'updateDocument',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async update(
     @Param(new ZodValidationPipe(UpdateDocumentParams))
@@ -236,6 +240,7 @@ export class DocumentsController {
     operationId: 'deleteDocument',
     security: [{ sessionCookie: [] }],
     organization: true,
+    organizationPrecondition: true,
   })
   public async remove(
     @Param(new ZodValidationPipe(DeleteDocumentParams))

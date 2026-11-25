@@ -3,6 +3,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { StorageServiceClient } from '../../../../../../clients/storage-service.client.js';
+import { expectPublicResponse } from '../../../../../../../tests/support/public-contract.js';
 import { ATELIER_NORD, INES } from '../../../../../../../tests/support/fake-organization.js';
 import {
   CAMILLE,
@@ -17,6 +18,9 @@ import {
   type RouteApplication,
 } from '../../../../../../../tests/support/route-application.js';
 import { ALLOWED_ORIGIN } from '../../../../../../../tests/support/test-environment.js';
+import { GetLogo } from '../../../../application/use-cases/queries/profile-media/get-logo/get-logo.use-case.js';
+import { GetMemberAvatar } from '../../../../application/use-cases/queries/profile-media/get-member-avatar/get-member-avatar.use-case.js';
+import { ProfileMediaController } from './profile-media.controller.js';
 
 const uploadId = '019a7003-4d5e-7f6a-8b9c-0d1e2f3a4b01';
 const expiresAt = '2026-11-20T12:05:00Z';
@@ -198,6 +202,70 @@ describe('profile media HTTP routes', () => {
     expect(app.organization.getMember).toHaveBeenCalledWith(INES.id);
     expect(identity.getAvatarReference).toHaveBeenCalledWith(INES.userId);
     expect(storage.getAvatarImage).toHaveBeenCalledWith(uploadId, INES.userId, 'organization');
+  });
+
+  it('rejects stale organization reads before preparing avatar or logo bytes', async () => {
+    const originalAvatar: unknown = Object.getOwnPropertyDescriptor(
+      ProfileMediaController.prototype,
+      'getMemberAvatar',
+    )?.value;
+    const originalLogo: unknown = Object.getOwnPropertyDescriptor(
+      ProfileMediaController.prototype,
+      'getLogo',
+    )?.value;
+    if (typeof originalAvatar !== 'function' || typeof originalLogo !== 'function') {
+      throw new Error('Profile media handlers are missing.');
+    }
+    const avatarHandler = vi.spyOn(ProfileMediaController.prototype, 'getMemberAvatar');
+    const logoHandler = vi.spyOn(ProfileMediaController.prototype, 'getLogo');
+    for (const [original, handler] of [
+      [originalAvatar, avatarHandler],
+      [originalLogo, logoHandler],
+    ] as const) {
+      for (const key of Reflect.getMetadataKeys(original) as unknown[]) {
+        Reflect.defineMetadata(key, Reflect.getMetadata(key, original), handler);
+      }
+    }
+    const testIdentity = createFakeIdentity();
+    const testApp = await createRouteApplication(testIdentity);
+    const avatar = vi.spyOn(testApp.app.get(GetMemberAvatar), 'execute');
+    const logo = vi.spyOn(testApp.app.get(GetLogo), 'execute');
+    const avatarBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getAvatarImage');
+    const logoBytes = vi.spyOn(testApp.app.get(StorageServiceClient), 'getOrganizationLogoImage');
+    const calls = [
+      testApp.organization.getMember,
+      testApp.organization.getOrganization,
+      testIdentity.getAvatarReference,
+    ];
+    const before = calls.map((mock) => mock.mock.calls.length);
+    const stale = '019a5f3c-8d2e-7c4a-9b1f-3e5d7a9c1b99';
+    const memberResponse = await request(testApp.server)
+      .get(`/v1/members/${INES.id}/avatar`)
+      .set('Cookie', orgSession)
+      .set('If-Organization-Match', stale);
+    const logoResponse = await request(testApp.server)
+      .get('/v1/organization/logo')
+      .set('Cookie', orgSession)
+      .set('If-Organization-Match', stale);
+
+    expectPublicResponse('get', '/v1/members/{memberId}/avatar', memberResponse);
+    expectPublicResponse('get', '/v1/organization/logo', logoResponse);
+    for (const response of [memberResponse, logoResponse]) {
+      expect(response.status).toBe(412);
+      expect(response.body as unknown).toMatchObject({ code: 'organization.context-changed' });
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers['content-type']).toContain('application/problem+json');
+    }
+    expect(avatar).not.toHaveBeenCalled();
+    expect(logo).not.toHaveBeenCalled();
+    expect(avatarHandler).not.toHaveBeenCalled();
+    expect(logoHandler).not.toHaveBeenCalled();
+    expect(avatarBytes).not.toHaveBeenCalled();
+    expect(logoBytes).not.toHaveBeenCalled();
+    expect(calls.map((mock) => mock.mock.calls.length)).toEqual(before);
+    await testApp.app.close();
+    avatarHandler.mockRestore();
+    logoHandler.mockRestore();
   });
 
   it('refuses malformed conditional headers before mutating an image', async () => {
