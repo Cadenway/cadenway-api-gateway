@@ -886,9 +886,18 @@ export type OwnerProtectedResponse = Problem;
 export type SlugTakenResponse = Problem;
 
 /**
- * `organization.slug-invalid`: the address derived from the name has fewer than 2 characters, with `details.slug`.
+ * - `organization.slug-invalid`: the address derived from the name has fewer than 2
+ *   characters, with `details.slug`.
+ * - `organization.slug-reserved`: the address, given or derived, is reserved by the `Slug`
+ *   schema of `openapi/public/organizations.yaml`, with `details.slug`.
  */
 export type SlugInvalidResponse = Problem;
+
+/**
+ * `organization.slug-reserved`: the new address is reserved by the `Slug` schema of
+ * `openapi/public/organizations.yaml`, with `details.slug`.
+ */
+export type SlugReservedResponse = Problem;
 
 /**
  * `request.version-mismatch`: `If-Match` is not the current version, with `details.version`.
@@ -1070,8 +1079,10 @@ const getCreateOrganizationInternalUrl = () => {
 /**
  * Creates an organization owned by the actor, with the plan `free`, its owner member and the
  * invitations of `inviteEmails` as `member`, in one transaction; derives the slug as
- * `POST /v1/organizations` says. Emits `organization.created.v1`, `member.joined.v1` and one
- * `invitation.issued.v1` per invited address. The actor's invitation emails count toward
+ * `POST /v1/organizations` says and refuses, given or derived, the addresses that the `Slug`
+ * schema of `openapi/public/organizations.yaml` reserves (`422 organization.slug-reserved`).
+ * Emits `organization.created.v1`, `member.joined.v1` and one `invitation.issued.v1` per
+ * invited address. The actor's invitation emails count toward
  * their rolling 24-hour allowance of 100 across all organizations. They also count toward
  * the new organization's allowance. If the actor cannot send all requested emails, return
  * `429 invitation.daily-limit-reached` and create nothing. An address that sends no email
@@ -1186,8 +1197,11 @@ const getUpdateOrganizationInternalUrl = () => {
 
 /**
  * Applies a JSON Merge Patch to the organization of the token. Owner and admins only
- * (`403 organization.role-forbidden`); `409 organization.slug-taken`; `If-Match` optional
- * (`412 request.version-mismatch`). Emits `organization.updated.v1` when something changed.
+ * (`403 organization.role-forbidden`); `409 organization.slug-taken`; a new address that the
+ * `Slug` schema of `openapi/public/organizations.yaml` reserves answers
+ * `422 organization.slug-reserved`, the current address sent back unchanged is accepted;
+ * `If-Match` optional (`412 request.version-mismatch`). Emits `organization.updated.v1` when
+ * something changed.
  * Internal token: actor `user`, organization required.
  * @summary Update the organization of the token
  */
@@ -2531,10 +2545,15 @@ export type updateOrganizationInternalResponse412 = {
   status: 412
 }
 
+export type updateOrganizationInternalResponse422 = {
+  data: SlugReservedResponse
+  status: 422
+}
+
 export type updateOrganizationInternalResponseSuccess = (updateOrganizationInternalResponse200) & {
   headers: Headers;
 };
-export type updateOrganizationInternalResponseError = (updateOrganizationInternalResponse400 | updateOrganizationInternalResponse401 | updateOrganizationInternalResponse403 | updateOrganizationInternalResponse404 | updateOrganizationInternalResponse409 | updateOrganizationInternalResponse412) & {
+export type updateOrganizationInternalResponseError = (updateOrganizationInternalResponse400 | updateOrganizationInternalResponse401 | updateOrganizationInternalResponse403 | updateOrganizationInternalResponse404 | updateOrganizationInternalResponse409 | updateOrganizationInternalResponse412 | updateOrganizationInternalResponse422) & {
   headers: Headers;
 };
 

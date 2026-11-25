@@ -171,8 +171,8 @@ importers:
   .:
     dependencies:
       '@cadenway/contracts':
-        specifier: 0.39.0
-        version: 0.39.0
+        specifier: 0.40.0
+        version: 0.40.0
       '@cadenway/nest-common':
         specifier: 0.12.0
         version: 0.12.0(@grpc/grpc-js@1.14.7)(@grpc/proto-loader@0.8.1)(@nestjs/common@12.4.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.4.2)(@nestjs/platform-express@12.4.2)(@opentelemetry/api@1.10.0)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.15.6)(pg@8.23.1))(ioredis@6.0.0)(pg@8.23.1)(reflect-metadata@0.2.2)(rxjs@7.8.2)(zod@4.6.7)
@@ -355,8 +355,8 @@ packages:
   '@cacheable/utils@2.5.0':
     resolution: {integrity: sha512-buipgOVDkkPXNR5+xBpDw7Zk2n1EvU7qBJCNUcL7rhQ//kfpOXPAvQ511Os0vpLYJ1pZnvudNytkQt2hst3wqA==}
 
-  '@cadenway/contracts@0.39.0':
-    resolution: {integrity: sha512-LfejBEie/cJH/he5+ZiLZ8vSGiLaLDP7WhCCfuaySDGms+AIE8kBl10sog5/gKakIJJ7QSjLIrcRW3kW/eUQxQ==, tarball: https://npm.pkg.github.com/download/@cadenway/contracts/0.39.0/1f8519203c67bbcb3a45e88f869a2b1dabbdac5f}
+  '@cadenway/contracts@0.40.0':
+    resolution: {integrity: sha512-ypqJGGGE/u4fEORnZJaOBy5IOvfHazJblrTZZ6/o9VZUyPNNNrEczREyiOO6eP1AI5/UQ8yS0YoLaJkTBj8S+g==, tarball: https://npm.pkg.github.com/download/@cadenway/contracts/0.40.0/5c2f1a618bf3ef88e12d0bf411b3408a4b948409}
 
   '@cadenway/nest-common@0.12.0':
     resolution: {integrity: sha512-0BUPKUyESBTqUucJ2rSexin9HIsXWui62ki+VlXLBpPjCZMBUvF4dfD4p6IAnhKV/BbER0hTQMiZkEVC6R2GWA==, tarball: https://npm.pkg.github.com/download/@cadenway/nest-common/0.12.0/e0794dc5f057c8e737e8efc1d7a74a692129dc02}
@@ -4015,7 +4015,7 @@ snapshots:
       hashery: 1.5.1
       keyv: 5.6.0
 
-  '@cadenway/contracts@0.39.0':
+  '@cadenway/contracts@0.40.0':
     dependencies:
       zod: 4.6.7
 

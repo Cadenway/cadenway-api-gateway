@@ -78,7 +78,7 @@ const CREATE_PROBLEMS: AcceptedProblems = {
   400: INVALID_REQUEST,
   404: ['user.not-synchronized'],
   409: ['organization.slug-taken'],
-  422: ['organization.slug-invalid'],
+  422: ['organization.slug-invalid', 'organization.slug-reserved'],
   429: ['invitation.daily-limit-reached'],
 };
 
@@ -116,6 +116,7 @@ const UPDATE_PROBLEMS: AcceptedProblems = {
   404: ['organization.not-found'],
   409: ['organization.slug-taken'],
   412: ['request.version-mismatch'],
+  422: ['organization.slug-reserved'],
 };
 
 /**

@@ -60,6 +60,7 @@ export const PROBLEM_TITLES: ReadonlyMap<string, string> = new Map<string, strin
   ['organization.not-found', 'Organisation introuvable.'],
   ['organization.slug-taken', 'Cette adresse est déjà utilisée par une autre organisation.'],
   ['organization.slug-invalid', 'L’adresse doit compter au moins 2 caractères.'],
+  ['organization.slug-reserved', 'Cette adresse est réservée : choisissez-en une autre.'],
   [
     'user.not-synchronized',
     'Votre compte est en cours de préparation : réessayez dans un instant.',
