@@ -406,7 +406,10 @@ request → auth guard (token) → scope guard → organization context → rate
   file on disk before sending headers. It closes a download after 30 seconds without progress.
 - One retry, only on a connection error or a `503`, and only for an idempotent call.
 - One circuit breaker per service: while it is open, the call fails at once, as a failing main or
-  secondary service does in an aggregate.
+  secondary service does in an aggregate. Integration-service's breaker is shared by the webhook
+  relay and the task Git link read: five failed link reads open it for webhook deliveries too, which
+  then answer `503 upstream.circuit-open` and are not redelivered by GitHub. Known limit until the
+  provider reconciliation of gap B5; a separate transport for the read is the fix if it bites.
 - Deadline, retry and breaker belong to the internal HTTP client of `@cadenway/nest-common`; a route
   does not re-implement them.
 
