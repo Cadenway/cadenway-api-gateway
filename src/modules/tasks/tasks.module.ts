@@ -58,6 +58,8 @@ import { TaskApprovalController } from './presentation/http/controllers/approval
 import { OnboardingController } from './presentation/http/controllers/onboarding/onboarding.controller.js';
 import { TaskAttachmentController } from './presentation/http/controllers/attachment/task-attachment.controller.js';
 import { attachmentProviders } from './composition/providers/use-cases/attachment/attachment.provider.js';
+import { taskGitLinksProviders } from './composition/providers/use-cases/git-links/task-git-links.provider.js';
+import { TaskGitLinksController } from './presentation/http/controllers/git-links/task-git-links.controller.js';
 
 /**
  * Constant TASK_REGISTRY
@@ -214,6 +216,7 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     ...taskReportingProviders,
     ...taskCollaborationProviders,
     ...attachmentProviders,
+    ...taskGitLinksProviders,
   ],
   controllers: [
     ExecuteBulkTaskActionController,
@@ -229,6 +232,7 @@ const DETAIL_PROVIDERS: readonly Provider[] = [
     TaskApprovalController,
     OnboardingController,
     TaskAttachmentController,
+    TaskGitLinksController,
   ],
 })
 export class TasksModule implements NestModule {

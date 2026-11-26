@@ -14,6 +14,25 @@ import type { TaskDetailCoreSource } from '../../../../ports/outbound/task-servi
  */
 const PART_DEADLINE_MS: number = 800;
 
+/** The answer of one secondary read: its name and document, or what failed the detail. */
+type PartAnswer = PromiseSettledResult<readonly [string, TaskServiceDocument | undefined]>;
+
+/**
+ * Settles a secondary read as soon as it ends, so that a read rejected while the core is still
+ * pending is never reported as an unhandled rejection.
+ *
+ * @param {Promise<readonly [string, TaskServiceDocument | undefined]>} read - The read.
+ * @returns {Promise<PartAnswer>} Its settled answer.
+ */
+function settle(
+  read: Promise<readonly [string, TaskServiceDocument | undefined]>,
+): Promise<PartAnswer> {
+  return read.then(
+    (value): PartAnswer => ({ status: 'fulfilled', value }),
+    (reason: unknown): PartAnswer => ({ status: 'rejected', reason }),
+  );
+}
+
 /**
  * Class GetTaskDetail
  *
@@ -21,7 +40,10 @@ const PART_DEADLINE_MS: number = 800;
  * Composes the detail of a task: the core of task-service and the secondary parts, read together.
  * The core is the main part: its failure fails the detail, as task-service answered it. A
  * secondary part that fails or does not answer within `PART_DEADLINE_MS` is named in `partial`
- * and left out. The comments page is a secondary part owned by task-service. The core failure takes precedence over every secondary result.
+ * and left out. The comments page is a secondary part owned by task-service, read with the core.
+ * The Git links (`development`) are read from integration-service after the core, which is what
+ * authorizes the actor to read the task. The core failure takes precedence over every secondary
+ * result.
  */
 export class GetTaskDetail {
   // #region Properties
@@ -70,8 +92,11 @@ export class GetTaskDetail {
    * Method execute
    *
    * @description
-   * Reads the core and every secondary part in parallel. If the core fails, cancels any
-   * outstanding secondary reads and returns the core error immediately.
+   * Reads the core and the secondary parts in parallel, then the parts bound `afterCore` once
+   * the core has answered. If the core fails, cancels any outstanding secondary reads, starts no
+   * other, and returns the core error immediately. If a parallel part has already failed the
+   * detail when the core answers, cancels the outstanding reads, starts no part bound after the
+   * core and returns that failure.
    *
    * @param {string} taskKey - Key of the task.
    * @returns {Promise<TaskDetail>} The detail, with the parts that could not be read named.
@@ -80,14 +105,30 @@ export class GetTaskDetail {
   public async execute(taskKey: string): Promise<TaskDetail> {
     const pendingCore = this.core.getTaskDetail(taskKey);
     const abortParts = new AbortController();
-    const pendingParts = Promise.allSettled(
-      this.parts.map((part) => this.readPart(part, taskKey, abortParts.signal)),
+    let denial: PartAnswer | undefined;
+    const withCore = this.parts.map((part) =>
+      part.afterCore === true
+        ? undefined
+        : settle(this.readPart(part, taskKey, abortParts.signal)).then((answer) => {
+            denial ??= answer.status === 'rejected' ? answer : undefined;
+            return answer;
+          }),
     );
     const core = await pendingCore.catch((error: unknown) => {
       abortParts.abort();
       throw error;
     });
-    const answers = await pendingParts;
+    // A parallel part that already failed the detail (a visibility denial) makes a read after
+    // the core pointless: fail now, without starting it.
+    if (denial?.status === 'rejected') {
+      abortParts.abort();
+      throw denial.reason;
+    }
+    const answers = await Promise.all(
+      this.parts.map(
+        (part, index) => withCore[index] ?? settle(this.readPart(part, taskKey, abortParts.signal)),
+      ),
+    );
     const parts: Map<string, TaskServiceDocument> = new Map<string, TaskServiceDocument>();
     const partial: string[] = [];
     for (const answer of answers) {

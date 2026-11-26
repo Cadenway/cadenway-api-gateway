@@ -211,6 +211,7 @@ const ROUTES: readonly TaskRoute[] = [
       expect(response.body).toEqual({
         ...taskDetailCore(),
         comments: { items: [], nextCursor: null, total: 0 },
+        development: { items: [], nextCursor: null },
         partial: [],
       });
       expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);

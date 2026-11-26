@@ -2,13 +2,17 @@ import {
   InternalHttpClient,
   InternalTokenSigner,
   InternalTokenVerifier,
+  runWithOrganizationContext,
   type Ed25519PrivateJwk,
   type InternalPrincipal,
+  type OrganizationContext,
 } from '@cadenway/nest-common';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { describe, expect, it, vi } from 'vitest';
 
+import { ATELIER_NORD_ID, CAMILLE } from '../../tests/support/fake-identity.js';
+import { responseExample } from '../../tests/support/public-contract.js';
 import { generateSigningKeys } from '../../tests/support/test-environment.js';
 import { INTEGRATION_SERVICE, IntegrationServiceClient } from './integration-service.client.js';
 
@@ -150,4 +154,203 @@ describe('Integration service client', () => {
       }
     },
   );
+});
+
+/** Camille in Atelier Nord, the context of a public Git link read. */
+const CAMILLE_IN_ATELIER_NORD: OrganizationContext = {
+  organizationId: ATELIER_NORD_ID,
+  actor: { type: 'user', id: CAMILLE.id },
+  role: 'owner',
+  scopes: ['tasks:read'],
+};
+
+/** The example page of the contract, the Git links of CAD-482. */
+const GIT_LINKS = responseExample('get', '/v1/tasks/{taskKey}/git-links', 200) as {
+  readonly items: readonly Record<string, unknown>[];
+  readonly nextCursor: string | null;
+};
+
+/**
+ * Builds a Git link reader over a fetch fake, with the verifier of its internal tokens.
+ *
+ * @param fetch - The fake transport.
+ * @returns The client and the verifier.
+ */
+async function readerFor(fetch: typeof globalThis.fetch): Promise<{
+  client: IntegrationServiceClient;
+  verifier: InternalTokenVerifier;
+}> {
+  const keys = generateSigningKeys();
+  const signer = await InternalTokenSigner.create({
+    issuer: 'api-gateway',
+    privateJwk: JSON.parse(keys.privateJwk) as Ed25519PrivateJwk,
+  });
+  const verifier = await InternalTokenVerifier.create({
+    audience: INTEGRATION_SERVICE,
+    trustedIssuers: { 'api-gateway': [keys.publicJwk] },
+  });
+  const client = new IntegrationServiceClient(
+    new InternalHttpClient({
+      service: INTEGRATION_SERVICE,
+      baseUrl: 'http://integration-service.test',
+      signer,
+      fetch,
+      allowedUnavailableProblemCodes: ['integration.unavailable'],
+    }),
+  );
+  return { client, verifier };
+}
+
+/**
+ * A JSON page with the private cache policy the internal contract requires.
+ *
+ * @param body - The page.
+ * @param cacheControl - The cache policy.
+ * @returns The answer.
+ */
+function pageAnswer(body: unknown, cacheControl = 'private, no-store'): Response {
+  return Response.json(body, { headers: { 'Cache-Control': cacheControl } });
+}
+
+/**
+ * The URL a fetch fake received.
+ *
+ * @param input - The first argument of the call.
+ * @returns The URL as text.
+ */
+function urlOf(input: string | URL | Request | undefined): string | undefined {
+  if (input === undefined || typeof input === 'string') return input;
+  return input instanceof Request ? input.url : input.href;
+}
+
+/**
+ * A problem answer of integration-service.
+ *
+ * @param status - Its status.
+ * @param code - Its code.
+ * @returns The answer.
+ */
+function problemAnswer(status: number, code: string): Response {
+  return Response.json(
+    { type: 'about:blank', title: 'Refused', status, code },
+    { status, headers: { 'Content-Type': 'application/problem+json' } },
+  );
+}
+
+describe('Integration service Git link read', () => {
+  it('reads a page with the user and organization of the request, its query and signal', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() => Promise.resolve(pageAnswer(GIT_LINKS)));
+    const { client, verifier } = await readerFor(fetch);
+    const { signal } = new AbortController();
+
+    await expect(
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+        client.listTaskGitLinks('CAD-482', { cursor: 'b3BhcXVl', limit: 20 }, signal),
+      ),
+    ).resolves.toEqual(GIT_LINKS);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(urlOf(url)).toBe(
+      'http://integration-service.test/internal/v1/tasks/CAD-482/git-links?cursor=b3BhcXVl&limit=20',
+    );
+    const authorization = new Headers(init?.headers).get('Authorization') ?? '';
+    const principal: InternalPrincipal = await verifier.verify(
+      authorization.replace('Bearer ', ''),
+    );
+    expect(principal).toMatchObject({
+      issuer: 'api-gateway',
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('reads the first page with the contract default limit', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() => Promise.resolve(pageAnswer({ items: [], nextCursor: null })));
+    const { client } = await readerFor(fetch);
+
+    await runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+      client.listTaskGitLinks('CAD-482', {}),
+    );
+
+    expect(urlOf(fetch.mock.calls[0]?.[0])).toBe(
+      'http://integration-service.test/internal/v1/tasks/CAD-482/git-links?limit=50',
+    );
+  });
+
+  it.each([
+    {
+      label: 'a link of another task',
+      answer: () =>
+        pageAnswer({ ...GIT_LINKS, items: [{ ...GIT_LINKS.items[0], taskKey: 'CAD-483' }] }),
+    },
+    {
+      label: 'a page without the private cache policy',
+      answer: () => pageAnswer(GIT_LINKS, 'no-store'),
+    },
+    {
+      label: 'a page outside the internal contract',
+      answer: () => pageAnswer({ items: [{ id: 'not-a-link' }] }),
+    },
+  ])('refuses $label as 503 upstream.failed', async ({ answer }) => {
+    const { client } = await readerFor(
+      vi.fn<typeof globalThis.fetch>().mockImplementation(() => Promise.resolve(answer())),
+    );
+
+    await expect(
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+        client.listTaskGitLinks('CAD-482', {}),
+      ),
+    ).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed', details: { service: INTEGRATION_SERVICE } },
+    });
+  });
+
+  it('answers integration.unavailable as 503 upstream.unavailable after its one retry', async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() => Promise.resolve(problemAnswer(503, 'integration.unavailable')));
+    const { client } = await readerFor(fetch);
+
+    await expect(
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+        client.listTaskGitLinks('CAD-482', {}),
+      ),
+    ).rejects.toMatchObject({
+      problem: {
+        status: 503,
+        code: 'upstream.unavailable',
+        details: { service: INTEGRATION_SERVICE },
+      },
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('relays a refused cursor as 400 request.invalid', async () => {
+    const { client } = await readerFor(
+      vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(() => Promise.resolve(problemAnswer(400, 'request.invalid'))),
+    );
+
+    await expect(
+      runWithOrganizationContext(CAMILLE_IN_ATELIER_NORD, () =>
+        client.listTaskGitLinks('CAD-482', { cursor: 'b3RoZXI' }),
+      ),
+    ).rejects.toMatchObject({ problem: { status: 400, code: 'request.invalid' } });
+  });
+
+  it('refuses a query outside the internal contract before any call', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const { client } = await readerFor(fetch);
+
+    await expect(client.listTaskGitLinks('CAD-482', { limit: 0 })).rejects.toThrow(
+      'The gateway built listTaskGitLinksInternal outside the internal contract.',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

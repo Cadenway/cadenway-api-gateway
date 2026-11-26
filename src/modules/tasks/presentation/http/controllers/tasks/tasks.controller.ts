@@ -926,6 +926,9 @@ export class TasksController {
       {
         ...detail.core,
         ...(detail.parts.has('comments') ? { comments: detail.parts.get('comments') } : {}),
+        ...(detail.parts.has('development')
+          ? { development: detail.parts.get('development') }
+          : {}),
         partial: detail.partial,
       },
     );

@@ -361,7 +361,12 @@ request → auth guard (token) → scope guard → organization context → rate
 - `GET /v1/tasks/{taskKey}/detail` is an aggregate: the core of task-service is its main part,
   and the first comments page is read in parallel within 800 ms. A comments-only upstream
   failure omits the page and names `comments` in `partial`; a visibility denial fails the detail.
-  Attachments and development links remain future secondary parts.
+  The first page of Git links (`development`) is read from integration-service
+  (`listTaskGitLinksInternal`) once the core answered, which authorizes the actor, within its own
+  800 ms; any failure of it omits `development` and names it in `partial`. Attachments remain a
+  future secondary part.
+- `GET /v1/tasks/{taskKey}/git-links` reads the task through task-service, then relays the page
+  read to integration-service (`INTEGRATION_SERVICE_URL`) for the same user and organization.
 
 ### Access, archive and trash routes
 
@@ -401,7 +406,10 @@ request → auth guard (token) → scope guard → organization context → rate
   file on disk before sending headers. It closes a download after 30 seconds without progress.
 - One retry, only on a connection error or a `503`, and only for an idempotent call.
 - One circuit breaker per service: while it is open, the call fails at once, as a failing main or
-  secondary service does in an aggregate.
+  secondary service does in an aggregate. Integration-service's breaker is shared by the webhook
+  relay and the task Git link read: five failed link reads open it for webhook deliveries too, which
+  then answer `503 upstream.circuit-open` and are not redelivered by GitHub. Known limit until the
+  provider reconciliation of gap B5; a separate transport for the read is the fix if it bites.
 - Deadline, retry and breaker belong to the internal HTTP client of `@cadenway/nest-common`; a route
   does not re-implement them.
 

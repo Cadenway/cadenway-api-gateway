@@ -19,32 +19,33 @@ returning its public path. The producer owns all work log authorization and dura
 
 ## API
 
-| Public route                                                  | Internal call                                                          | Token scope   |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------- |
-| `POST /v1/tasks/bulk-actions`                                 | `POST /internal/v1/tasks/bulk-actions`                                 | `tasks:write` |
-| `POST /v1/tasks/{taskKey}/duplicate`                          | `POST /internal/v1/tasks/{taskKey}/duplicate`                          | `tasks:write` |
-| `GET /v1/lists/{listId}/tasks`                                | `GET /internal/v1/lists/{listId}/tasks`                                | `tasks:read`  |
-| `QUERY /v1/lists/{listId}/tasks`                              | `QUERY /internal/v1/lists/{listId}/tasks`                              | `tasks:read`  |
-| `POST /v1/lists/{listId}/tasks`                               | `POST /internal/v1/lists/{listId}/tasks`                               | `tasks:write` |
-| `GET /v1/lists/{listId}/task-groups`                          | `GET /internal/v1/lists/{listId}/task-groups`                          | `tasks:read`  |
-| `QUERY /v1/lists/{listId}/task-groups`                        | `QUERY /internal/v1/lists/{listId}/task-groups`                        | `tasks:read`  |
-| `QUERY /v1/lists/{listId}/workload`                           | `QUERY /internal/v1/lists/{listId}/workload`                           | `tasks:read`  |
-| `QUERY /v1/lists/{listId}/tasks/export`                       | `QUERY /internal/v1/lists/{listId}/tasks/export`                       | `tasks:read`  |
-| `GET /v1/tasks/{taskKey}`                                     | `GET /internal/v1/tasks/{taskKey}`                                     | `tasks:read`  |
-| `PATCH /v1/tasks/{taskKey}`                                   | `PATCH /internal/v1/tasks/{taskKey}`                                   | `tasks:write` |
-| `GET /v1/tasks/{taskKey}/detail`                              | `GET /internal/v1/tasks/{taskKey}/detail` (aggregate)                  | `tasks:read`  |
-| `GET /v1/tasks/{taskKey}/subtasks`                            | `GET /internal/v1/tasks/{taskKey}/subtasks`                            | `tasks:read`  |
-| `POST /v1/tasks/{taskKey}/subtasks`                           | `POST /internal/v1/tasks/{taskKey}/subtasks`                           | `tasks:write` |
-| `POST /v1/tasks/{taskKey}/checklist-items`                    | `POST /internal/v1/tasks/{taskKey}/checklist-items`                    | `tasks:write` |
-| `PATCH /v1/tasks/{taskKey}/checklist-items/{checklistItemId}` | `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}` | `tasks:write` |
-| `PUT /v1/tasks/{taskKey}/assignees/{userId}`                  | `PUT /internal/v1/tasks/{taskKey}/assignees/{userId}`                  | `tasks:write` |
-| `DELETE /v1/tasks/{taskKey}/assignees/{userId}`               | `DELETE /internal/v1/tasks/{taskKey}/assignees/{userId}`               | `tasks:write` |
-| `POST /v1/tasks/{taskKey}/labels/add`                         | `POST /internal/v1/tasks/{taskKey}/labels/add`                         | `tasks:write` |
-| `POST /v1/tasks/{taskKey}/labels/remove`                      | `POST /internal/v1/tasks/{taskKey}/labels/remove`                      | `tasks:write` |
-| `GET /v1/tasks/{taskKey}/activity`                            | `GET /internal/v1/tasks/{taskKey}/activity`                            | `tasks:read`  |
-| `GET /v1/labels`                                              | `GET /internal/v1/labels`                                              | `tasks:read`  |
-| `GET /v1/me/tasks`                                            | `GET /internal/v1/users/{userId}/tasks`                                | `tasks:read`  |
-| `GET /v1/me/home`                                             | `GET /internal/v1/users/{userId}/home`                                 | `tasks:read`  |
+| Public route                                                  | Internal call                                                                                                              | Token scope   |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `POST /v1/tasks/bulk-actions`                                 | `POST /internal/v1/tasks/bulk-actions`                                                                                     | `tasks:write` |
+| `POST /v1/tasks/{taskKey}/duplicate`                          | `POST /internal/v1/tasks/{taskKey}/duplicate`                                                                              | `tasks:write` |
+| `GET /v1/lists/{listId}/tasks`                                | `GET /internal/v1/lists/{listId}/tasks`                                                                                    | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/tasks`                              | `QUERY /internal/v1/lists/{listId}/tasks`                                                                                  | `tasks:read`  |
+| `POST /v1/lists/{listId}/tasks`                               | `POST /internal/v1/lists/{listId}/tasks`                                                                                   | `tasks:write` |
+| `GET /v1/lists/{listId}/task-groups`                          | `GET /internal/v1/lists/{listId}/task-groups`                                                                              | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/task-groups`                        | `QUERY /internal/v1/lists/{listId}/task-groups`                                                                            | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/workload`                           | `QUERY /internal/v1/lists/{listId}/workload`                                                                               | `tasks:read`  |
+| `QUERY /v1/lists/{listId}/tasks/export`                       | `QUERY /internal/v1/lists/{listId}/tasks/export`                                                                           | `tasks:read`  |
+| `GET /v1/tasks/{taskKey}`                                     | `GET /internal/v1/tasks/{taskKey}`                                                                                         | `tasks:read`  |
+| `PATCH /v1/tasks/{taskKey}`                                   | `PATCH /internal/v1/tasks/{taskKey}`                                                                                       | `tasks:write` |
+| `GET /v1/tasks/{taskKey}/detail`                              | `GET /internal/v1/tasks/{taskKey}/detail` (aggregate)                                                                      | `tasks:read`  |
+| `GET /v1/tasks/{taskKey}/subtasks`                            | `GET /internal/v1/tasks/{taskKey}/subtasks`                                                                                | `tasks:read`  |
+| `POST /v1/tasks/{taskKey}/subtasks`                           | `POST /internal/v1/tasks/{taskKey}/subtasks`                                                                               | `tasks:write` |
+| `POST /v1/tasks/{taskKey}/checklist-items`                    | `POST /internal/v1/tasks/{taskKey}/checklist-items`                                                                        | `tasks:write` |
+| `PATCH /v1/tasks/{taskKey}/checklist-items/{checklistItemId}` | `PATCH /internal/v1/tasks/{taskKey}/checklist-items/{checklistItemId}`                                                     | `tasks:write` |
+| `PUT /v1/tasks/{taskKey}/assignees/{userId}`                  | `PUT /internal/v1/tasks/{taskKey}/assignees/{userId}`                                                                      | `tasks:write` |
+| `DELETE /v1/tasks/{taskKey}/assignees/{userId}`               | `DELETE /internal/v1/tasks/{taskKey}/assignees/{userId}`                                                                   | `tasks:write` |
+| `POST /v1/tasks/{taskKey}/labels/add`                         | `POST /internal/v1/tasks/{taskKey}/labels/add`                                                                             | `tasks:write` |
+| `POST /v1/tasks/{taskKey}/labels/remove`                      | `POST /internal/v1/tasks/{taskKey}/labels/remove`                                                                          | `tasks:write` |
+| `GET /v1/tasks/{taskKey}/git-links`                           | `GET /internal/v1/tasks/{taskKey}` (task-service), then `GET /internal/v1/tasks/{taskKey}/git-links` (integration-service) | `tasks:read`  |
+| `GET /v1/tasks/{taskKey}/activity`                            | `GET /internal/v1/tasks/{taskKey}/activity`                                                                                | `tasks:read`  |
+| `GET /v1/labels`                                              | `GET /internal/v1/labels`                                                                                                  | `tasks:read`  |
+| `GET /v1/me/tasks`                                            | `GET /internal/v1/users/{userId}/tasks`                                                                                    | `tasks:read`  |
+| `GET /v1/me/home`                                             | `GET /internal/v1/users/{userId}/home`                                                                                     | `tasks:read`  |
 
 `POST /v1/tasks/bulk-actions` relays an atomic action to `POST /internal/v1/tasks/bulk-actions` with `tasks:write` and an optional `Idempotency-Key`. The gateway validates and forwards the request once; task-service owns the action and its atomicity. Bulk `404` responses omit all upstream details to avoid disclosing hidden targets.
 
@@ -95,7 +96,8 @@ returning its public path. The producer owns all work log authorization and dura
   in the trash fails the core with `404 task.trashed`: the detail answers that public problem with
   its `details` (`key`, `name`, `entryId`, `rootKey`, `trashedAt`, `trashedBy`, `purgeAt`, without
   `service`), never a `503` or a partial detail. `list.callerRole` of the core is relayed as
-  task-service answers it. The first comments page is bound as a secondary part. A comments 404 for `task.not-found`, `task.trashed` or `organization.not-found` before the deadline fails the detail; other failures omit the page and name `comments` in `partial`. A timeout is partial because the core read was authorized at that moment. A core failure takes precedence over every comments outcome. The `ETag` of the detail is the version of the task.
+  task-service answers it. The first comments page is bound as a secondary part. A comments 404 for `task.not-found`, `task.trashed` or `organization.not-found` before the deadline fails the detail; other failures omit the page and name `comments` in `partial`. A timeout is partial because the core read was authorized at that moment. A core failure takes precedence over every comments outcome. The first page of Git links (`development`) is read from integration-service only after the core answered, since integration-service decides no visibility; its 800 ms deadline starts then, a core failure means it is never read, and every failure of it (refusal, `503`, a page outside the contract, a timeout) omits `development` and names it in `partial`. The `ETag` of the detail is the version of the task.
+- `GET /v1/tasks/{taskKey}/git-links` (`openapi/public/git-links.yaml`) first reads the task through task-service with the caller's identity (`404 task.not-found`, `404 task.trashed` with its `details`, `404 organization.not-found`), then relays `cursor` and `limit` to integration-service under the same user and organization. A cursor integration-service refuses is `400 request.invalid`; `503 integration.unavailable` is answered `503 upstream.unavailable` with `details.service`, as the public operation declares only `upstream.*` codes. The client requires `Cache-Control: private, no-store` and refuses a link of another task as `503 upstream.failed`.
 
 Comments and participants, watchers and dependencies are served by their respective capability modules.
 

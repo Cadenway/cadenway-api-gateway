@@ -28,6 +28,270 @@ export interface Problem {
 }
 
 /**
+ * Key of a task, the only way a task is named outside task-service: the prefix of the space
+ * it was created in, a dash and a number. A key never changes, also when the task moves to
+ * another space or its space changes prefix, and is never given to another task.
+ * @pattern ^[A-Z]{2,5}-[1-9][0-9]{0,8}$
+ */
+export type TaskKey = string;
+
+/**
+ * UUIDv7 that Integration assigned to the link, the `gitLinkId` of its Git facts.
+ * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
+ */
+export type GitLinkId = string;
+
+/**
+ * Git host of the linked repository (`x-extensible-enum`): `github` or `gitlab`. Later
+ * versions may add other hosts; ignore a link whose provider is unknown.
+ */
+export type GitProvider = string;
+
+/**
+ * What the task is linked to (`x-extensible-enum`): `branch` for a branch, `pull-request`
+ * for a GitHub pull request or a GitLab merge request.
+ */
+export type GitLinkKind = string;
+
+/**
+ * Lifecycle of the linked object (`x-extensible-enum`). A branch is always `branch`. A pull
+ * or merge request is `open`, `merged` or `closed` (closed without merging). `merged` is
+ * final, and a verified merge supersedes `closed`. A closed request returns to `open` on a
+ * verified reopen (GitHub `reopened`, GitLab `reopen`) not older than its closure.
+ * Integration applies deliveries in provider time order per link: it ignores one older than
+ * the state it already applied and applies one with an equal provider time in arrival
+ * order, never leaving `merged`. Every later delivery that carries the request's current
+ * state (any pull or merge request action, a GitLab merge request pipeline) realigns a
+ * state left wrong by such a tie; until then the state can be wrong. Integration marks
+ * such a link internally for reconciliation; a scheduled read of the provider API comes
+ * with the outbound provider client of gap B5. See
+ * "Ordering" and "Reconciliation" in
+ * `asyncapi/integration-service.yaml`. A draft request is `open` with `draft: true`.
+ */
+export type GitLinkState = string;
+
+/**
+ * Repository (GitHub) or project (GitLab) of the link, from the `repository` object on
+ * GitHub and the `project` object on GitLab. Absent until integration-service has recorded
+ * it from the provider's webhook.
+ */
+export interface GitRepository {
+  /**
+     * Owner and name, `repository.full_name` on GitHub, `project.path_with_namespace` on
+     * GitLab.
+     * @minLength 1
+     */
+  fullName: string;
+  /** Web address, `repository.html_url` on GitHub, `project.web_url` on GitLab. */
+  url: string;
+}
+
+/**
+ * Provider account that opened the pull or merge request or created the branch: the
+ * `pull_request.user` of the opening delivery or the `sender` of the branch creation on
+ * GitHub, the `user` of the opening merge request delivery or the pusher of the branch
+ * creation on GitLab. It is a provider account, not a Cadenway member. Absent until
+ * integration-service has recorded it from the provider's webhook.
+ */
+export interface GitAuthor {
+  /**
+     * Provider username (`login` on GitHub, `username` on GitLab).
+     * @minLength 1
+     */
+  login: string;
+  /**
+     * Display name. GitLab sends it (`user.name`, `user_name`); GitHub webhook payloads
+     * usually do not, so it is often absent there.
+     * @minLength 1
+     */
+  name?: string;
+}
+
+/**
+ * Aggregate checks of the link's current `headSha`. On GitHub, integration-service keeps
+ * the latest status and conclusion of every check suite (`check_suite`) for that head, by
+ * suite ID, and leaves out a suite whose conclusion is `stale` (GitHub superseded it). On
+ * GitLab, it keeps the latest merge request pipeline (`Pipeline Hook`) for that head, the one
+ * with the highest pipeline ID. Observations are stored per repository and head SHA, also
+ * before the link exists or the head is current, so when a link is created or a head
+ * becomes current `checks` is computed from what is already stored for it, and is absent
+ * when nothing is. It is also absent when no eligible
+ * suite remains for that head, for example when its only suite became `stale`. See
+ * "Checks" in `asyncapi/integration-service.yaml`. Never present for a branch. Absent until
+ * integration-service has recorded it from the provider's webhook.
+ */
+export interface GitChecks {
+  /**
+     * `passed`, `failed` or `running` (`x-extensible-enum`), over the recorded set.
+     *
+     * - GitHub: `failed` when any completed suite has conclusion `failure`, `timed_out`,
+     *   `cancelled`, `action_required` or `startup_failure`, even while others run;
+     *   otherwise `running` when any suite is queued, requested or in progress; otherwise
+     *   `passed`, every recorded suite having completed with `success`, `neutral` or
+     *   `skipped`.
+     * - GitLab: the pipeline status. `failed` or `canceled` is `failed`; `created`,
+     *   `waiting_for_resource`, `preparing`, `pending` or `running` is `running`;
+     *   `success` or `skipped` is `passed`.
+     */
+  state: string;
+  /**
+     * Number of recorded check suites for the head on GitHub; number of jobs (`builds`) of
+     * the pipeline on GitLab. Absent when the payload does not carry it.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  total?: number;
+  /**
+     * Number of those suites (GitHub) or jobs (GitLab, status `failed`) that failed, counted
+     * with the conclusions and statuses `state` treats as failed. Absent when the payload
+     * does not carry it.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  failed?: number;
+}
+
+/**
+ * Where integration-service found the task key when it created the link
+ * (`x-extensible-enum`): `branch` (the branch name or the request's source branch),
+ * `title` (the request title), `description` (the request description) or `commit` (a
+ * commit message of the branch creation push or the request's last commit), the first of
+ * them in that order. Absent until integration-service has recorded it. Links are only
+ * detected today; a later manual link route may add `manual`.
+ */
+export type GitLinkSource = string;
+
+/**
+ * One branch or pull or merge request linked to the task. The link is unique per verified
+ * repository binding, task and provider object, so a request keeps its link as its state
+ * changes.
+ */
+export interface GitLink {
+  id: GitLinkId;
+  taskKey: TaskKey;
+  provider: GitProvider;
+  kind: GitLinkKind;
+  state: GitLinkState;
+  /**
+     * The provider's numeric ID of the repository (GitHub) or project (GitLab) of the
+     * verified binding. A GitLab project ID is local to its GitLab instance. `repository`
+     * gives its name and web address.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  providerRepositoryId: number;
+  /**
+     * The pull request number (`#214`) or the merge request IID (`!31`); `null` for a
+     * branch.
+     * @minimum 1
+     * @maximum 9007199254740991
+     * @nullable
+     */
+  number: number | null;
+  /**
+     * The short name of a linked branch, without `refs/heads/`; `null` for a pull or merge
+     * request, whose source branch is `sourceBranch`.
+     * @minLength 1
+     * @nullable
+     */
+  branch: string | null;
+  /**
+     * The latest verified head commit of a pull or merge request; `null` for a branch and
+     * for a request whose head has not been observed.
+     * @nullable
+     * @pattern ^(?:[0-9a-f]{40}|[0-9a-f]{64})$
+     */
+  headSha: string | null;
+  /**
+     * Provider time of the latest completed check suite or pipeline recorded for
+     * `headSha`; `null` when none is recorded for it. `checks` gives the aggregate outcome.
+     * @nullable
+     */
+  checksCompletedAt: string | null;
+  /** When Integration recorded the link. */
+  createdAt: string;
+  /** When Integration last recorded a change to the link. */
+  updatedAt: string;
+  /**
+     * Version of the link, the `version` of its latest Git fact: every committed change to
+     * this projection increments it and publishes one fact. Ignore a fact whose version is
+     * not newer than the one read.
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /**
+     * Title of the pull or merge request (`pull_request.title` on GitHub,
+     * `object_attributes.title` on GitLab). Never present for a branch. Absent until
+     * integration-service has recorded it from the provider's webhook.
+     * @minLength 1
+     */
+  title?: string;
+  /**
+     * Whether the pull or merge request is a draft (`pull_request.draft` on GitHub,
+     * `object_attributes.draft` on GitLab). Never present for a branch. Absent until
+     * integration-service has recorded it from the provider's webhook.
+     */
+  draft?: boolean;
+  /**
+     * Web address of the pull or merge request (`pull_request.html_url` on GitHub,
+     * `object_attributes.url` on GitLab), or of a branch, built from the repository web
+     * address and the branch name (`/tree/<branch>` on GitHub, `/-/tree/<branch>` on
+     * GitLab). Absent until integration-service has recorded it from the provider's webhook.
+     */
+  url?: string;
+  repository?: GitRepository;
+  /**
+     * Source branch of the pull or merge request (`pull_request.head.ref` on GitHub,
+     * `object_attributes.source_branch` on GitLab). Never present for a branch, whose name
+     * is `branch`. Absent until integration-service has recorded it from the provider's
+     * webhook.
+     * @minLength 1
+     */
+  sourceBranch?: string;
+  author?: GitAuthor;
+  checks?: GitChecks;
+  /**
+     * Whether reviewers are requested on the pull or merge request (a non-empty
+     * `pull_request.requested_reviewers` or `requested_teams` on GitHub, `reviewers` on
+     * GitLab). Never present for a branch. Absent until integration-service has recorded it
+     * from the provider's webhook.
+     */
+  reviewRequested?: boolean;
+  /**
+     * Lines added by the pull request (`pull_request.additions`). GitHub only: GitLab's
+     * merge request webhook carries no line counts. Absent until integration-service has
+     * recorded it from the provider's webhook.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  additions?: number;
+  /**
+     * Lines deleted by the pull request (`pull_request.deletions`). GitHub only, as
+     * `additions`. Absent until integration-service has recorded it from the provider's
+     * webhook.
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  deletions?: number;
+  linkSource?: GitLinkSource;
+}
+
+/**
+ * Cursor of the next page; `null` on the last page.
+ * @nullable
+ */
+export type NextCursor = string | null;
+
+/**
+ * One page of a task's Git links, newest first.
+ */
+export interface GitLinkPage {
+  items: GitLink[];
+  nextCursor: NextCursor | null;
+}
+
+/**
  * Authenticated delivery accepted durably, already accepted, or intentionally ignored.
  */
 export type AcceptedResponse = void;
@@ -57,7 +321,25 @@ export type UnauthenticatedResponse = Problem;
 export type ForbiddenResponse = Problem;
 
 /**
- * `integration.unavailable` when Integration cannot confirm acceptance before the request ends.
+ * `request.invalid` for an invalid task key, an invalid, unknown or repeated query parameter,
+ * or a malformed cursor, including a cursor for another task, tenant or operation.
+ */
+export type GitLinksBadRequestResponse = Problem;
+
+/**
+ * `auth.token-missing` or `auth.token-invalid` rejects the internal token.
+ */
+export type GitLinksTokenRefusedResponse = Problem;
+
+/**
+ * `auth.issuer-not-allowed` for another issuer, `auth.actor-not-allowed` for another actor
+ * type, or `auth.organization-required` for a token without an organization.
+ */
+export type GitLinksAccessRefusedResponse = Problem;
+
+/**
+ * `integration.unavailable` when Integration cannot confirm acceptance or read the links
+ * before the request ends.
  */
 export type UnavailableResponse = Problem;
 
@@ -109,6 +391,16 @@ export type GitLabTimestampParameter = string;
  */
 export type GitLabSignatureParameter = string;
 
+/**
+ * Opaque cursor taken from the `nextCursor` of the previous page.
+ */
+export type CursorParameter = string;
+
+/**
+ * Page size.
+ */
+export type LimitParameter = number;
+
 export type ReceiveGitHubWebhookInternalParams = {
   /**
    * Opaque receiver registration UUIDv7 supplied once in the registered URL. It identifies provider configuration and carries no authority.
@@ -123,6 +415,17 @@ export type ReceiveGitLabWebhookInternalParams = {
    * @pattern ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$
    */
   bindingId: BindingIdParameter;
+};
+
+export type ListTaskGitLinksInternalParams = {
+  /** Opaque cursor taken from the `nextCursor` of the previous page. */
+  cursor?: CursorParameter;
+  /**
+   * Page size.
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: LimitParameter;
 };
 
 export type HTTPStatusCode1xx = 100 | 101 | 102 | 103;
@@ -152,7 +455,7 @@ const getHeaders = (...sources: (RequestInit['headers'] | Record<string, string 
   return Object.fromEntries(layers.reverse().flat()) as Extract<RequestInit['headers'], Record<string, unknown>>;
 };
 
-export const getIntegrationServiceInternalWebhookRoutes = (fetchFn: typeof globalThis.fetch = fetch) => {
+export const getIntegrationServiceInternalRoutes = (fetchFn: typeof globalThis.fetch = fetch) => {
 const getReceiveGitHubWebhookInternalUrl = (params: ReceiveGitHubWebhookInternalParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -252,7 +555,54 @@ const receiveGitLabWebhookInternal = async (rawDeliveryBody: RawDeliveryBody,
 
 
 
-return { receiveGitHubWebhookInternal, getReceiveGitHubWebhookInternalUrl, receiveGitLabWebhookInternal, getReceiveGitLabWebhookInternalUrl };
+const getListTaskGitLinksInternalUrl = (taskKey: string,
+    params?: ListTaskGitLinksInternalParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/internal/v1/tasks/${taskKey}/git-links?${stringifiedParams}` : `/internal/v1/tasks/${taskKey}/git-links`
+}
+
+/**
+ * Lists the task's branches and pull or merge requests newest first, in descending
+ * `(createdAt,id)` order. The opaque cursor is bound to the caller's organization, task and
+ * ordering. A task without links, including a purged task, answers an empty page. The read
+ * writes nothing and emits no event.
+ *
+ * Internal token: issuer `api-gateway` only, actor `user`, organization required. The
+ * gateway calls this route only after task-service has let the actor read the task.
+ * @summary List the Git links of a task
+ */
+const listTaskGitLinksInternal = async (taskKey: string,
+    params?: ListTaskGitLinksInternalParams, options?: RequestInit): Promise<listTaskGitLinksInternalResponse> => {
+
+  const res = await fetchFn(getListTaskGitLinksInternalUrl(taskKey,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listTaskGitLinksInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listTaskGitLinksInternalResponse
+}
+
+
+
+return { receiveGitHubWebhookInternal, getReceiveGitHubWebhookInternalUrl, receiveGitLabWebhookInternal, getReceiveGitLabWebhookInternalUrl, listTaskGitLinksInternal, getListTaskGitLinksInternalUrl };
 };
 
 export type receiveGitHubWebhookInternalResponse204 = {
@@ -323,3 +673,38 @@ export type receiveGitLabWebhookInternalResponseError = (receiveGitLabWebhookInt
 };
 
 export type receiveGitLabWebhookInternalResponse = (receiveGitLabWebhookInternalResponseSuccess | receiveGitLabWebhookInternalResponseError)
+
+
+export type listTaskGitLinksInternalResponse200 = {
+  data: GitLinkPage
+  status: 200
+}
+
+export type listTaskGitLinksInternalResponse400 = {
+  data: GitLinksBadRequestResponse
+  status: 400
+}
+
+export type listTaskGitLinksInternalResponse401 = {
+  data: GitLinksTokenRefusedResponse
+  status: 401
+}
+
+export type listTaskGitLinksInternalResponse403 = {
+  data: GitLinksAccessRefusedResponse
+  status: 403
+}
+
+export type listTaskGitLinksInternalResponse503 = {
+  data: UnavailableResponse
+  status: 503
+}
+
+export type listTaskGitLinksInternalResponseSuccess = (listTaskGitLinksInternalResponse200) & {
+  headers: Headers;
+};
+export type listTaskGitLinksInternalResponseError = (listTaskGitLinksInternalResponse400 | listTaskGitLinksInternalResponse401 | listTaskGitLinksInternalResponse403 | listTaskGitLinksInternalResponse503) & {
+  headers: Headers;
+};
+
+export type listTaskGitLinksInternalResponse = (listTaskGitLinksInternalResponseSuccess | listTaskGitLinksInternalResponseError)
