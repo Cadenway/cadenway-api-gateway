@@ -94,7 +94,9 @@ export class GetTaskDetail {
    * @description
    * Reads the core and the secondary parts in parallel, then the parts bound `afterCore` once
    * the core has answered. If the core fails, cancels any outstanding secondary reads, starts no
-   * other, and returns the core error immediately.
+   * other, and returns the core error immediately. If a parallel part has already failed the
+   * detail when the core answers, cancels the outstanding reads, starts no part bound after the
+   * core and returns that failure.
    *
    * @param {string} taskKey - Key of the task.
    * @returns {Promise<TaskDetail>} The detail, with the parts that could not be read named.
@@ -103,13 +105,25 @@ export class GetTaskDetail {
   public async execute(taskKey: string): Promise<TaskDetail> {
     const pendingCore = this.core.getTaskDetail(taskKey);
     const abortParts = new AbortController();
+    let denial: PartAnswer | undefined;
     const withCore = this.parts.map((part) =>
-      part.afterCore === true ? undefined : settle(this.readPart(part, taskKey, abortParts.signal)),
+      part.afterCore === true
+        ? undefined
+        : settle(this.readPart(part, taskKey, abortParts.signal)).then((answer) => {
+            denial ??= answer.status === 'rejected' ? answer : undefined;
+            return answer;
+          }),
     );
     const core = await pendingCore.catch((error: unknown) => {
       abortParts.abort();
       throw error;
     });
+    // A parallel part that already failed the detail (a visibility denial) makes a read after
+    // the core pointless: fail now, without starting it.
+    if (denial?.status === 'rejected') {
+      abortParts.abort();
+      throw denial.reason;
+    }
     const answers = await Promise.all(
       this.parts.map(
         (part, index) => withCore[index] ?? settle(this.readPart(part, taskKey, abortParts.signal)),

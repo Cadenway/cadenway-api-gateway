@@ -192,6 +192,36 @@ describe('GetTaskDetail', () => {
     expect(detail.partial).toEqual(['comments', 'development']);
   });
 
+  it('fails at once without starting a part bound after the core when a parallel part already denied the detail', async () => {
+    vi.useFakeTimers();
+    const denial = new ProblemException({ status: 404, code: 'task.not-found' });
+    const source: TaskDetailCoreSource = {
+      getTaskDetail: () => new Promise((resolve) => setTimeout(resolve, 100, CORE)),
+    };
+    const readLinks = vi.fn(() => Promise.resolve({ items: [], nextCursor: null }));
+    const development: TaskDetailPart = {
+      name: 'development',
+      afterCore: true,
+      read: readLinks,
+    };
+    let returnedError: unknown;
+    const settled = new GetTaskDetail(source, [
+      { ...part('comments', () => Promise.reject(denial)), failsDetail: () => true },
+      development,
+    ])
+      .execute('CAD-482')
+      .catch((error: unknown) => {
+        returnedError = error;
+      });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await settled;
+
+    expect(returnedError).toBe(denial);
+    expect(readLinks).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('gives a part bound after the core its own 800 ms deadline from the core answer', async () => {
     vi.useFakeTimers();
     const source: TaskDetailCoreSource = {
