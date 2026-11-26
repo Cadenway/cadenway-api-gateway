@@ -8,6 +8,7 @@ import { vi, type Mock } from 'vitest';
 
 import { ROUTE_MODULES } from '../../src/app.module.js';
 import { IdentityServiceClient } from '../../src/clients/identity-service.client.js';
+import { IntegrationServiceClient } from '../../src/clients/integration-service.client.js';
 import { OrganizationServiceClient } from '../../src/clients/organization-service.client.js';
 import { TaskServiceClient } from '../../src/clients/task-service.client.js';
 import { createGatewayApplication } from '../../src/gateway-application.js';
@@ -52,6 +53,8 @@ export interface RouteApplication {
   readonly organization: FakeOrganization;
   /** The fake of task-service. */
   readonly task: FakeTask;
+  /** The fake of the Git link read of integration-service; the webhook relay stays real. */
+  readonly integration: FakeIntegration;
   /** The fake of the counters of the sessions and personal API tokens. */
   readonly counter: FakeCounter;
   /** The fake of the counters of the requests without a credential, per client address. */
@@ -60,6 +63,25 @@ export interface RouteApplication {
   readonly bearerFailureCounter: FakeCounter;
   /** The fake of the per-network pre-introspection budget. */
   readonly introspectionCounter: FakeCounter;
+}
+
+/**
+ * The fake of the Git link read of integration-service: an empty first page by default.
+ */
+export interface FakeIntegration {
+  /** Reads one page of the Git links of a task. */
+  readonly listTaskGitLinks: Mock<IntegrationServiceClient['listTaskGitLinks']>;
+}
+
+/**
+ * Creates a fake of the Git link read answering an empty page.
+ *
+ * @returns The fake.
+ */
+export function createFakeIntegration(): FakeIntegration {
+  return {
+    listTaskGitLinks: vi.fn(() => Promise.resolve({ items: [], nextCursor: null })),
+  };
 }
 
 /**
@@ -111,6 +133,8 @@ export async function createRouteApplication(
   Object.assign(app.get(IdentityServiceClient), fake);
   Object.assign(app.get(OrganizationServiceClient), organization);
   Object.assign(app.get(TaskServiceClient), task);
+  const integration: FakeIntegration = createFakeIntegration();
+  Object.assign(app.get(IntegrationServiceClient), integration);
   Object.assign(app.get<symbol, RequestCounter>(REQUEST_COUNTER), counter);
   Object.assign(app.get<symbol, RequestCounter>(ANONYMOUS_REQUEST_COUNTER), anonymousCounter);
   Object.assign(app.get<symbol, RequestCounter>(BEARER_FAILURE_COUNTER), bearerFailureCounter);
@@ -122,6 +146,7 @@ export async function createRouteApplication(
     logLines,
     organization,
     task,
+    integration,
     counter,
     anonymousCounter,
     bearerFailureCounter,

@@ -361,7 +361,12 @@ request → auth guard (token) → scope guard → organization context → rate
 - `GET /v1/tasks/{taskKey}/detail` is an aggregate: the core of task-service is its main part,
   and the first comments page is read in parallel within 800 ms. A comments-only upstream
   failure omits the page and names `comments` in `partial`; a visibility denial fails the detail.
-  Attachments and development links remain future secondary parts.
+  The first page of Git links (`development`) is read from integration-service
+  (`listTaskGitLinksInternal`) once the core answered, which authorizes the actor, within its own
+  800 ms; any failure of it omits `development` and names it in `partial`. Attachments remain a
+  future secondary part.
+- `GET /v1/tasks/{taskKey}/git-links` reads the task through task-service, then relays the page
+  read to integration-service (`INTEGRATION_SERVICE_URL`) for the same user and organization.
 
 ### Access, archive and trash routes
 

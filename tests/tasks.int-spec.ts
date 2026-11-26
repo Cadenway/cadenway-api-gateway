@@ -41,6 +41,19 @@ const ORGANIZATION_URL = 'http://organization-service.test';
 /** Base URL of the faked storage-service. */
 const STORAGE_URL = 'http://storage-service.test';
 
+/** Base URL of the faked integration-service. */
+const INTEGRATION_URL = 'http://integration-service.test';
+
+/** The Git links of CAD-483, from the example page of the contract. */
+const GIT_LINKS_PAGE = {
+  items: (
+    responseExample('get', '/v1/tasks/{taskKey}/git-links', 200) as {
+      readonly items: readonly Record<string, JsonBodyType>[];
+    }
+  ).items.map((link) => ({ ...link, taskKey: 'CAD-483' })),
+  nextCursor: null,
+};
+
 /**
  * Session cookie of Camille in Atelier Nord.
  */
@@ -93,6 +106,8 @@ describe('the task core routes against task-service over HTTP', () => {
   const taskCalls: TaskCall[] = [];
   let keys: SigningKeys;
   let verifier: InternalTokenVerifier;
+  let integrationVerifier: InternalTokenVerifier;
+  const integrationCalls: TaskCall[] = [];
   let redis: StartedRedisContainer;
   let app: NestExpressApplication;
   let server: App;
@@ -165,6 +180,10 @@ describe('the task core routes against task-service over HTTP', () => {
       audience: 'task-service',
       trustedIssuers: { [GATEWAY_ISSUER]: [keys.publicJwk] },
     });
+    integrationVerifier = await InternalTokenVerifier.create({
+      audience: 'integration-service',
+      trustedIssuers: { [GATEWAY_ISSUER]: [keys.publicJwk] },
+    });
     redis = await new RedisContainer(redisImage()).start();
     // Listening before the application exists: its internal HTTP clients take the `fetch` msw
     // intercepts when they are built. The Docker calls of Testcontainers are done by then, and the
@@ -210,6 +229,7 @@ describe('the task core routes against task-service over HTTP', () => {
           TASK_SERVICE_URL: TASK_URL,
           ORGANIZATION_SERVICE_URL: ORGANIZATION_URL,
           STORAGE_SERVICE_URL: STORAGE_URL,
+          INTEGRATION_SERVICE_URL: INTEGRATION_URL,
         },
         keys,
       ),
@@ -217,11 +237,50 @@ describe('the task core routes against task-service over HTTP', () => {
     );
     await app.init();
     server = app.getHttpServer();
+    integrationService(gitLinksAnswer, false);
   });
 
   afterEach(() => {
     taskCalls.length = 0;
+    integrationCalls.length = 0;
+    integrationService(gitLinksAnswer, false);
   });
+
+  /**
+   * Answers the Git link read of integration-service, recording it. Without `once`, it becomes
+   * the answer of every later read.
+   *
+   * @param reply - The answer.
+   * @param once - Whether it answers the next read only.
+   */
+  function integrationService(reply: () => Response | Promise<Response>, once = true): void {
+    network.use(
+      http.get(
+        `${INTEGRATION_URL}/internal/v1/tasks/:taskKey/git-links`,
+        async ({ request: call }) => {
+          const url: URL = new URL(call.url);
+          integrationCalls.push({
+            route: `${call.method} ${decodeURIComponent(`${url.pathname}${url.search}`)}`,
+            headers: call.headers,
+            principal: await integrationVerifier.verify(
+              (call.headers.get('Authorization') ?? '').replace(/^Bearer /u, ''),
+            ),
+          });
+          return reply();
+        },
+        { once },
+      ),
+    );
+  }
+
+  /**
+   * The Git links page as integration-service answers it, with its private cache policy.
+   *
+   * @returns The answer.
+   */
+  function gitLinksAnswer(): Response {
+    return HttpResponse.json(GIT_LINKS_PAGE, { headers: { 'Cache-Control': 'private, no-store' } });
+  }
 
   afterAll(async () => {
     await app.close();
@@ -490,7 +549,12 @@ describe('the task core routes against task-service over HTTP', () => {
     );
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), comments: COMMENTS_PAGE, partial: [] });
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      comments: COMMENTS_PAGE,
+      development: GIT_LINKS_PAGE,
+      partial: [],
+    });
     expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
   });
 
@@ -533,7 +597,11 @@ describe('the task core routes against task-service over HTTP', () => {
     );
     const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      development: GIT_LINKS_PAGE,
+      partial: ['comments'],
+    });
   });
 
   it('answers the slow core problem when comments deny visibility first', async () => {
@@ -569,8 +637,180 @@ describe('the task core routes against task-service over HTTP', () => {
     );
     const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      development: GIT_LINKS_PAGE,
+      partial: ['comments'],
+    });
     await delay(500);
+  });
+
+  it('reads the Git links of the detail after the core, for the user and organization of the session', async () => {
+    let coreAnswered = false;
+    network.use(
+      http.get(`${TASK_URL}/internal/v1/tasks/CAD-483/detail`, async () => {
+        await delay(50);
+        coreAnswered = true;
+        return HttpResponse.json(taskDetailCore() as JsonBodyType);
+      }),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
+    let readAfterCore = false;
+    integrationService(() => {
+      readAfterCore = coreAnswered;
+      return gitLinksAnswer();
+    });
+
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ development: GIT_LINKS_PAGE, partial: [] });
+    expect(readAfterCore).toBe(true);
+    expect(integrationCalls.map((call: TaskCall) => call.route)).toEqual([
+      'GET /internal/v1/tasks/CAD-483/git-links?limit=50',
+    ]);
+    expect(integrationCalls[0]?.principal).toMatchObject({
+      issuer: GATEWAY_ISSUER,
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it.each([
+    [
+      'an unavailable integration-service',
+      () =>
+        HttpResponse.json(
+          {
+            type: 'about:blank',
+            title: 'Unavailable',
+            status: 503,
+            code: 'integration.unavailable',
+          },
+          { status: 503, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+    ],
+    [
+      'a refused internal token',
+      () =>
+        HttpResponse.json(
+          { type: 'about:blank', title: 'Refused', status: 403, code: 'auth.issuer-not-allowed' },
+          { status: 403, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+    ],
+    ['a page without the private cache policy', () => HttpResponse.json(GIT_LINKS_PAGE)],
+  ])('degrades %s to a detail without development', async (_label, reply) => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
+    integrationService(reply, false);
+
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      comments: COMMENTS_PAGE,
+      partial: ['development'],
+    });
+    expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
+  });
+
+  it('degrades Git links slower than the part deadline to a detail without development', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(taskDetailCore() as JsonBodyType),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
+    integrationService(async () => {
+      await delay(1200);
+      return gitLinksAnswer();
+    });
+
+    const started = Date.now();
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      comments: COMMENTS_PAGE,
+      partial: ['development'],
+    });
+    expect(Date.now() - started).toBeLessThan(1200);
+    await delay(500);
+  });
+
+  it('never reads the Git links of a detail whose core fails', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483/detail', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Not Found', status: 404, code: 'task.not-found' },
+        { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+    taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
+      HttpResponse.json(COMMENTS_PAGE),
+    );
+
+    const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
+
+    expect(response.status).toBe(404);
+    expect(integrationCalls).toHaveLength(0);
+  });
+
+  it('lists the Git links of a task after task-service let the caller read it', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-483', () =>
+      HttpResponse.json({
+        ...(responseExample('get', '/v1/tasks/{taskKey}', 200) as Record<string, JsonBodyType>),
+        key: 'CAD-483',
+      }),
+    );
+    integrationService(gitLinksAnswer);
+
+    const response = await send(
+      'get',
+      '/v1/tasks/{taskKey}/git-links',
+      '/v1/tasks/CAD-483/git-links?limit=3',
+      { headers: { 'If-Organization-Match': ATELIER_NORD_ID } },
+    );
+
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    expect(response.body).toEqual(GIT_LINKS_PAGE);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(taskCalls.map((call: TaskCall) => call.route)).toEqual([
+      'GET /internal/v1/tasks/CAD-483',
+    ]);
+    expect(integrationCalls.map((call: TaskCall) => call.route)).toEqual([
+      'GET /internal/v1/tasks/CAD-483/git-links?limit=3',
+    ]);
+    expect(integrationCalls[0]?.principal).toMatchObject({
+      actor: { type: 'user', id: CAMILLE.id },
+      organizationId: ATELIER_NORD_ID,
+    });
+  });
+
+  it('answers the Git links of a task the caller does not see 404 without reading them', async () => {
+    taskService('get', '/internal/v1/tasks/CAD-999', () =>
+      HttpResponse.json(
+        { type: 'about:blank', title: 'Not Found', status: 404, code: 'task.not-found' },
+        { status: 404, headers: { 'Content-Type': 'application/problem+json' } },
+      ),
+    );
+
+    const response = await send(
+      'get',
+      '/v1/tasks/{taskKey}/git-links',
+      '/v1/tasks/CAD-999/git-links',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ code: 'task.not-found', title: 'Tâche introuvable.' });
+    expect(integrationCalls).toHaveLength(0);
   });
 
   it('reads "Accueil" for the user of the session, on the today of the caller', async () => {
@@ -689,7 +929,11 @@ describe('the task core routes against task-service over HTTP', () => {
     const response = await send('get', '/v1/tasks/{taskKey}/detail', '/v1/tasks/CAD-483/detail');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), partial: ['comments'] });
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      development: GIT_LINKS_PAGE,
+      partial: ['comments'],
+    });
     expect(response.body).not.toHaveProperty('comments');
     expect(response.headers.etag).toBe(`"${String(taskDetailCore().task.version)}"`);
     expect(taskCalls.map((call: TaskCall) => call.route)).toEqual(

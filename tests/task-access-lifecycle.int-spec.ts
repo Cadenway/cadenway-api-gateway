@@ -36,6 +36,9 @@ const IDENTITY_URL = 'http://identity-service.test';
  */
 const TASK_URL = 'http://task-service.test';
 
+/** Base URL of the faked integration-service, which answers the detail its Git links. */
+const INTEGRATION_URL = 'http://integration-service.test';
+
 /**
  * Session cookie of Camille in Atelier Nord, unique to this file.
  */
@@ -284,6 +287,7 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
           REDIS_URL: redis.getConnectionUrl(),
           IDENTITY_SERVICE_URL: IDENTITY_URL,
           TASK_SERVICE_URL: TASK_URL,
+          INTEGRATION_SERVICE_URL: INTEGRATION_URL,
         },
         keys,
       ),
@@ -706,6 +710,14 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     taskService('get', '/internal/v1/tasks/CAD-483/comments', () =>
       HttpResponse.json(COMMENTS_PAGE),
     );
+    network.use(
+      http.get(`${INTEGRATION_URL}/internal/v1/tasks/CAD-483/git-links`, () =>
+        HttpResponse.json(
+          { items: [], nextCursor: null },
+          { headers: { 'Cache-Control': 'private, no-store' } },
+        ),
+      ),
+    );
 
     const response: request.Response = await send(
       'get',
@@ -714,7 +726,12 @@ describe('the access and lifecycle routes against task-service over HTTP', () =>
     );
 
     expect(response.status, JSON.stringify(response.body)).toBe(200);
-    expect(response.body).toEqual({ ...taskDetailCore(), comments: COMMENTS_PAGE, partial: [] });
+    expect(response.body).toEqual({
+      ...taskDetailCore(),
+      comments: COMMENTS_PAGE,
+      development: { items: [], nextCursor: null },
+      partial: [],
+    });
   });
 
   it('deletes a list with 204 and its If-Match relayed', async () => {

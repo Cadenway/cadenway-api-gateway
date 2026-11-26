@@ -156,6 +156,64 @@ describe('GetTaskDetail', () => {
     expect(order.indexOf('part started')).toBeLessThan(order.indexOf('core answered'));
   });
 
+  it('starts a part bound after the core only once the core answered, and names parts in order', async () => {
+    const order: string[] = [];
+    const source: TaskDetailCoreSource = {
+      getTaskDetail: vi.fn(async () => {
+        order.push('core started');
+        await Promise.resolve();
+        order.push('core answered');
+        return CORE;
+      }),
+    };
+    const development: TaskDetailPart = {
+      name: 'development',
+      afterCore: true,
+      read: vi.fn(() => {
+        order.push('development started');
+        return Promise.reject(new Error('integration-service is down'));
+      }),
+    };
+
+    const detail = await new GetTaskDetail(source, [
+      part('comments', () => {
+        order.push('comments started');
+        return Promise.reject(new Error('task-service is down'));
+      }),
+      development,
+    ]).execute('CAD-482');
+
+    expect(order).toEqual([
+      'core started',
+      'comments started',
+      'core answered',
+      'development started',
+    ]);
+    expect(detail.partial).toEqual(['comments', 'development']);
+  });
+
+  it('gives a part bound after the core its own 800 ms deadline from the core answer', async () => {
+    vi.useFakeTimers();
+    const source: TaskDetailCoreSource = {
+      getTaskDetail: () => new Promise((resolve) => setTimeout(resolve, 500, CORE)),
+    };
+    const page: TaskServiceDocument = { items: [], nextCursor: null };
+    const development: TaskDetailPart = {
+      name: 'development',
+      afterCore: true,
+      read: () => new Promise((resolve) => setTimeout(resolve, 700, page)),
+    };
+
+    const pending = new GetTaskDetail(source, [development]).execute('CAD-482');
+    await vi.advanceTimersByTimeAsync(1200);
+
+    await expect(pending).resolves.toEqual({
+      core: CORE,
+      parts: new Map([['development', page]]),
+      partial: [],
+    });
+  });
+
   it('fails as a whole when the core fails, whatever the parts answered', async () => {
     const failure: Error = new Error('task.not-found');
     const source: TaskDetailCoreSource = {
