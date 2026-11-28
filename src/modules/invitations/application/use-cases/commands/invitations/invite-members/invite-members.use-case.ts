@@ -42,13 +42,18 @@ export class InviteMembers {
    * Method execute
    *
    * @description
-   * Invites the addresses.
+   * Invites the addresses. A batch with an `Idempotency-Key` goes to the keyed invitation of
+   * organization-service, which replays it; one without keeps the plain invitation. A key is
+   * never dropped and never sent to the plain invitation.
    *
-   * @param {InviteMembersInput} input - The addresses and their role.
+   * @param {InviteMembersInput} input - The addresses, their role and the optional key.
    * @returns {Promise<InviteMembersOutput>} The outcome of each distinct address.
    */
   public execute(input: InviteMembersInput): Promise<InviteMembersOutput> {
-    return this.registry.inviteMembers(input);
+    const batch = { emails: input.emails, role: input.role };
+    return input.idempotencyKey === undefined
+      ? this.registry.inviteMembers(batch)
+      : this.registry.inviteMembersKeyed(batch, input.idempotencyKey);
   }
   // #endregion
 }

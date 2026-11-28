@@ -212,17 +212,21 @@ export function declaredStatuses(method: SpecMethod, path: string): readonly num
  * Checks a response of the gateway against its operation in the public specs: the status is one
  * the operation declares, the media type and the body match the declared content (the shared
  * problem schema for an error), a response without content has no body, and every header the
- * response declares (`Set-Cookie`, `Retry-After`, `ETag`, `Location`) is present.
+ * response declares (`Set-Cookie`, `Retry-After`, `ETag`, `Location`) is present, but those the
+ * caller names in `conditionalHeaders`.
  *
  * @param method - Method of the route.
  * @param path - Path of the route, as the spec writes it.
  * @param response - Response of supertest.
+ * @param conditionalHeaders - Declared headers the contract sends only in some cases (the
+ * `Retry-After` of a `503`, "when known"), whose presence the caller checks itself.
  * @throws {Error} Naming every mismatch.
  */
 export function expectPublicResponse(
   method: SpecMethod,
   path: string,
   response: request.Response,
+  conditionalHeaders: readonly string[] = [],
 ): void {
   const spec: PublicSpec = specOf(path);
   const operation = `/paths/${escapePointer(path)}/${method}`;
@@ -241,6 +245,9 @@ export function expectPublicResponse(
   const headers: unknown = declared.node.headers;
   if (isNode(headers)) {
     for (const name of Object.keys(headers)) {
+      if (conditionalHeaders.includes(name)) {
+        continue;
+      }
       if (response.headers[name.toLowerCase()] === undefined) {
         problems.push(`the declared header ${name} is missing`);
       }

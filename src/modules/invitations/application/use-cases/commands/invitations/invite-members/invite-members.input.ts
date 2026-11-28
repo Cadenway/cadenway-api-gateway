@@ -27,5 +27,17 @@ export interface InviteMembersInput {
    * @readonly
    */
   readonly role: 'admin' | 'member' | 'guest';
+
+  /**
+   * Property idempotencyKey
+   *
+   * @description
+   * `Idempotency-Key` of the request, 1 to 255 characters, relayed unchanged; absent for a batch
+   * sent without one.
+   *
+   * @type {string | undefined}
+   * @readonly
+   */
+  readonly idempotencyKey?: string;
   // #endregion
 }

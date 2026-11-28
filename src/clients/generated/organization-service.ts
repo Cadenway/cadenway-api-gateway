@@ -457,6 +457,32 @@ export interface Invitation {
   version: number;
 }
 
+/**
+ * An invitation in any state of its lifecycle.
+ */
+export interface InvitationState {
+  id: string;
+  email: Email;
+  role: AssignableRole;
+  invitedBy: Inviter;
+  /** The current lifecycle state of the invitation. */
+  status: string;
+  /**
+     * When the invitation was accepted or refused; otherwise null.
+     * @nullable
+     */
+  answeredAt: string | null;
+  /**
+     * When the invitation was revoked; otherwise null.
+     * @nullable
+     */
+  revokedAt: string | null;
+  sentAt: string;
+  expiresAt: string;
+  /** @minimum 1 */
+  version: number;
+}
+
 export interface InvitationPage {
   items: Invitation[];
   nextCursor: NextCursor | null;
@@ -905,6 +931,16 @@ export type SlugReservedResponse = Problem;
 export type VersionMismatchResponse = Problem;
 
 /**
+ * `idempotency.request-in-progress`: an equivalent request with this key is still running.
+ */
+export type IdempotencyInProgressResponse = Problem;
+
+/**
+ * `idempotency.key-reused`: this key was already used with a different body.
+ */
+export type IdempotencyKeyReusedResponse = Problem;
+
+/**
  * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
  */
 export type IdentityMembershipCursorParameter = Schema & string;
@@ -923,6 +959,11 @@ export type CursorParameter = string;
  * Page size.
  */
 export type LimitParameter = number;
+
+/**
+ * Client-chosen key for replaying an equivalent request.
+ */
+export type IdempotencyKeyParameter = string;
 
 /**
  * Opaque authenticated cursor returned as `nextCursor` by the preceding page.
@@ -1657,6 +1698,13 @@ const getInviteMembersInternalUrl = () => {
  * when the limiting allowance next grows. If both remaining allowances are equal, it is
  * when both will have grown. `Retry-After` is the delay in seconds rounded up.
  * A batch whose addresses are all members or already invited uses neither allowance.
+ *
+ * **Idempotency.** The gateway never sends `Idempotency-Key` to this route: keyed batches
+ * go to `POST /internal/v1/invitation-batches`, which only a release with replay support
+ * serves, so a rollback to an older release can never run a keyed retry as a fresh batch.
+ * The optional header stays declared for compatibility; this route treats it as
+ * `POST /internal/v1/invitation-batches` does, with the same key namespace, replay records
+ * and in-progress reservation.
  * @summary Invite people
  */
 const inviteMembersInternal = async (invitationBatch: InvitationBatch, options?: RequestInit): Promise<inviteMembersInternalResponse> => {
@@ -1716,6 +1764,106 @@ const listInvitationsInternal = async (params?: ListInvitationsInternalParams, o
 
   const data: listInvitationsInternalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listInvitationsInternalResponse
+}
+
+
+
+const getInviteMembersKeyedInternalUrl = () => {
+
+
+
+
+  return `/internal/v1/invitation-batches`
+}
+
+/**
+ * Invites the addresses of the batch with one role, one outcome per distinct address, as
+ * `POST /v1/invitations` says. Owner and admins only. Emits one `invitation.issued.v1` per
+ * `invited` address. Internal token: actor `user`, organization required.
+ *
+ * **Daily allowances.** Organization-service allows at most 100 invitation emails per
+ * organization and 100 per sender across all organizations in any rolling 24 hours.
+ * Each email from this route, organization creation or resend uses both allowances.
+ * Once the body and role are accepted, a batch that would exceed either allowance returns
+ * `429 invitation.daily-limit-reached`. Nothing is created, sent or emitted.
+ * `details.remaining` is the smaller allowance remaining. `details.nextAvailableAt` is
+ * when the limiting allowance next grows. If both remaining allowances are equal, it is
+ * when both will have grown. `Retry-After` is the delay in seconds rounded up.
+ * A batch whose addresses are all members or already invited uses neither allowance.
+ *
+ * **Idempotency.** This route requires `Idempotency-Key` and exists only in releases that
+ * store and replay keyed batches; an older release answers `404` on it, never a fresh batch.
+ * The `Idempotency-Key` is scoped to the verified organization, the acting user and the
+ * invitation of members: this route and `POST /internal/v1/invitations` share one key
+ * namespace, the same replay records and the same in-progress reservation, records written
+ * through either route before a gateway switch included, so a key used on one route replays,
+ * conflicts or waits on the other for the whole replay window. The same key in another organization or from another user never replays
+ * this result. Before any replay, the current owner or admin authorization and organization
+ * preconditions, including `If-Organization-Match` at the gateway, must pass again. Otherwise
+ * the request answers as a fresh request would, including `403` or `412`, not the stored result.
+ *
+ * While authorization and preconditions still hold, an equivalent body with the same key
+ * replays the original `200` status and body for 24 hours without sending again or charging
+ * the daily allowances twice. A different body answers `422 idempotency.key-reused`; an
+ * equivalent request still running answers `409 idempotency.request-in-progress`. Only the
+ * `200` outcome is stored. No `429`, including `invitation.daily-limit-reached`, or other
+ * error is stored; the same key may run again when the allowance is available.
+ *
+ * When a key is supplied, the invitations, their `invitation.issued.v1` events in a
+ * transactional outbox or equivalent, and the replay record commit together in the same
+ * transaction. No part of the batch commits without its replay record. A request that fails
+ * without committing is not stored and the key may run again.
+ * @summary Invite people with an idempotency key
+ */
+const inviteMembersKeyedInternal = async (invitationBatch: InvitationBatch, options?: RequestInit): Promise<inviteMembersKeyedInternalResponse> => {
+
+  const res = await fetchFn(getInviteMembersKeyedInternalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(invitationBatch)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inviteMembersKeyedInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inviteMembersKeyedInternalResponse
+}
+
+
+
+const getGetInvitationInternalUrl = (invitationId: string,) => {
+
+
+
+
+  return `/internal/v1/invitations/${invitationId}`
+}
+
+/**
+ * Returns an invitation of the current organization in any state. Owner and admins only.
+ * Internal token: actor `user`, organization required.
+ * @summary Get an invitation
+ */
+const getInvitationInternal = async (invitationId: string, options?: RequestInit): Promise<getInvitationInternalResponse> => {
+
+  const res = await fetchFn(getGetInvitationInternalUrl(invitationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getInvitationInternalResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getInvitationInternalResponse
 }
 
 
@@ -2397,7 +2545,7 @@ const reserveAccountDeletionInternal = async (userId: string,
 
 
 
-return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, queryListMembersInternal, getQueryListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, getBillingActiveSeatCountInternal, getGetBillingActiveSeatCountInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
+return { createOrganizationInternal, getCreateOrganizationInternalUrl, listMyOrganizationsInternal, getListMyOrganizationsInternalUrl, getOrganizationInternal, getGetOrganizationInternalUrl, updateOrganizationInternal, getUpdateOrganizationInternalUrl, reserveOrganizationLogoUploadInternal, getReserveOrganizationLogoUploadInternalUrl, getOrganizationLogoUploadStateInternal, getGetOrganizationLogoUploadStateInternalUrl, setOrganizationLogoInternal, getSetOrganizationLogoInternalUrl, deleteOrganizationLogoInternal, getDeleteOrganizationLogoInternalUrl, listMembersInternal, getListMembersInternalUrl, queryListMembersInternal, getQueryListMembersInternalUrl, lookupMemberNamesInternal, getLookupMemberNamesInternalUrl, checkAutomationRecipientInternal, getCheckAutomationRecipientInternalUrl, getMemberInternal, getGetMemberInternalUrl, changeMemberRoleInternal, getChangeMemberRoleInternalUrl, removeMemberInternal, getRemoveMemberInternalUrl, inviteMembersInternal, getInviteMembersInternalUrl, listInvitationsInternal, getListInvitationsInternalUrl, inviteMembersKeyedInternal, getInviteMembersKeyedInternalUrl, getInvitationInternal, getGetInvitationInternalUrl, revokeInvitationInternal, getRevokeInvitationInternalUrl, resendInvitationInternal, getResendInvitationInternalUrl, listReceivedInvitationsInternal, getListReceivedInvitationsInternalUrl, acceptInvitationInternal, getAcceptInvitationInternalUrl, refuseInvitationInternal, getRefuseInvitationInternalUrl, listSearchOrganizationsInternal, getListSearchOrganizationsInternalUrl, listBillingOrganizationsInternal, getListBillingOrganizationsInternalUrl, listBillingMembershipsInternal, getListBillingMembershipsInternalUrl, getBillingActiveSeatCountInternal, getGetBillingActiveSeatCountInternalUrl, listQuotaNotificationRecipientsInternal, getListQuotaNotificationRecipientsInternalUrl, lookupQuotaNotificationRecipientsInternal, getLookupQuotaNotificationRecipientsInternalUrl, getSearchMembershipInternal, getGetSearchMembershipInternalUrl, listIdentityMembershipsInternal, getListIdentityMembershipsInternalUrl, reserveAccountDeletionInternal, getReserveAccountDeletionInternalUrl };
 };
 
 export type createOrganizationInternalResponse201 = {
@@ -3025,6 +3173,16 @@ export type inviteMembersInternalResponse404 = {
   status: 404
 }
 
+export type inviteMembersInternalResponse409 = {
+  data: IdempotencyInProgressResponse
+  status: 409
+}
+
+export type inviteMembersInternalResponse422 = {
+  data: IdempotencyKeyReusedResponse
+  status: 422
+}
+
 export type inviteMembersInternalResponse429 = {
   data: InvitationBatchLimitedResponse
   status: 429
@@ -3033,7 +3191,7 @@ export type inviteMembersInternalResponse429 = {
 export type inviteMembersInternalResponseSuccess = (inviteMembersInternalResponse200) & {
   headers: Headers;
 };
-export type inviteMembersInternalResponseError = (inviteMembersInternalResponse400 | inviteMembersInternalResponse401 | inviteMembersInternalResponse403 | inviteMembersInternalResponse404 | inviteMembersInternalResponse429) & {
+export type inviteMembersInternalResponseError = (inviteMembersInternalResponse400 | inviteMembersInternalResponse401 | inviteMembersInternalResponse403 | inviteMembersInternalResponse404 | inviteMembersInternalResponse409 | inviteMembersInternalResponse422 | inviteMembersInternalResponse429) & {
   headers: Headers;
 };
 
@@ -3073,6 +3231,91 @@ export type listInvitationsInternalResponseError = (listInvitationsInternalRespo
 };
 
 export type listInvitationsInternalResponse = (listInvitationsInternalResponseSuccess | listInvitationsInternalResponseError)
+
+
+export type inviteMembersKeyedInternalResponse200 = {
+  data: InvitationBatchResult
+  status: 200
+}
+
+export type inviteMembersKeyedInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type inviteMembersKeyedInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type inviteMembersKeyedInternalResponse403 = {
+  data: RoleForbiddenResponse
+  status: 403
+}
+
+export type inviteMembersKeyedInternalResponse404 = {
+  data: OrganizationNotFoundResponse
+  status: 404
+}
+
+export type inviteMembersKeyedInternalResponse409 = {
+  data: IdempotencyInProgressResponse
+  status: 409
+}
+
+export type inviteMembersKeyedInternalResponse422 = {
+  data: IdempotencyKeyReusedResponse
+  status: 422
+}
+
+export type inviteMembersKeyedInternalResponse429 = {
+  data: InvitationBatchLimitedResponse
+  status: 429
+}
+
+export type inviteMembersKeyedInternalResponseSuccess = (inviteMembersKeyedInternalResponse200) & {
+  headers: Headers;
+};
+export type inviteMembersKeyedInternalResponseError = (inviteMembersKeyedInternalResponse400 | inviteMembersKeyedInternalResponse401 | inviteMembersKeyedInternalResponse403 | inviteMembersKeyedInternalResponse404 | inviteMembersKeyedInternalResponse409 | inviteMembersKeyedInternalResponse422 | inviteMembersKeyedInternalResponse429) & {
+  headers: Headers;
+};
+
+export type inviteMembersKeyedInternalResponse = (inviteMembersKeyedInternalResponseSuccess | inviteMembersKeyedInternalResponseError)
+
+
+export type getInvitationInternalResponse200 = {
+  data: InvitationState
+  status: 200
+}
+
+export type getInvitationInternalResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getInvitationInternalResponse401 = {
+  data: InternalTokenRefusedResponse
+  status: 401
+}
+
+export type getInvitationInternalResponse403 = {
+  data: RoleForbiddenResponse
+  status: 403
+}
+
+export type getInvitationInternalResponse404 = {
+  data: InvitationNotFoundResponse
+  status: 404
+}
+
+export type getInvitationInternalResponseSuccess = (getInvitationInternalResponse200) & {
+  headers: Headers;
+};
+export type getInvitationInternalResponseError = (getInvitationInternalResponse400 | getInvitationInternalResponse401 | getInvitationInternalResponse403 | getInvitationInternalResponse404) & {
+  headers: Headers;
+};
+
+export type getInvitationInternalResponse = (getInvitationInternalResponseSuccess | getInvitationInternalResponseError)
 
 
 export type revokeInvitationInternalResponse204 = {

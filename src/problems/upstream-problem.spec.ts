@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { describe, expect, it, vi, type Mock } from 'vitest';
 
 import { identityProblem, identityUnavailable } from '../../tests/support/fake-identity.js';
+import { routeNotServed } from './upstream-answer.js';
 import {
   isUpstreamProblem,
   relayUpstream,
@@ -212,6 +213,38 @@ describe('relayUpstream', () => {
     ).catch(() => undefined);
 
     expect(setHeader).toHaveBeenCalledWith('Retry-After', expect.stringMatching(/^(?:59|60)$/u));
+  });
+
+  it('relays a 503 that knows its retry delay unchanged, with Retry-After', async () => {
+    const setHeader: Mock = vi.fn();
+    const notServed = routeNotServed(
+      'organization-service',
+      'inviteMembersKeyedInternal',
+      10,
+      identityProblem(404, 'upstream.error', {}, 'organization-service'),
+    );
+
+    const refusal: unknown = await relayUpstream({ setHeader } as unknown as Response, {}, () =>
+      Promise.reject(notServed),
+    ).catch((error: unknown) => error);
+
+    expect(refusal).toBe(notServed);
+    expect(notServed.problem).toMatchObject({
+      status: 503,
+      code: 'upstream.unavailable',
+      details: { service: 'organization-service' },
+    });
+    expect(setHeader).toHaveBeenCalledWith('Retry-After', '10');
+  });
+
+  it('sets no Retry-After on a 503 whose retry delay is unknown', async () => {
+    const setHeader: Mock = vi.fn();
+
+    await relayUpstream({ setHeader } as unknown as Response, {}, () =>
+      Promise.reject(identityUnavailable('unreachable', 'organization-service')),
+    ).catch(() => undefined);
+
+    expect(setHeader).not.toHaveBeenCalled();
   });
 });
 

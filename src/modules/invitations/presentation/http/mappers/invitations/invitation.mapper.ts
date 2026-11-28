@@ -2,10 +2,12 @@ import type {
   Invitation as PublicInvitation,
   InvitationBatchResult,
   InvitationPage as PublicInvitationPage,
+  InvitationState as PublicInvitationState,
 } from '@cadenway/contracts/types/public/members';
 
 import type { Invitation } from '../../../../application/models/invitations/invitation.model.js';
 import type { InvitationPage } from '../../../../application/models/invitations/invitation-page.model.js';
+import type { InvitationState } from '../../../../application/models/invitations/invitation-state.model.js';
 import type { InviteMembersOutput } from '../../../../application/use-cases/commands/invitations/invite-members/invite-members.output.js';
 
 /**
@@ -24,6 +26,31 @@ export function toInvitation(invitation: Invitation): PublicInvitation {
     role: invitation.role,
     invitedBy: { userId: invitation.invitedBy.userId, name: invitation.invitedBy.name },
     status: invitation.status,
+    sentAt: invitation.sentAt,
+    expiresAt: invitation.expiresAt,
+    version: invitation.version,
+  };
+}
+
+/**
+ * Function toInvitationState
+ *
+ * @description
+ * Maps an invitation in any state to `InvitationState` of `openapi/public/members.yaml`, member by
+ * member.
+ *
+ * @param {InvitationState} invitation - The invitation.
+ * @returns {PublicInvitationState} The public invitation.
+ */
+export function toInvitationState(invitation: InvitationState): PublicInvitationState {
+  return {
+    id: invitation.id,
+    email: invitation.email,
+    role: invitation.role,
+    invitedBy: { userId: invitation.invitedBy.userId, name: invitation.invitedBy.name },
+    status: invitation.status,
+    answeredAt: invitation.answeredAt,
+    revokedAt: invitation.revokedAt,
     sentAt: invitation.sentAt,
     expiresAt: invitation.expiresAt,
     version: invitation.version,

@@ -2,6 +2,7 @@ import type { InviteMembersInput } from '../../../../use-cases/commands/invitati
 import type { InviteMembersOutput } from '../../../../use-cases/commands/invitations/invite-members/invite-members.output.js';
 import type { Invitation } from '../../../../models/invitations/invitation.model.js';
 import type { InvitationPage } from '../../../../models/invitations/invitation-page.model.js';
+import type { InvitationState } from '../../../../models/invitations/invitation-state.model.js';
 import type { PageRequest } from '../../../../models/pages/page-request.model.js';
 import type { JoinedOrganization } from '../../../../models/received/joined-organization.model.js';
 import type { ReceivedInvitationPage } from '../../../../models/received/received-invitation-page.model.js';
@@ -31,6 +32,35 @@ export interface InvitationRegistry {
    * @returns {Promise<InviteMembersOutput>} The outcome of each distinct address.
    */
   inviteMembers(batch: InviteMembersInput): Promise<InviteMembersOutput>;
+
+  /**
+   * Method inviteMembersKeyed
+   *
+   * @description
+   * `POST /internal/v1/invitation-batches`, with the `Idempotency-Key` relayed unchanged.
+   * Rejects with `503 upstream.unavailable` and a retry delay when the serving release of
+   * organization-service cannot replay keyed batches yet; nothing ran then.
+   *
+   * @param {InviteMembersInput} batch - The addresses and their role.
+   * @param {string} idempotencyKey - `Idempotency-Key` of the request.
+   * @returns {Promise<InviteMembersOutput>} The outcome of each distinct address, replayed for
+   * an equivalent request with the same key.
+   */
+  inviteMembersKeyed(
+    batch: InviteMembersInput,
+    idempotencyKey: string,
+  ): Promise<InviteMembersOutput>;
+
+  /**
+   * Method getInvitation
+   *
+   * @description
+   * `GET /internal/v1/invitations/{invitationId}`.
+   *
+   * @param {string} invitationId - Id of the invitation.
+   * @returns {Promise<InvitationState>} The invitation in any state.
+   */
+  getInvitation(invitationId: string): Promise<InvitationState>;
 
   /**
    * Method listInvitations

@@ -71,6 +71,11 @@ export interface RouteCase {
   readonly status: number;
   /** Expected `code` of a problem. */
   readonly code?: string;
+  /**
+   * Declared headers the contract sends only when known (the `Retry-After` of a `503` whose delay
+   * the gateway does not know): the case checks that they are absent instead of present.
+   */
+  readonly absentHeaders?: readonly string[];
   /** Further checks of the response. */
   readonly check?: (response: request.Response, fakes: CaseFakes) => void;
 }
@@ -145,8 +150,11 @@ export async function runRouteCase(
   }
   const response: request.Response =
     routeCase.body === undefined ? await pending : await pending.send(routeCase.body as object);
-  expectPublicResponse(routeCase.method, routeCase.path, response);
+  expectPublicResponse(routeCase.method, routeCase.path, response, routeCase.absentHeaders);
   expect(response.status, JSON.stringify(response.body)).toBe(routeCase.status);
+  for (const name of routeCase.absentHeaders ?? []) {
+    expect(response.headers[name.toLowerCase()], name).toBeUndefined();
+  }
   if (routeCase.code !== undefined) {
     expect(response.body).toMatchObject({ code: routeCase.code });
   }

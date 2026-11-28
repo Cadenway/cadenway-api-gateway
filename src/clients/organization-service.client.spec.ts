@@ -23,6 +23,7 @@ import {
   generateSigningKeys,
   type SigningKeys,
 } from '../../tests/support/test-environment.js';
+import { RetryableProblemException } from '../problems/upstream-answer.js';
 import { ORGANIZATION_SERVICE, OrganizationServiceClient } from './organization-service.client.js';
 
 /**
@@ -459,6 +460,144 @@ describe('OrganizationServiceClient', () => {
       `POST ${BASE_URL}/internal/v1/invitations/${MARC_INVITATION.id}/resend`,
     ]);
     expect(calls[3]?.body).toEqual({});
+  });
+
+  it('sends a keyed batch to the invitation batches with its Idempotency-Key unchanged', async () => {
+    const result = {
+      invitations: [
+        { email: MARC_INVITATION.email, outcome: 'invited', invitationId: MARC_INVITATION.id },
+      ],
+    };
+    answer.mockReturnValue(json(200, result));
+
+    await expect(
+      asOwner(() =>
+        client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+      ),
+    ).resolves.toEqual(result);
+
+    expect(calls).toMatchObject([
+      {
+        method: 'POST',
+        url: `${BASE_URL}/internal/v1/invitation-batches`,
+        body: { emails: [MARC_INVITATION.email], role: 'member' },
+        idempotencyKey: 'batch-7',
+        principal: { actor: OWNER.actor, organizationId: OWNER.organizationId },
+      },
+    ]);
+  });
+
+  it('never sends an Idempotency-Key with a batch to the plain invitation', async () => {
+    answer.mockReturnValue(json(200, { invitations: [] }));
+
+    await asOwner(() => client.inviteMembers({ emails: [MARC_INVITATION.email], role: 'member' }));
+
+    expect(calls).toMatchObject([
+      { url: `${BASE_URL}/internal/v1/invitations`, idempotencyKey: null },
+    ]);
+  });
+
+  it.each([
+    [
+      'a problem of another code',
+      json(404, {
+        type: 'about:blank',
+        title: 'Not Found',
+        status: 404,
+        code: 'request.not-found',
+      }),
+    ],
+    ['a body that is not a problem', new Response('Cannot POST', { status: 404 })],
+  ])(
+    'answers a 404 with %s on a keyed batch as 503 upstream.unavailable with a retry delay, without calling the plain invitation',
+    async (_name, notFound) => {
+      answer.mockReturnValue(notFound);
+
+      const failure: unknown = await asOwner(() =>
+        client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+      ).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(RetryableProblemException);
+      expect((failure as RetryableProblemException).retryAfterSeconds).toBe(10);
+      expect((failure as RetryableProblemException).problem).toMatchObject({
+        status: 503,
+        code: 'upstream.unavailable',
+        details: { service: ORGANIZATION_SERVICE },
+      });
+      expect(calls.map((call) => call.url)).toEqual([`${BASE_URL}/internal/v1/invitation-batches`]);
+    },
+  );
+
+  it('relays 404 organization.not-found of a keyed batch as it is', async () => {
+    answer.mockReturnValue(
+      json(404, {
+        type: 'about:blank',
+        title: 'Not Found',
+        status: 404,
+        code: 'organization.not-found',
+      }),
+    );
+
+    const failure: unknown = await asOwner(() =>
+      client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+    ).catch((error: unknown) => error);
+
+    expect(failure).not.toBeInstanceOf(RetryableProblemException);
+    expect((failure as ProblemException).problem).toMatchObject({
+      status: 404,
+      code: 'organization.not-found',
+    });
+  });
+
+  it.each([
+    [409, 'idempotency.request-in-progress'],
+    [422, 'idempotency.key-reused'],
+  ])('relays %i %s of a keyed batch with its code', async (status, code) => {
+    answer.mockReturnValue(json(status, { type: 'about:blank', title: 'x', status, code }));
+
+    await expect(
+      asOwner(() =>
+        client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+      ),
+    ).rejects.toMatchObject({ problem: { status, code } });
+  });
+
+  it('retries a keyed batch once after a 503, as its key makes the repeat replay', async () => {
+    answer
+      .mockReturnValueOnce(new Response(null, { status: 503 }))
+      .mockReturnValue(json(200, { invitations: [] }));
+
+    await asOwner(() =>
+      client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+    );
+
+    expect(calls.map((call) => call.idempotencyKey)).toEqual(['batch-7', 'batch-7']);
+  });
+
+  it('reads an invitation of the organization in any state', async () => {
+    const accepted = {
+      ...MARC_INVITATION,
+      status: 'accepted',
+      answeredAt: '2026-11-07T09:30:00Z',
+      revokedAt: null,
+    };
+    answer.mockReturnValue(json(200, accepted));
+
+    await expect(asOwner(() => client.getInvitation(MARC_INVITATION.id))).resolves.toEqual(
+      accepted,
+    );
+    expect(calls[0]).toMatchObject({
+      method: 'GET',
+      url: `${BASE_URL}/internal/v1/invitations/${MARC_INVITATION.id}`,
+    });
+  });
+
+  it('answers an invitation without its lifecycle dates as 503 upstream.failed', async () => {
+    answer.mockReturnValue(json(200, MARC_INVITATION));
+
+    await expect(asOwner(() => client.getInvitation(MARC_INVITATION.id))).rejects.toMatchObject({
+      problem: { status: 503, code: 'upstream.failed' },
+    });
   });
 
   it('lists, accepts and refuses the invitations of the user', async () => {

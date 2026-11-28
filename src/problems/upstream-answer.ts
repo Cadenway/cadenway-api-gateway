@@ -1,4 +1,4 @@
-import { ProblemException } from '@cadenway/nest-common';
+import { ProblemException, type ProblemInit } from '@cadenway/nest-common';
 import type { z } from 'zod';
 
 /**
@@ -32,6 +32,82 @@ export interface GeneratedResponse {
    */
   readonly data: unknown;
   // #endregion
+}
+
+/**
+ * Class RetryableProblemException
+ *
+ * @description
+ * A `503 upstream.*` problem whose retry delay the gateway knows. The internal HTTP client
+ * carries no response header with its problems, so the delay travels with the problem and
+ * `relayUpstream` writes it as `Retry-After`. `toPublicProblem` relays every `503` unchanged,
+ * this one included.
+ */
+export class RetryableProblemException extends ProblemException {
+  // #region Properties
+  /**
+   * Property retryAfterSeconds
+   *
+   * @description
+   * Whole seconds to wait before sending the request again, at least 1.
+   *
+   * @type {number}
+   * @readonly
+   */
+  public readonly retryAfterSeconds: number;
+  // #endregion
+
+  // #region Constructor
+  /**
+   * Constructor
+   *
+   * @description
+   * Builds the problem with its retry delay.
+   *
+   * @param {ProblemInit} init - Status, code and optional members of the problem.
+   * @param {number} retryAfterSeconds - Whole seconds to wait, at least 1.
+   * @constructor
+   */
+  public constructor(init: ProblemInit, retryAfterSeconds: number) {
+    super(init);
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+  // #endregion
+}
+
+/**
+ * Function routeNotServed
+ *
+ * @description
+ * Builds the problem of an internal route the serving release of a service does not have yet
+ * (or no longer has, after a rollback): `503 upstream.unavailable` naming the service, with a
+ * known retry delay. Nothing ran on the service, so the same request may be sent again once the
+ * rollout is over.
+ *
+ * @param {string} service - Name of the called service, as `details.service`.
+ * @param {string} operation - `operationId` of the call.
+ * @param {number} retryAfterSeconds - Whole seconds to wait, at least 1.
+ * @param {unknown} cause - The `404` of the service, kept for the log line of the request.
+ * @returns {RetryableProblemException} The problem to throw.
+ */
+export function routeNotServed(
+  service: string,
+  operation: string,
+  retryAfterSeconds: number,
+  cause: unknown,
+): RetryableProblemException {
+  return new RetryableProblemException(
+    {
+      status: 503,
+      code: 'upstream.unavailable',
+      detail: 'A service this request depends on is not available.',
+      details: { service },
+      cause: new Error(`${service} does not serve ${operation} in its current release.`, {
+        cause,
+      }),
+    },
+    retryAfterSeconds,
+  );
 }
 
 /**
