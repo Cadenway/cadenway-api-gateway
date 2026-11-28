@@ -2,6 +2,7 @@ import { ProblemException, type Problem, type ProblemStatus } from '@cadenway/ne
 import type { Response } from 'express';
 
 import { isProblemStatus, publicProblem } from './public-problem.js';
+import { RetryableProblemException } from './upstream-answer.js';
 import { sessionExpiredProblem } from './session-problems.js';
 
 /**
@@ -265,8 +266,9 @@ export async function relaySessionUpstream<TResult>(
  * Function withRetryAfter
  *
  * @description
- * Sets `Retry-After` on the response for a translated `429` problem (see `retryAfterSeconds`): the
- * error filter of `@cadenway/nest-common` writes the body and keeps the headers already set.
+ * Sets `Retry-After` on the response for a translated `429` problem (see `retryAfterSeconds`) and
+ * for a `RetryableProblemException`, which carries its own delay: the error filter of
+ * `@cadenway/nest-common` writes the body and keeps the headers already set.
  *
  * @param {Response} response - Response of the public request.
  * @param {unknown} translated - What the route is about to throw.
@@ -274,7 +276,10 @@ export async function relaySessionUpstream<TResult>(
  */
 function withRetryAfter(response: Response, translated: unknown): unknown {
   if (translated instanceof ProblemException) {
-    const seconds: number | undefined = retryAfterSeconds(translated.problem, new Date());
+    const seconds: number | undefined =
+      translated instanceof RetryableProblemException
+        ? translated.retryAfterSeconds
+        : retryAfterSeconds(translated.problem, new Date());
     if (seconds !== undefined) {
       response.setHeader('Retry-After', String(seconds));
     }

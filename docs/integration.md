@@ -312,6 +312,28 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
   A code a route does not declare (`invitation.resend-throttled` on `POST /v1/invitations`) is
   `503 upstream.failed`.
 
+- **Keyed invitation batches.** `POST /v1/invitations` with an `Idempotency-Key` (1 to 255
+  characters, otherwise `400 request.invalid` before any call) checks `If-Organization-Match`
+  first, then calls `POST /internal/v1/invitation-batches` with the key unchanged; without a key
+  it keeps `POST /internal/v1/invitations`. A key is never dropped and never sent to the plain
+  route. `409 idempotency.request-in-progress` and `422 idempotency.key-reused` are relayed with
+  the reason phrase of their status, as the contract gives no French title. A `404` of the keyed
+  route whose code is not `organization.not-found` means the serving organization-service release
+  cannot replay keyed batches: the gateway answers `503 upstream.unavailable`
+  (`details.service: organization-service`) with `Retry-After: 10`, the half-open delay of the
+  circuit breaker of the internal HTTP client; nothing ran. Other `503` answers of the route carry
+  no `Retry-After`, whose delay the gateway does not know. The keyed call has the ordinary
+  deadline and is retried once after a connection error or a `503`: the key makes the repeat
+  replay. Deploy order: organization-service with the keyed route can ship before or after this
+  gateway release; until it ships, keyed batches answer that `503` and unkeyed ones work as before.
+- **One invitation.** `GET /v1/invitations/{invitationId}` reads an invitation in any state from
+  `GET /internal/v1/invitations/{invitationId}`; organization-service decides who may (owner and
+  admins). It answers `Cache-Control: private, no-store` and ignores `If-None-Match` and
+  `If-Modified-Since`, so it never answers `304`. Unlike the other versioned answers it sends no
+  `ETag`: the expiry changes the state of an invitation without a new `version`, so a tag derived
+  from it would wrongly say "unchanged" (organization-service sends none either). The handler
+  writes the answer itself, so the `EtagInterceptor` of the kit sees no body to tag.
+
 - **Query parameters.** The validators generated from the contracts read `limit` from its text;
   the gateway only splits the `role` of `GET /v1/members` on its commas before validation.
 

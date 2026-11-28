@@ -3,6 +3,7 @@ import type {
   InvitationBatch,
   InvitationBatchResult,
   InvitationPage,
+  InvitationState,
   ListInvitationsInternalParams,
   ListMembersInternalParams,
   ListMembersQuery,
@@ -30,10 +31,12 @@ import {
   AcceptInvitationInternalResponse,
   ChangeMemberRoleInternalResponse,
   CreateOrganizationInternalResponse,
+  GetInvitationInternalResponse,
   GetMemberInternalResponse,
   GetOrganizationInternalResponse,
   GetOrganizationLogoUploadStateInternalResponse,
   InviteMembersInternalResponse,
+  InviteMembersKeyedInternalResponse,
   ListInvitationsInternalResponse,
   ListMembersInternalResponse,
   QueryListMembersInternalBody,
@@ -44,7 +47,11 @@ import {
   ReserveOrganizationLogoUploadInternalResponse,
   UpdateOrganizationInternalResponse,
 } from '@cadenway/contracts/validators/internal/organization-service';
-import type { InternalHttpClient, InternalRequestInit } from '@cadenway/nest-common';
+import {
+  ProblemException,
+  type InternalHttpClient,
+  type InternalRequestInit,
+} from '@cadenway/nest-common';
 import type { z } from 'zod';
 
 import {
@@ -52,6 +59,7 @@ import {
   expectBody as expectBodyOf,
   expectStatus as expectStatusOf,
   outsideContract,
+  routeNotServed,
   type GeneratedResponse,
 } from '../problems/upstream-answer.js';
 import { getOrganizationServiceInternalRoutes } from './generated/organization-service.js';
@@ -86,6 +94,19 @@ type OrganizationServiceRoutes = ReturnType<typeof getOrganizationServiceInterna
  * @type {Readonly<Record<string, never>>}
  */
 const EMPTY_REQUEST: Readonly<Record<string, never>> = Object.freeze({});
+
+/**
+ * Constant KEYED_BATCH_RETRY_AFTER_SECONDS
+ *
+ * @description
+ * `Retry-After` of a keyed invitation batch the serving organization-service release cannot
+ * replay yet (a rollout or a rollback in progress): 10 seconds, the half-open delay of the
+ * circuit breaker of `@cadenway/nest-common`, which is how long the gateway itself waits before
+ * trying an unavailable service again.
+ *
+ * @type {number}
+ */
+const KEYED_BATCH_RETRY_AFTER_SECONDS: number = 10;
 
 /**
  * Function expectStatus
@@ -182,7 +203,8 @@ function logoEtag(
  *   decides every role rule from its own members, never from that role.
  * - The internal HTTP client gives each call the time left to the request (2 seconds at most), one
  *   retry after a connection error or a `503` for an idempotent call (`GET`, and `DELETE` but the
- *   removal of a member and logo mutations; the `POST` and `PATCH` calls are not retried), and the
+ *   removal of a member and logo mutations; the `POST` and `PATCH` calls are not retried, but the
+ *   keyed invitation batch, whose `Idempotency-Key` makes a repeat safe), and the
  *   circuit breaker of organization-service. It throws its problems: a relayed client error, or
  *   `503 upstream.*`.
  * - Every success is checked against the internal contract before it is returned; a mismatch is
@@ -550,6 +572,79 @@ export class OrganizationServiceClient {
       await answered('inviteMembersInternal', this.routes.inviteMembersInternal(batch)),
       200,
       InviteMembersInternalResponse,
+    );
+  }
+
+  /**
+   * Method inviteMembersKeyed
+   *
+   * @description
+   * `POST /internal/v1/invitation-batches`, with the `Idempotency-Key` of the public request
+   * relayed unchanged: organization-service stores the key with the batch and replays its `200`
+   * for an equivalent body (`422 idempotency.key-reused` for another body,
+   * `409 idempotency.request-in-progress` while the first is running). The key never goes to
+   * `POST /internal/v1/invitations`, so a rollback to a release without replay support can never
+   * run a keyed retry as a fresh batch.
+   *
+   * - A `404` whose code is not `organization.not-found` comes from a release that does not serve
+   *   the route yet: `503 upstream.unavailable` with `Retry-After` (`routeNotServed`). Nothing ran.
+   * - The call is retried once after a connection error or a `503`, like an idempotent one: the
+   *   key makes a repeat replay or wait, never send twice. It has the ordinary deadline of the
+   *   internal HTTP client.
+   *
+   * @param {InvitationBatch} batch - Addresses and their role.
+   * @param {string} idempotencyKey - `Idempotency-Key` of the public request, 1 to 255 characters.
+   * @returns {Promise<InvitationBatchResult>} The outcome of each distinct address.
+   * @throws {ProblemException} 503 `upstream.unavailable` with a retry delay when the route is
+   *   not served, or the problem of the internal HTTP client.
+   */
+  public async inviteMembersKeyed(
+    batch: InvitationBatch,
+    idempotencyKey: string,
+  ): Promise<InvitationBatchResult> {
+    const operation = 'inviteMembersKeyedInternal';
+    const options: InternalRequestInit = {
+      idempotent: true,
+      headers: { 'Idempotency-Key': idempotencyKey },
+    };
+    let response: Awaited<ReturnType<OrganizationServiceRoutes['inviteMembersKeyedInternal']>>;
+    try {
+      response = await answered(operation, this.routes.inviteMembersKeyedInternal(batch, options));
+    } catch (error) {
+      if (
+        error instanceof ProblemException &&
+        error.problem.status === 404 &&
+        error.problem.code !== 'organization.not-found'
+      ) {
+        throw routeNotServed(
+          ORGANIZATION_SERVICE,
+          operation,
+          KEYED_BATCH_RETRY_AFTER_SECONDS,
+          error,
+        );
+      }
+      throw error;
+    }
+    return expectBody(operation, response, 200, InviteMembersKeyedInternalResponse);
+  }
+
+  /**
+   * Method getInvitation
+   *
+   * @description
+   * `GET /internal/v1/invitations/{invitationId}`: an invitation of the organization of the
+   * context in any state. organization-service decides who may read it (owner and admins).
+   *
+   * @param {string} invitationId - Id of the invitation.
+   * @returns {Promise<InvitationState>} The invitation and its current state.
+   */
+  public async getInvitation(invitationId: string): Promise<InvitationState> {
+    const operation = 'getInvitationInternal';
+    return expectBody(
+      operation,
+      await answered(operation, this.routes.getInvitationInternal(invitationId)),
+      200,
+      GetInvitationInternalResponse,
     );
   }
 

@@ -10,6 +10,7 @@ import { ResendInvitation } from './application/use-cases/commands/invitations/r
 import { RevokeInvitation } from './application/use-cases/commands/invitations/revoke-invitation/revoke-invitation.use-case.js';
 import { AcceptInvitation } from './application/use-cases/commands/received/accept-invitation/accept-invitation.use-case.js';
 import { RefuseInvitation } from './application/use-cases/commands/received/refuse-invitation/refuse-invitation.use-case.js';
+import { GetInvitation } from './application/use-cases/queries/invitations/get-invitation/get-invitation.use-case.js';
 import { ListInvitations } from './application/use-cases/queries/invitations/list-invitations/list-invitations.use-case.js';
 import { ListReceivedInvitations } from './application/use-cases/queries/received/list-received-invitations/list-received-invitations.use-case.js';
 import { createInvitationRegistryAdapter } from './infrastructure/adapters/organization-service/invitation-registry.adapter.js';
@@ -44,6 +45,11 @@ const PROVIDERS: readonly FactoryProvider[] = [
     provide: InviteMembers,
     inject: [INVITATION_REGISTRY],
     useFactory: (registry: InvitationRegistry): InviteMembers => new InviteMembers(registry),
+  },
+  {
+    provide: GetInvitation,
+    inject: [INVITATION_REGISTRY],
+    useFactory: (registry: InvitationRegistry): GetInvitation => new GetInvitation(registry),
   },
   {
     provide: ListInvitations,

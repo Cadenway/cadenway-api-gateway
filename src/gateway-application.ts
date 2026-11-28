@@ -113,6 +113,8 @@ export const CORS_MAX_AGE_SECONDS: number = 600;
 const PROFILE_MEDIA_PATH =
   /^\/v1\/(?:(?:me\/avatar|organization\/logo)(?:\/uploads)?|members\/[^/]+\/avatar)\/?$/iu;
 const MEMBERS_PATH = /^\/v1\/members(?:\/[^/]+)?\/?$/iu;
+// One invitation of the current organization: its state is private and never answered with a 304.
+const INVITATION_PATH = /^\/v1\/invitations\/[^/]+\/?$/iu;
 const DOCUMENTS_PATH = /^\/v1\/documents(?:\/[^/]+)?\/?$/iu;
 // All routes addressed by a task key, plus the bulk actions and current-organization collections.
 const ORGANIZATION_BOUND_PATH =
@@ -315,6 +317,7 @@ export async function createGatewayApplication(
     [
       ORGANIZATION_BOUND_PATH,
       MEMBERS_PATH,
+      INVITATION_PATH,
       ONBOARDING_PATH,
       SEARCH_PATH,
       BILLING_PRIVATE_PATH,
@@ -334,6 +337,7 @@ export async function createGatewayApplication(
       ORGANIZATION_BOUND_PATH,
       PROFILE_MEDIA_PATH,
       MEMBERS_PATH,
+      INVITATION_PATH,
       DOCUMENTS_PATH,
       ONBOARDING_PATH,
       SEARCH_PATH,

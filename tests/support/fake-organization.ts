@@ -1,5 +1,6 @@
 import type {
   Invitation,
+  InvitationState,
   Member,
   MyOrganization,
   Organization,
@@ -83,6 +84,23 @@ export const MARC_INVITATION: Invitation = {
 };
 
 /**
+ * The invitation of Marc Roux once he accepted it, as `GET /internal/v1/invitations/{id}` returns
+ * it.
+ */
+export const MARC_ACCEPTED_INVITATION: InvitationState = {
+  id: MARC_INVITATION.id,
+  email: MARC_INVITATION.email,
+  role: MARC_INVITATION.role,
+  invitedBy: MARC_INVITATION.invitedBy,
+  status: 'accepted',
+  answeredAt: '2026-11-07T09:30:00Z',
+  revokedAt: null,
+  sentAt: MARC_INVITATION.sentAt,
+  expiresAt: MARC_INVITATION.expiresAt,
+  version: 1,
+};
+
+/**
  * An invitation addressed to Camille by another organization.
  */
 export const LUMEN_INVITATION: ReceivedInvitation = {
@@ -141,6 +159,8 @@ export function createFakeOrganization(): FakeOrganization {
     changeMemberRole: vi.fn(unexpected),
     removeMember: vi.fn(unexpected),
     inviteMembers: vi.fn(unexpected),
+    inviteMembersKeyed: vi.fn(unexpected),
+    getInvitation: vi.fn(unexpected),
     listInvitations: vi.fn(unexpected),
     revokeInvitation: vi.fn(unexpected),
     resendInvitation: vi.fn(unexpected),

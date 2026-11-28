@@ -15,6 +15,9 @@ export function createInvitationRegistryAdapter(
 ): InvitationRegistry {
   return {
     inviteMembers: (batch) => client.inviteMembers({ emails: [...batch.emails], role: batch.role }),
+    inviteMembersKeyed: (batch, idempotencyKey) =>
+      client.inviteMembersKeyed({ emails: [...batch.emails], role: batch.role }, idempotencyKey),
+    getInvitation: (invitationId) => client.getInvitation(invitationId),
     listInvitations: (page) => client.listInvitations({ ...page }),
     revokeInvitation: (invitationId) => client.revokeInvitation(invitationId),
     resendInvitation: (invitationId) => client.resendInvitation(invitationId),

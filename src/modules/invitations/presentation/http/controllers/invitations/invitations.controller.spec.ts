@@ -7,7 +7,11 @@ import {
   identityUnavailable,
   type FakeIdentity,
 } from '../../../../../../../tests/support/fake-identity.js';
-import { MARC_INVITATION } from '../../../../../../../tests/support/fake-organization.js';
+import {
+  MARC_ACCEPTED_INVITATION,
+  MARC_INVITATION,
+} from '../../../../../../../tests/support/fake-organization.js';
+import { routeNotServed } from '../../../../../../problems/upstream-answer.js';
 import {
   createRouteApplication,
   type RouteApplication,
@@ -24,13 +28,13 @@ import {
  * @description
  * What the internal HTTP client throws for a client error of organization-service.
  *
- * @param {400 | 403 | 404 | 409 | 429} status - Status organization-service answered.
+ * @param {400 | 403 | 404 | 409 | 422 | 429} status - Status organization-service answered.
  * @param {string} code - Code of its problem.
  * @param {Readonly<Record<string, unknown>>} details - Details of its problem.
  * @returns {ReturnType<typeof identityProblem>} The problem.
  */
 function organizationProblem(
-  status: 400 | 403 | 404 | 409 | 429,
+  status: 400 | 403 | 404 | 409 | 422 | 429,
   code: string,
   details: Readonly<Record<string, unknown>> = {},
 ): ReturnType<typeof identityProblem> {
@@ -58,6 +62,43 @@ const INVITATION_URL: string = `/v1/invitations/${MARC_INVITATION.id}`;
 const BATCH: Record<string, unknown> = {
   emails: ['marc.roux@ateliernord.fr', 'ines.robert@ateliernord.fr'],
   role: 'guest',
+};
+
+/**
+ * Constant IDEMPOTENCY_KEY
+ *
+ * @description
+ * The `Idempotency-Key` the invite dialog sends with a batch.
+ *
+ * @type {string}
+ */
+const IDEMPOTENCY_KEY: string = 'invite-019a6b10-3c4d-7e5f-8a6b-7c8d9e0f1a99';
+
+/**
+ * Constant STALE_ORGANIZATION
+ *
+ * @description
+ * An `If-Organization-Match` that is not the organization of the session.
+ *
+ * @type {string}
+ */
+const STALE_ORGANIZATION: string = '019a7000-1a2b-7c3d-8e4f-5a6b7c8d9e01';
+
+/**
+ * Constant KEYED_RESULT
+ *
+ * @description
+ * The outcome of `BATCH`, as organization-service answers it first or replays it.
+ *
+ * @type {{ invitations: { email: string; outcome: string; invitationId: string | null }[] }}
+ */
+const KEYED_RESULT: {
+  invitations: { email: string; outcome: string; invitationId: string | null }[];
+} = {
+  invitations: [
+    { email: 'marc.roux@ateliernord.fr', outcome: 'invited', invitationId: MARC_INVITATION.id },
+    { email: 'ines.robert@ateliernord.fr', outcome: 'already-member', invitationId: null },
+  ],
 };
 
 /**
@@ -187,6 +228,169 @@ const CASES: readonly RouteCase[] = [
         emails: ['marc.roux@ateliernord.fr', 'ines.robert@ateliernord.fr'],
         role: 'member',
       });
+      expect(organization.inviteMembersKeyed).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations with an Idempotency-Key sends the batch and its key unchanged to the keyed invitation',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) => organization.inviteMembersKeyed.mockResolvedValue(KEYED_RESULT),
+    status: 200,
+    check: (response, { organization }) => {
+      expect(response.body).toEqual(KEYED_RESULT);
+      expect(organization.inviteMembersKeyed).toHaveBeenCalledWith(
+        { emails: ['marc.roux@ateliernord.fr', 'ines.robert@ateliernord.fr'], role: 'guest' },
+        IDEMPOTENCY_KEY,
+      );
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations with an Idempotency-Key checks If-Organization-Match before any call',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY, 'If-Organization-Match': STALE_ORGANIZATION },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.inviteMembersKeyed).not.toHaveBeenCalled();
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations refuses an Idempotency-Key longer than 255 characters before any call',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': 'k'.repeat(256) },
+    status: 400,
+    code: 'request.invalid',
+    check: (response, { organization }) => {
+      expect(response.body).toMatchObject({
+        details: { issues: [{ in: 'header', path: 'Idempotency-Key' }] },
+      });
+      expect(organization.inviteMembersKeyed).not.toHaveBeenCalled();
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations refuses an empty Idempotency-Key instead of dropping it',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': '' },
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { organization }) => {
+      expect(organization.inviteMembersKeyed).not.toHaveBeenCalled();
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations accepts an Idempotency-Key of 255 characters',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': 'k'.repeat(255) },
+    arrange: ({ organization }) => organization.inviteMembersKeyed.mockResolvedValue(KEYED_RESULT),
+    status: 200,
+    check: (_response, { organization }) => {
+      expect(organization.inviteMembersKeyed).toHaveBeenCalledWith(
+        expect.anything(),
+        'k'.repeat(255),
+      );
+    },
+  },
+  {
+    name: 'POST /v1/invitations relays 409 idempotency.request-in-progress of a keyed batch',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) =>
+      organization.inviteMembersKeyed.mockRejectedValue(
+        organizationProblem(409, 'idempotency.request-in-progress'),
+      ),
+    status: 409,
+    code: 'idempotency.request-in-progress',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        code: 'idempotency.request-in-progress',
+      });
+    },
+  },
+  {
+    name: 'POST /v1/invitations relays 422 idempotency.key-reused of a keyed batch',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) =>
+      organization.inviteMembersKeyed.mockRejectedValue(
+        organizationProblem(422, 'idempotency.key-reused'),
+      ),
+    status: 422,
+    code: 'idempotency.key-reused',
+    check: (response) => {
+      expect(response.body).toEqual({
+        type: 'about:blank',
+        title: 'Unprocessable Content',
+        status: 422,
+        code: 'idempotency.key-reused',
+      });
+    },
+  },
+  {
+    name: 'POST /v1/invitations relays 404 organization.not-found of a keyed batch',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) =>
+      organization.inviteMembersKeyed.mockRejectedValue(
+        organizationProblem(404, 'organization.not-found'),
+      ),
+    status: 404,
+    code: 'organization.not-found',
+  },
+  {
+    name: 'POST /v1/invitations answers a keyed batch the serving release cannot replay with 503 upstream.unavailable and Retry-After',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) =>
+      organization.inviteMembersKeyed.mockRejectedValue(
+        routeNotServed(
+          'organization-service',
+          'inviteMembersKeyedInternal',
+          10,
+          organizationProblem(404, 'upstream.error'),
+        ),
+      ),
+    status: 503,
+    code: 'upstream.unavailable',
+    check: (response, { organization }) => {
+      expect(response.body).toMatchObject({ details: { service: 'organization-service' } });
+      expect(response.headers['retry-after']).toBe('10');
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
     },
   },
   {
@@ -257,6 +461,151 @@ const CASES: readonly RouteCase[] = [
       ),
     status: 503,
     code: 'upstream.unreachable',
+    absentHeaders: ['Retry-After'],
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers the invitation in any state, private, uncached and without ETag',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockResolvedValue({
+        ...MARC_ACCEPTED_INVITATION,
+        internalNote: 'dropped',
+      } as typeof MARC_ACCEPTED_INVITATION),
+    status: 200,
+    check: (response, { organization }) => {
+      expect(response.body).toEqual(MARC_ACCEPTED_INVITATION);
+      expect(response.headers['content-type']).toMatch(/^application\/json/u);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers.etag).toBeUndefined();
+      expect(organization.getInvitation).toHaveBeenCalledWith(MARC_INVITATION.id);
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers a conditional request in full, never 304 and without ETag',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    headers: { 'If-None-Match': '"1"', 'If-Modified-Since': 'Sat, 07 Nov 2026 09:30:00 GMT' },
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockResolvedValue(MARC_ACCEPTED_INVITATION),
+    status: 200,
+    check: (response) => {
+      expect(response.body).toEqual(MARC_ACCEPTED_INVITATION);
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers.etag).toBeUndefined();
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} rejects a stale organization before the service call',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    headers: { 'If-Organization-Match': STALE_ORGANIZATION },
+    status: 412,
+    code: 'organization.context-changed',
+    check: (response, { organization }) => {
+      expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(organization.getInvitation).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} refuses an id that is not a UUID before any call',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: '/v1/invitations/marc',
+    status: 400,
+    code: 'request.invalid',
+    check: (_response, { organization }) => {
+      expect(organization.getInvitation).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers 401 without a credential',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    credential: 'none',
+    status: 401,
+    code: 'auth.session-required',
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} relays 403 organization.role-forbidden for a member',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockRejectedValue(
+        organizationProblem(403, 'organization.role-forbidden'),
+      ),
+    status: 403,
+    code: 'organization.role-forbidden',
+    check: (response) => {
+      expect(response.body).toMatchObject({ title: 'Votre rôle ne permet pas cette action.' });
+      expect(response.headers['cache-control']).toBe('private, no-store');
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers 403 organization.not-selected without a current organization',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    credential: 'session-without-organization',
+    status: 403,
+    code: 'organization.not-selected',
+    check: (_response, { organization }) => {
+      expect(organization.getInvitation).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} relays 404 invitation.not-found',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockRejectedValue(
+        organizationProblem(404, 'invitation.not-found'),
+      ),
+    status: 404,
+    code: 'invitation.not-found',
+    check: (response) => {
+      expect(response.body).toMatchObject({ title: 'Invitation introuvable.' });
+    },
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers 404 invitation.not-found when the caller left the organization',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockRejectedValue(
+        organizationProblem(404, 'organization.not-found'),
+      ),
+    status: 404,
+    code: 'invitation.not-found',
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers 429 beyond the quota',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ counter }) =>
+      counter.consume.mockResolvedValue({ allowed: false, retryAfterSeconds: 8 }),
+    status: 429,
+    code: 'rate-limit.exceeded',
+  },
+  {
+    name: 'GET /v1/invitations/{invitationId} answers 503 when organization-service cannot answer',
+    method: 'get',
+    path: '/v1/invitations/{invitationId}',
+    url: INVITATION_URL,
+    arrange: ({ organization }) =>
+      organization.getInvitation.mockRejectedValue(
+        identityUnavailable('circuit-open', 'organization-service'),
+      ),
+    status: 503,
+    code: 'upstream.circuit-open',
   },
   {
     name: 'GET /v1/invitations answers the pending invitations with their total',
@@ -556,9 +905,7 @@ const CASES: readonly RouteCase[] = [
       ),
     status: 503,
     code: 'upstream.failed',
-    check: (response) => {
-      expect(response.headers['retry-after']).toBeUndefined();
-    },
+    absentHeaders: ['Retry-After'],
   },
   {
     name: 'POST /v1/invitations/{invitationId}/resend relays 429 invitation.resend-throttled with its French title and Retry-After',
