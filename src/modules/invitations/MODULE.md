@@ -54,4 +54,8 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   The other `503` answers carry no `Retry-After`. Deploy order: organization-service with the
   keyed route can ship before or after this gateway release.
 - `GET /v1/invitations/{invitationId}` answers `Cache-Control: private, no-store` and never `304`:
-  `createGatewayApplication` drops its `If-None-Match` and `If-Modified-Since`.
+  `createGatewayApplication` drops its `If-None-Match` and `If-Modified-Since`. It sends no `ETag`,
+  as organization-service does not: the expiry changes the state of an invitation without a new
+  `version`, so a tag derived from it would wrongly say "unchanged". The handler writes the answer
+  itself, so the `EtagInterceptor` of the kit, which tags every other answer with a `version`, sees
+  no body.

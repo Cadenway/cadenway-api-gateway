@@ -353,8 +353,14 @@ export class InvitationsController {
    * answer is private to the organization: `Cache-Control: private, no-store` (see
    * `createGatewayApplication`), and no conditional request is answered with a `304`.
    *
+   * The handler writes the answer itself, so the `EtagInterceptor` of the kit sees no body and
+   * sets no `ETag`: the expiry changes the state of an invitation without a new `version`, so a
+   * tag derived from it would say "unchanged" for an answer that changed. organization-service
+   * sends none either.
+   *
    * @param {z.output<typeof GetInvitationParams>} params - The id of the invitation.
-   * @returns {Promise<InvitationState>} The invitation and its current state.
+   * @param {Response} response - Response, written with the invitation.
+   * @returns {Promise<void>} Resolves once the invitation is written.
    */
   @Get(':invitationId')
   @CredentialGuard.requires({
@@ -366,12 +372,14 @@ export class InvitationsController {
   public async getInvitation(
     @Param(new ZodValidationPipe(GetInvitationParams))
     params: z.output<typeof GetInvitationParams>,
-  ): Promise<InvitationState> {
-    return toInvitationState(
+    @Res() response: Response,
+  ): Promise<void> {
+    const invitation: InvitationState = toInvitationState(
       await this.relay(GET_PROBLEMS, INVITATION_ALIASES, () =>
         this.reading.execute(params.invitationId),
       ),
     );
+    response.status(200).json(invitation);
   }
 
   /**

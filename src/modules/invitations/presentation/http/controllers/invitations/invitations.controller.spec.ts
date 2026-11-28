@@ -464,7 +464,7 @@ const CASES: readonly RouteCase[] = [
     absentHeaders: ['Retry-After'],
   },
   {
-    name: 'GET /v1/invitations/{invitationId} answers the invitation in any state, private and uncached',
+    name: 'GET /v1/invitations/{invitationId} answers the invitation in any state, private, uncached and without ETag',
     method: 'get',
     path: '/v1/invitations/{invitationId}',
     url: INVITATION_URL,
@@ -476,12 +476,14 @@ const CASES: readonly RouteCase[] = [
     status: 200,
     check: (response, { organization }) => {
       expect(response.body).toEqual(MARC_ACCEPTED_INVITATION);
+      expect(response.headers['content-type']).toMatch(/^application\/json/u);
       expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers.etag).toBeUndefined();
       expect(organization.getInvitation).toHaveBeenCalledWith(MARC_INVITATION.id);
     },
   },
   {
-    name: 'GET /v1/invitations/{invitationId} answers a conditional request in full, never 304',
+    name: 'GET /v1/invitations/{invitationId} answers a conditional request in full, never 304 and without ETag',
     method: 'get',
     path: '/v1/invitations/{invitationId}',
     url: INVITATION_URL,
@@ -492,6 +494,7 @@ const CASES: readonly RouteCase[] = [
     check: (response) => {
       expect(response.body).toEqual(MARC_ACCEPTED_INVITATION);
       expect(response.headers['cache-control']).toBe('private, no-store');
+      expect(response.headers.etag).toBeUndefined();
     },
   },
   {

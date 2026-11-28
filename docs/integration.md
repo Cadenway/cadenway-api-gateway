@@ -329,7 +329,10 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
 - **One invitation.** `GET /v1/invitations/{invitationId}` reads an invitation in any state from
   `GET /internal/v1/invitations/{invitationId}`; organization-service decides who may (owner and
   admins). It answers `Cache-Control: private, no-store` and ignores `If-None-Match` and
-  `If-Modified-Since`, so it never answers `304`.
+  `If-Modified-Since`, so it never answers `304`. Unlike the other versioned answers it sends no
+  `ETag`: the expiry changes the state of an invitation without a new `version`, so a tag derived
+  from it would wrongly say "unchanged" (organization-service sends none either). The handler
+  writes the answer itself, so the `EtagInterceptor` of the kit sees no body to tag.
 
 - **Query parameters.** The validators generated from the contracts read `limit` from its text;
   the gateway only splits the `role` of `GET /v1/members` on its commas before validation.
