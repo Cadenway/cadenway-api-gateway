@@ -46,7 +46,11 @@ This module exposes its HTTP routes. It publishes no TypeScript entry points to 
   `If-Organization-Match` check; a key is never dropped nor sent to
   `POST /internal/v1/invitations`. `409 idempotency.request-in-progress` and
   `422 idempotency.key-reused` are relayed with the reason phrase of their status (the contract
-  gives them no French title).
+  gives them no French title). `429 invitation.keyed-batch-limit-reached` (the replay record
+  budget of the organization is used up) is relayed the same way, title `Too Many Requests`, with
+  `details.nextAvailableAt` and `Retry-After` derived from it. Only a keyed batch answers it, but
+  both internal routes declare it, so the unkeyed relay accepts it as well. A `429` is a client
+  error of the internal HTTP client: never retried and never counted by the circuit breaker.
 - A `404` of the keyed route whose code is not `organization.not-found` comes from an
   organization-service release without replay support: `503 upstream.unavailable`
   (`details.service: organization-service`) with `Retry-After: 10`, the half-open delay of the
