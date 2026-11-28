@@ -69,15 +69,20 @@ const ORGANIZATION_PROBLEMS: AcceptedProblems = {
  *
  * @description
  * Client errors of organization-service that `POST /v1/invitations` answers as they are: those of
- * `GET /v1/invitations`, and `429 invitation.daily-limit-reached` when the batch needs more
+ * `GET /v1/invitations`, `429 invitation.daily-limit-reached` when the batch needs more
  * invitation emails than the organization has left of its 100 in any 24 hours, with
- * `details.remaining`, `details.nextAvailableAt` and `Retry-After`.
+ * `details.remaining`, `details.nextAvailableAt` and `Retry-After`, and
+ * `429 invitation.keyed-batch-limit-reached` when a batch with a new `Idempotency-Key` finds the
+ * replay record budget of the organization used up, with `details.nextAvailableAt` and
+ * `Retry-After`. The contract gives that code no French title: it keeps the reason phrase of its
+ * status. Only a keyed batch answers it, but both internal routes declare it, so the unkeyed
+ * relay accepts it too rather than turning a declared public `429` into a `503`.
  *
  * @type {AcceptedProblems}
  */
 const INVITE_PROBLEMS: AcceptedProblems = {
   ...ORGANIZATION_PROBLEMS,
-  429: ['invitation.daily-limit-reached'],
+  429: ['invitation.daily-limit-reached', 'invitation.keyed-batch-limit-reached'],
 };
 
 /**
@@ -301,8 +306,11 @@ export class InvitationsController {
    * pass the precondition again. An `Idempotency-Key` of 1 to 255 characters sends the batch to
    * the keyed invitation of organization-service, unchanged; a key outside those bounds answers
    * `400 request.invalid` before any call. A keyed request answers
-   * `409 idempotency.request-in-progress` and `422 idempotency.key-reused` as they are, and
-   * `503 upstream.unavailable` with `Retry-After` while the serving release of
+   * `409 idempotency.request-in-progress` and `422 idempotency.key-reused` as they are,
+   * `429 invitation.keyed-batch-limit-reached` (the replay record budget of the organization is
+   * used up; nothing ran and the key is not reserved) with `Retry-After` derived from
+   * `details.nextAvailableAt`, and `503 upstream.unavailable` with `Retry-After` while the serving
+   * release of
    * organization-service cannot replay keyed batches (nothing ran). Without a key, the batch
    * keeps the plain invitation.
    *

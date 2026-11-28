@@ -317,7 +317,12 @@ Phase P2b of the integration plan and its security follow-ups, `@cadenway/contra
   first, then calls `POST /internal/v1/invitation-batches` with the key unchanged; without a key
   it keeps `POST /internal/v1/invitations`. A key is never dropped and never sent to the plain
   route. `409 idempotency.request-in-progress` and `422 idempotency.key-reused` are relayed with
-  the reason phrase of their status, as the contract gives no French title. A `404` of the keyed
+  the reason phrase of their status, as the contract gives no French title. So is
+  `429 invitation.keyed-batch-limit-reached` (title `Too Many Requests`), when a new key finds the
+  replay record budget of the organization used up: `details.nextAvailableAt` is kept and
+  `Retry-After` is the seconds until it, rounded up; the unkeyed relay accepts it too, as both
+  internal routes declare it. Like every `429` of an internal call, it is neither retried nor
+  counted by the circuit breaker. A `404` of the keyed
   route whose code is not `organization.not-found` means the serving organization-service release
   cannot replay keyed batches: the gateway answers `503 upstream.unavailable`
   (`details.service: organization-service`) with `Retry-After: 10`, the half-open delay of the

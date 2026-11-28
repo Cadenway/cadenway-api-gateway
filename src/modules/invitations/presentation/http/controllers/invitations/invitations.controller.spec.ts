@@ -123,6 +123,34 @@ const RESEND_AVAILABLE_AT: string = new Date(Date.now() + 3_600_000).toISOString
 const NEXT_AVAILABLE_AT: string = new Date(Date.now() + 18_000_000).toISOString();
 
 /**
+ * Constant BUDGET_AVAILABLE_AT
+ *
+ * @description
+ * When the replay record budget of keyed invitation batches frees a place again: about fifteen
+ * minutes after the tests start.
+ *
+ * @type {string}
+ */
+const BUDGET_AVAILABLE_AT: string = new Date(Date.now() + 900_000).toISOString();
+
+/**
+ * Constant KEYED_BATCH_LIMITED
+ *
+ * @description
+ * The public answer to a keyed batch refused by the replay record budget: the reason phrase of
+ * `429` as title (the contract gives the code no French one) and `details.nextAvailableAt` only.
+ *
+ * @type {Readonly<Record<string, unknown>>}
+ */
+const KEYED_BATCH_LIMITED: Readonly<Record<string, unknown>> = {
+  type: 'about:blank',
+  title: 'Too Many Requests',
+  status: 429,
+  code: 'invitation.keyed-batch-limit-reached',
+  details: { nextAvailableAt: BUDGET_AVAILABLE_AT },
+};
+
+/**
  * Function expectRetryAfterUntil
  *
  * @description
@@ -354,6 +382,64 @@ const CASES: readonly RouteCase[] = [
         code: 'idempotency.key-reused',
       });
     },
+  },
+  {
+    name: 'POST /v1/invitations relays 429 invitation.keyed-batch-limit-reached of a keyed batch with Too Many Requests, nextAvailableAt and Retry-After',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    headers: { 'Idempotency-Key': IDEMPOTENCY_KEY },
+    arrange: ({ organization }) =>
+      organization.inviteMembersKeyed.mockRejectedValue(
+        organizationProblem(429, 'invitation.keyed-batch-limit-reached', {
+          nextAvailableAt: BUDGET_AVAILABLE_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.keyed-batch-limit-reached',
+    check: (response, { organization }) => {
+      expect(response.body).toEqual(KEYED_BATCH_LIMITED);
+      expectRetryAfterUntil(response, BUDGET_AVAILABLE_AT);
+      expect(organization.inviteMembersKeyed).toHaveBeenCalledTimes(1);
+      expect(organization.inviteMembers).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations relays 429 invitation.keyed-batch-limit-reached of the plain invitation as declared, never as 503',
+    method: 'post',
+    path: '/v1/invitations',
+    url: '/v1/invitations',
+    body: BATCH,
+    arrange: ({ organization }) =>
+      organization.inviteMembers.mockRejectedValue(
+        organizationProblem(429, 'invitation.keyed-batch-limit-reached', {
+          nextAvailableAt: BUDGET_AVAILABLE_AT,
+        }),
+      ),
+    status: 429,
+    code: 'invitation.keyed-batch-limit-reached',
+    check: (response, { organization }) => {
+      expect(response.body).toEqual(KEYED_BATCH_LIMITED);
+      expectRetryAfterUntil(response, BUDGET_AVAILABLE_AT);
+      expect(organization.inviteMembersKeyed).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'POST /v1/invitations/{invitationId}/resend answers 429 invitation.keyed-batch-limit-reached, which it does not declare, as 503',
+    method: 'post',
+    path: '/v1/invitations/{invitationId}/resend',
+    url: `${INVITATION_URL}/resend`,
+    body: {},
+    arrange: ({ organization }) =>
+      organization.resendInvitation.mockRejectedValue(
+        organizationProblem(429, 'invitation.keyed-batch-limit-reached', {
+          nextAvailableAt: BUDGET_AVAILABLE_AT,
+        }),
+      ),
+    status: 503,
+    code: 'upstream.failed',
+    absentHeaders: ['Retry-After'],
   },
   {
     name: 'POST /v1/invitations relays 404 organization.not-found of a keyed batch',

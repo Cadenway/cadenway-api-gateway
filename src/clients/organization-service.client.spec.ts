@@ -562,6 +562,52 @@ describe('OrganizationServiceClient', () => {
     ).rejects.toMatchObject({ problem: { status, code } });
   });
 
+  it.each([
+    [
+      'keyed batch',
+      (): Promise<unknown> =>
+        client.inviteMembersKeyed({ emails: [MARC_INVITATION.email], role: 'member' }, 'batch-7'),
+    ],
+    [
+      'plain invitation',
+      (): Promise<unknown> =>
+        client.inviteMembers({ emails: [MARC_INVITATION.email], role: 'member' }),
+    ],
+  ])(
+    'relays 429 invitation.keyed-batch-limit-reached of a %s with its details, never retried nor counted by the circuit breaker',
+    async (_name, invite) => {
+      const nextAvailableAt = '2026-11-08T09:15:00Z';
+      answer.mockImplementation(() =>
+        json(429, {
+          type: 'about:blank',
+          title: 'Too Many Requests',
+          status: 429,
+          code: 'invitation.keyed-batch-limit-reached',
+          details: { nextAvailableAt },
+        }),
+      );
+
+      for (let attempt = 1; attempt <= 6; attempt += 1) {
+        const failure: unknown = await asOwner(invite).catch((error: unknown) => error);
+
+        expect(failure).not.toBeInstanceOf(RetryableProblemException);
+        expect((failure as ProblemException).problem).toMatchObject({
+          status: 429,
+          code: 'invitation.keyed-batch-limit-reached',
+          details: { nextAvailableAt, service: ORGANIZATION_SERVICE },
+        });
+      }
+      // One call per request: a 429 is never retried. Six in a row, past the five consecutive
+      // failures that open the breaker, and the next call still reaches organization-service.
+      expect(calls).toHaveLength(6);
+      answer.mockImplementation(() => json(200, { invitations: [] }));
+
+      await asOwner(invite);
+
+      expect(calls).toHaveLength(7);
+    },
+  );
+
   it('retries a keyed batch once after a 503, as its key makes the repeat replay', async () => {
     answer
       .mockReturnValueOnce(new Response(null, { status: 503 }))
